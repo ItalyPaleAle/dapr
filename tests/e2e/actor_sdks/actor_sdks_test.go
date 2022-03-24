@@ -19,6 +19,7 @@ package actor_sdks_e2e
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"testing"
 	"time"
 
@@ -83,7 +84,7 @@ func TestMain(m *testing.M) {
 
 	// Disables PHP test for Windows temporarily due to issues with its Windows container.
 	// See https://github.com/dapr/dapr/issues/2953
-	if utils.TestTargetOS() != "windows" {
+	if runtime.GOOS != "windows" {
 		apps = append(apps,
 			kube.AppDescription{
 				AppName:          "actorphp",
@@ -105,7 +106,7 @@ func TestActorInvocationCrossSDKs(t *testing.T) {
 	actorTypes := []string{"DotNetCarActor", "JavaCarActor", "PythonCarActor"}
 	// Disables PHP test for Windows temporarily due to issues with its Windows container.
 	// See https://github.com/dapr/dapr/issues/2953
-	if utils.TestTargetOS() != "windows" {
+	if runtime.GOOS != "windows" {
 		actorTypes = append(actorTypes, "PHPCarActor")
 	}
 
