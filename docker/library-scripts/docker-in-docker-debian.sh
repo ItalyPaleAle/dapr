@@ -33,7 +33,6 @@ USERNAME=${2:-"automatic"}
 USE_MOBY=${3:-"true"}
 DOCKER_VERSION=${4:-"latest"} # The Docker/Moby Engine + CLI should match in version
 MICROSOFT_GPG_KEYS_URI="https://packages.microsoft.com/keys/microsoft.asc"
-DOCKER_DASH_COMPOSE_VERSION="1"
 
 set -e
 
@@ -91,40 +90,6 @@ check_packages() {
         apt_get_update_if_needed
         apt-get -y install --no-install-recommends "$@"
     fi
-}
-
-# Figure out correct version of a three part version number is not passed
-find_version_from_git_tags() {
-    local variable_name=$1
-    local requested_version=${!variable_name}
-    if [ "${requested_version}" = "none" ]; then return; fi
-    local repository=$2
-    local prefix=${3:-"tags/v"}
-    local separator=${4:-"."}
-    local last_part_optional=${5:-"false"}    
-    if [ "$(echo "${requested_version}" | grep -o "." | wc -l)" != "2" ]; then
-        local escaped_separator=${separator//./\\.}
-        local last_part
-        if [ "${last_part_optional}" = "true" ]; then
-            last_part="(${escaped_separator}[0-9]+)?"
-        else
-            last_part="${escaped_separator}[0-9]+"
-        fi
-        local regex="${prefix}\\K[0-9]+${escaped_separator}[0-9]+${last_part}$"
-        local version_list="$(git ls-remote --tags ${repository} | grep -oP "${regex}" | tr -d ' ' | tr "${separator}" "." | sort -rV)"
-        if [ "${requested_version}" = "latest" ] || [ "${requested_version}" = "current" ] || [ "${requested_version}" = "lts" ]; then
-            declare -g ${variable_name}="$(echo "${version_list}" | head -n 1)"
-        else
-            set +e
-            declare -g ${variable_name}="$(echo "${version_list}" | grep -E -m 1 "^${requested_version//./\\.}([\\.\\s]|$)")"
-            set -e
-        fi
-    fi
-    if [ -z "${!variable_name}" ] || ! echo "${version_list}" | grep "^${!variable_name//./\\.}$" > /dev/null 2>&1; then
-        echo -e "Invalid ${variable_name} value: ${requested_version}\nValid values:\n${version_list}" >&2
-        exit 1
-    fi
-    echo "${variable_name}=${!variable_name}"
 }
 
 # Ensure apt is in non-interactive to avoid prompts
@@ -210,40 +175,24 @@ fi
 
 echo "Finished installing docker / moby!"
 
-# Install Docker Compose if not already installed and is on a supported architecture
+### Diff start
+# Install Docker Compose if not already installed
 if type docker-compose > /dev/null 2>&1; then
     echo "Docker Compose already installed."
 else
-    target_compose_arch="${architecture}"
-    if [ "${target_compose_arch}" = "amd64" ]; then
-        target_compose_arch="x86_64"
-    fi
-    if [ "${target_compose_arch}" != "x86_64" ]; then
-        # Use pip to get a version that runs on this architecture
-        if ! dpkg -s python3-minimal python3-pip libffi-dev python3-venv > /dev/null 2>&1; then
-            apt_get_update_if_needed
-            apt-get -y install python3-minimal python3-pip libffi-dev python3-venv
-        fi
-        export PIPX_HOME=/usr/local/pipx
-        mkdir -p ${PIPX_HOME}
-        export PIPX_BIN_DIR=/usr/local/bin
-        export PYTHONUSERBASE=/tmp/pip-tmp
-        export PIP_CACHE_DIR=/tmp/pip-tmp/cache
-        pipx_bin=pipx
-        if ! type pipx > /dev/null 2>&1; then
-            pip3 install --disable-pip-version-check --no-cache-dir --user pipx
-            pipx_bin=/tmp/pip-tmp/bin/pipx
-        fi
-        ${pipx_bin} install --pip-args '--no-cache-dir --force-reinstall' docker-compose
-        rm -rf /tmp/pip-tmp
-    else
-        # Only supports docker-compose v1
-        find_version_from_git_tags DOCKER_DASH_COMPOSE_VERSION "https://github.com/docker/compose" "tags/"
-        echo "(*) Installing docker-compose ${DOCKER_DASH_COMPOSE_VERSION}..."
-        curl -fsSL "https://github.com/docker/compose/releases/download/${DOCKER_DASH_COMPOSE_VERSION}/docker-compose-Linux-x86_64" -o /usr/local/bin/docker-compose
-        chmod +x /usr/local/bin/docker-compose
-    fi
+    target_compose_arch="$(uname -m)"
+    case $target_compose_arch in
+        x86_64) target_compose_arch="x86_64";;
+        aarch64 | armv8*) target_compose_arch="aarch64";;
+        *) echo "(!) Architecture $target_compose_arch unsupported"; exit 1 ;;
+    esac
+    # Get the last version from the GitHub APIs
+    docker_dash_compose_version=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | jq -r ".tag_name")
+    echo "(*) Installing docker-compose ${docker_dash_compose_version}..."
+    curl -fsSL "https://github.com/docker/compose/releases/download/${docker_dash_compose_version}/docker-compose-linux-${target_compose_arch}" -o /usr/local/bin/docker-compose
+    chmod +x /usr/local/bin/docker-compose
 fi
+### Diff end
 
 # If init file already exists, exit
 if [ -f "/usr/local/share/docker-init.sh" ]; then
