@@ -30,7 +30,7 @@ apt-get install -y socat
 # Install Dapr CLI
 dapr_cli_ver=""
 if [ "${DAPR_CLI_VERSION}" != "latest" ]; then
-    dapr_cli_ver="=${DAPR_CLI_VERSION}"
+    dapr_cli_ver="${DAPR_CLI_VERSION}"
 fi
 wget -q https://raw.githubusercontent.com/dapr/cli/master/install/install.sh -O - | /bin/bash -s "${dapr_cli_ver}"
 
