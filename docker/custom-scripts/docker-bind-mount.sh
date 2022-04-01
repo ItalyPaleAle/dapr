@@ -16,17 +16,6 @@
 
 set -e
 
-### Diff start
-USERNAME=$(whoami)
-SOURCE_SOCKET=/var/run/docker-host.sock
-TARGET_SOCKET=/var/run/docker.sock
-ENABLE_NONROOT_DOCKER="true"
-### Diff end
-
-SOCAT_PATH_BASE=/tmp/vscr-docker-from-docker
-SOCAT_LOG=${SOCAT_PATH_BASE}.log
-SOCAT_PID=${SOCAT_PATH_BASE}.pid
-
 # Wrapper function to only use sudo if not already root
 sudoIf()
 {
@@ -36,6 +25,22 @@ sudoIf()
         "$@"
     fi
 }
+
+### Diff start
+USERNAME=$(whoami)
+SOURCE_SOCKET=/var/run/docker-host.sock
+TARGET_SOCKET=/var/run/docker.sock
+ENABLE_NONROOT_DOCKER="true"
+
+if [ "${SOURCE_SOCKET}" != "${TARGET_SOCKET}" ]; then
+    sudoIf touch "${SOURCE_SOCKET}"
+    sudoIf ln -s "${SOURCE_SOCKET}" "${TARGET_SOCKET}"
+fi
+### Diff end
+
+SOCAT_PATH_BASE=/tmp/vscr-docker-from-docker
+SOCAT_LOG=${SOCAT_PATH_BASE}.log
+SOCAT_PID=${SOCAT_PATH_BASE}.pid
 
 # Log messages
 log()
