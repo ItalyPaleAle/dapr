@@ -24,6 +24,9 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
+# Install socat
+apt-get install -y socat
+
 # Install Dapr CLI
 dapr_cli_ver=""
 if [ "${DAPR_CLI_VERSION}" != "latest" ]; then
@@ -35,7 +38,7 @@ wget -q https://raw.githubusercontent.com/dapr/cli/master/install/install.sh -O 
 architecture="$(uname -m)"
 case $architecture in
     x86_64) architecture="x86_64";;
-    aarch64 | armv8*) architecture="aarch64";;
+    aarch64 | armv8*) architecture="aarch_64";;
     i?86) architecture="x86_32";;
     *) echo "(!) Architecture $architecture unsupported"; exit 1 ;;
 esac

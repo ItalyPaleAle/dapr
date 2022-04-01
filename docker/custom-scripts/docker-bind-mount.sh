@@ -74,7 +74,7 @@ if [ "${ENABLE_NONROOT_DOCKER}" = "true" ] && [ "${SOURCE_SOCKET}" != "${TARGET_
     log "Success"
 fi
 
-# Execute whatever commands were passed in (if any). This allows us 
+# Execute whatever commands were passed in (if any). This allows us
 # to set this script to ENTRYPOINT while still executing the default CMD.
 set +e
 exec "$@"
