@@ -1,8 +1,8 @@
 # Based on https://github.com/microsoft/vscode-dev-containers/tree/v0.224.3/containers/go/.devcontainer/base.Dockerfile
 
-# [Choice] Go version: 1-bullseye, 1.18-bullseye, 1.17-bullseye
-ARG VARIANT=1.17-bullseye
-FROM golang:${VARIANT}
+# [Choice] Go version: 1, 1.17, 1.18, etc
+ARG GOVERSION=1.17
+FROM golang:${GOVERSION}-bullseye
 
 # [Option] Install zsh
 ARG INSTALL_ZSH="true"
@@ -56,9 +56,9 @@ RUN apt-get update \
     && bash /tmp/staging/azcli-debian.sh "latest" \
     #
     # Copy our init scripts to /usr/local/share.
-    && mv -f -t /usr/local/share/ /tmp/staging/docker-bind-mount.sh /tmp/staging/devcontainer-init.sh \
-    && chmod +x /usr/local/share/docker-bind-mount.sh /usr/local/share/devcontainer-init.sh \
-    && chown ${USERNAME}:root /usr/local/share/docker-bind-mount.sh /usr/local/share/devcontainer-init.sh \
+    && mv -f -t /usr/local/share/ /tmp/staging/docker-bind-mount.sh /tmp/staging/devcontainer-init.sh /tmp/staging/setup-docker-multiarch.sh \
+    && chmod +x /usr/local/share/docker-bind-mount.sh /usr/local/share/devcontainer-init.sh  /usr/local/share/setup-docker-multiarch.sh \
+    && chown ${USERNAME}:root /usr/local/share/docker-bind-mount.sh /usr/local/share/devcontainer-init.sh  /usr/local/share/setup-docker-multiarch.sh \
     #
     # Move the first run notice to the correct location for Codespaces.
     && mkdir -p /usr/local/etc/vscode-dev-containers/ \
