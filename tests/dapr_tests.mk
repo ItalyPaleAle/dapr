@@ -91,6 +91,14 @@ $(error cannot find get minikube node ip address. ensure that you have minikube 
 endif
 endif
 
+ifeq ($(TARGET_ARCH),arm)
+  DOCKER_IMAGE_PLATFORM:=$(TARGET_OS)/arm/v7
+else ifeq ($(TARGET_ARCH),arm64)
+  DOCKER_IMAGE_PLATFORM:=$(TARGET_OS)/arm64/v8
+else
+  DOCKER_IMAGE_PLATFORM:=$(TARGET_OS)/amd64
+endif
+
 # check the required environment variables
 check-e2e-env:
 ifeq ($(DAPR_TEST_REGISTRY),)
@@ -105,9 +113,17 @@ define genTestAppImageBuild
 build-e2e-app-$(1): check-e2e-env
 ifeq (,$(wildcard $(E2E_TESTAPP_DIR)/$(1)/$(DOCKERFILE)))
 	CGO_ENABLED=0 GOOS=$(TARGET_OS) GOARCH=$(TARGET_ARCH) go build -o $(E2E_TESTAPP_DIR)/$(1)/app$(BINARY_EXT_LOCAL) $(E2E_TESTAPP_DIR)/$(1)/app.go
+ifeq ($(TARGET_ARCH),$(TARGET_ARCH_LOCAL))
 	$(DOCKER) build -f $(E2E_TESTAPP_DIR)/$(DOCKERFILE) $(E2E_TESTAPP_DIR)/$(1)/. -t $(DAPR_TEST_REGISTRY)/e2e-$(1):$(DAPR_TEST_TAG)
 else
+	$(DOCKER) build -f $(E2E_TESTAPP_DIR)/$(DOCKERFILE) $(E2E_TESTAPP_DIR)/$(1)/. -t $(DAPR_TEST_REGISTRY)/e2e-$(1):$(DAPR_TEST_TAG) --platform $(DOCKER_IMAGE_PLATFORM)
+endif
+else
+ifeq ($(TARGET_ARCH),$(TARGET_ARCH_LOCAL))
 	$(DOCKER) build -f $(E2E_TESTAPP_DIR)/$(1)/$(DOCKERFILE) $(E2E_TESTAPP_DIR)/$(1)/. -t $(DAPR_TEST_REGISTRY)/e2e-$(1):$(DAPR_TEST_TAG)
+else
+	$(DOCKER) build -f $(E2E_TESTAPP_DIR)/$(1)/$(DOCKERFILE) $(E2E_TESTAPP_DIR)/$(1)/. -t $(DAPR_TEST_REGISTRY)/e2e-$(1):$(DAPR_TEST_TAG) --platform $(DOCKER_IMAGE_PLATFORM)
+endif
 endif
 endef
 
@@ -117,7 +133,15 @@ $(foreach ITEM,$(E2E_TEST_APPS),$(eval $(call genTestAppImageBuild,$(ITEM))))
 define genTestAppImagePush
 .PHONY: push-e2e-app-$(1)
 push-e2e-app-$(1): check-e2e-env
+ifeq ($(TARGET_ARCH),$(TARGET_ARCH_LOCAL))
 	$(DOCKER) push $(DAPR_TEST_REGISTRY)/e2e-$(1):$(DAPR_TEST_TAG)
+else
+ifeq (,$(wildcard $(E2E_TESTAPP_DIR)/$(1)/$(DOCKERFILE)))
+	$(DOCKER) build -f $(E2E_TESTAPP_DIR)/$(DOCKERFILE) $(E2E_TESTAPP_DIR)/$(1)/. -t $(DAPR_TEST_REGISTRY)/e2e-$(1):$(DAPR_TEST_TAG) --platform $(DOCKER_IMAGE_PLATFORM) --push
+else
+	$(DOCKER) build -f $(E2E_TESTAPP_DIR)/$(1)/$(DOCKERFILE) $(E2E_TESTAPP_DIR)/$(1)/. -t $(DAPR_TEST_REGISTRY)/e2e-$(1):$(DAPR_TEST_TAG) --platform $(DOCKER_IMAGE_PLATFORM) --push
+endif
+endif
 endef
 
 # Generate test app image push targets
@@ -135,7 +159,11 @@ $(foreach ITEM,$(E2E_TEST_APPS),$(eval $(call genTestAppImageKindPush,$(ITEM))))
 define genPerfTestAppImageBuild
 .PHONY: build-perf-app-$(1)
 build-perf-app-$(1): check-e2e-env
+ifeq ($(TARGET_ARCH),$(TARGET_ARCH_LOCAL))
 	$(DOCKER) build -f $(PERF_TESTAPP_DIR)/$(1)/$(DOCKERFILE) $(PERF_TESTAPP_DIR)/$(1)/. -t $(DAPR_TEST_REGISTRY)/perf-$(1):$(DAPR_TEST_TAG)
+else
+	$(DOCKER) build -f $(PERF_TESTAPP_DIR)/$(1)/$(DOCKERFILE) $(PERF_TESTAPP_DIR)/$(1)/. -t $(DAPR_TEST_REGISTRY)/perf-$(1):$(DAPR_TEST_TAG) --platform $(DOCKER_IMAGE_PLATFORM)
+endif
 endef
 
 # Generate perf app image build targets
@@ -144,7 +172,11 @@ $(foreach ITEM,$(PERF_TEST_APPS),$(eval $(call genPerfTestAppImageBuild,$(ITEM))
 define genPerfAppImagePush
 .PHONY: push-perf-app-$(1)
 push-perf-app-$(1): check-e2e-env
+ifeq ($(TARGET_ARCH),$(TARGET_ARCH_LOCAL))
 	$(DOCKER) push $(DAPR_TEST_REGISTRY)/perf-$(1):$(DAPR_TEST_TAG)
+else
+	$(DOCKER) build -f $(PERF_TESTAPP_DIR)/$(1)/$(DOCKERFILE) $(PERF_TESTAPP_DIR)/$(1)/. -t $(DAPR_TEST_REGISTRY)/perf-$(1):$(DAPR_TEST_TAG) --platform $(DOCKER_IMAGE_PLATFORM) --push
+endif
 endef
 
 define genPerfAppImageKindPush
@@ -334,9 +366,9 @@ setup-kind:
 	kind create cluster --config ./tests/config/kind.yaml --name kind
 	kubectl cluster-info --context kind-kind
 	# Setup registry
-	docker run -d --restart=always -p 5000:5000 --name kind-registry registry:2
+	$(DOCKER) run -d --restart=always -p 5000:5000 --name kind-registry registry:2
 	# Connect the registry to the KinD network.
-	docker network connect "kind" kind-registry
+	$(DOCKER) network connect "kind" kind-registry
 	# Setup metrics-server
 	helm install ms stable/metrics-server -n kube-system --set=args={--kubelet-insecure-tls}
 
@@ -352,7 +384,7 @@ describe-kind-env:
 	
 
 delete-kind:
-	docker stop kind-registry && docker rm kind-registry || echo "Could not delete registry."
+	$(DOCKER) stop kind-registry && $(DOCKER) rm kind-registry || echo "Could not delete registry."
 	kind delete cluster --name kind
 
 ifeq ($(OS),Windows_NT) 
