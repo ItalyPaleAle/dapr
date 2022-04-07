@@ -2225,9 +2225,10 @@ func (a *DaprRuntime) createAppChannel() error {
 			log.Infof("app max concurrency set to %v", a.runtimeConfig.MaxConcurrency)
 		}
 
-		noDefaultContentType := config.GetNoDefaultContentType()
-		if !noDefaultContentType {
-			log.Warn("[DEPRECATION NOTICE] Adding a default content type to incoming service invocation requests is deprecated and will be removed in the future. See https://docs.dapr.io/operations/support/support-preview-features/ for more details. You can opt into the new behavior today by setting the configuration option `ServiceInvocation.NoDefaultContentType` to true.")
+		if a.runtimeConfig.ApplicationProtocol == HTTPProtocol {
+			if !config.GetNoDefaultContentType() {
+				log.Warn("[DEPRECATION NOTICE] Adding a default content type to incoming service invocation requests is deprecated and will be removed in the future. See https://docs.dapr.io/operations/support/support-preview-features/ for more details. You can opt into the new behavior today by setting the configuration option `ServiceInvocation.NoDefaultContentType` to true.")
+			}
 		}
 		a.appChannel = ch
 	} else {
