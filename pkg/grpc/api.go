@@ -125,6 +125,8 @@ type api struct {
 	extendedMetadata           sync.Map
 	components                 []components_v1alpha.Component
 	shutdown                   func()
+	// TODO: Remove flag once feature is ratified
+	noDefaultContentType bool
 }
 
 // NewAPI returns a new gRPC API.
@@ -143,7 +145,8 @@ func NewAPI(
 	accessControlList *config.AccessControlList,
 	appProtocol string,
 	getComponentsFn func() []components_v1alpha.Component,
-	shutdown func()) API {
+	shutdown func(),
+	noDefaultContentType bool) API {
 	transactionalStateStores := map[string]state.TransactionalStore{}
 	for key, store := range stateStores {
 		if state.FeatureTransactional.IsPresent(store.Features()) {
@@ -169,6 +172,7 @@ func NewAPI(
 		accessControlList:        accessControlList,
 		appProtocol:              appProtocol,
 		shutdown:                 shutdown,
+		noDefaultContentType:     noDefaultContentType,
 	}
 }
 
@@ -179,6 +183,7 @@ func (a *api) CallLocal(ctx context.Context, in *internalv1pb.InternalInvokeRequ
 	}
 
 	req, err := invokev1.InternalInvokeRequest(in)
+	req.NoDefaultContentType = a.noDefaultContentType
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, messages.ErrInternalInvokeRequest, err.Error())
 	}
