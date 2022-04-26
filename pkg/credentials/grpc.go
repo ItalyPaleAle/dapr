@@ -20,7 +20,7 @@ func GetServerOptions(certChain *CertChain) ([]grpc.ServerOption, error) {
 
 	cert, err := tls.X509KeyPair(certChain.Cert, certChain.Key)
 	if err != nil {
-		return opts, nil
+		return opts, err
 	}
 
 	// nolint:gosec
