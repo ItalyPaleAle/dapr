@@ -37,6 +37,12 @@ service ServiceInvocation {
 
   // Invokes a method of the specific service.
   rpc CallLocal (InternalInvokeRequest) returns (InternalInvokeResponse) {}
+  
+  // Allows two dapr runtimes to create a bidirectional stream in which data
+  // can be forwarded.
+  // Inspired by https://github.com/openconfig/grpctunnel 
+  // Copyright 2017 Google Inc (license: Apache-2.0)
+  rpc Tunnel(stream RawData) returns (stream RawData);
 }
 
 // Actor represents actor using actor_type and actor_id
@@ -86,4 +92,14 @@ message InternalInvokeResponse {
 message ListStringValue {
   // The array of string.
   repeated string values = 1;
+}
+
+// RawData represents a "packet" of binary data exchanged between runtimes.
+message RawData {
+  // Tag associated with the initial TCP stream setup
+  int32 tag = 1;
+  // Bytes received from client connection
+  bytes data = 2;
+  // Connection has reached EOF
+  bool close = 3;
 }

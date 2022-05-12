@@ -22,6 +22,9 @@ type ServiceInvocationClient interface {
 	CallActor(ctx context.Context, in *InternalInvokeRequest, opts ...grpc.CallOption) (*InternalInvokeResponse, error)
 	// Invokes a method of the specific service.
 	CallLocal(ctx context.Context, in *InternalInvokeRequest, opts ...grpc.CallOption) (*InternalInvokeResponse, error)
+	// Allows two dapr runtimes to create a bidirectional stream in which data
+	// can be forwarded.
+	Tunnel(ctx context.Context, opts ...grpc.CallOption) (ServiceInvocation_TunnelClient, error)
 }
 
 type serviceInvocationClient struct {
@@ -50,6 +53,37 @@ func (c *serviceInvocationClient) CallLocal(ctx context.Context, in *InternalInv
 	return out, nil
 }
 
+func (c *serviceInvocationClient) Tunnel(ctx context.Context, opts ...grpc.CallOption) (ServiceInvocation_TunnelClient, error) {
+	stream, err := c.cc.NewStream(ctx, &ServiceInvocation_ServiceDesc.Streams[0], "/dapr.proto.internals.v1.ServiceInvocation/Tunnel", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &serviceInvocationTunnelClient{stream}
+	return x, nil
+}
+
+type ServiceInvocation_TunnelClient interface {
+	Send(*RawData) error
+	Recv() (*RawData, error)
+	grpc.ClientStream
+}
+
+type serviceInvocationTunnelClient struct {
+	grpc.ClientStream
+}
+
+func (x *serviceInvocationTunnelClient) Send(m *RawData) error {
+	return x.ClientStream.SendMsg(m)
+}
+
+func (x *serviceInvocationTunnelClient) Recv() (*RawData, error) {
+	m := new(RawData)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // ServiceInvocationServer is the server API for ServiceInvocation service.
 // All implementations should embed UnimplementedServiceInvocationServer
 // for forward compatibility
@@ -58,6 +92,9 @@ type ServiceInvocationServer interface {
 	CallActor(context.Context, *InternalInvokeRequest) (*InternalInvokeResponse, error)
 	// Invokes a method of the specific service.
 	CallLocal(context.Context, *InternalInvokeRequest) (*InternalInvokeResponse, error)
+	// Allows two dapr runtimes to create a bidirectional stream in which data
+	// can be forwarded.
+	Tunnel(ServiceInvocation_TunnelServer) error
 }
 
 // UnimplementedServiceInvocationServer should be embedded to have forward compatible implementations.
@@ -69,6 +106,9 @@ func (UnimplementedServiceInvocationServer) CallActor(context.Context, *Internal
 }
 func (UnimplementedServiceInvocationServer) CallLocal(context.Context, *InternalInvokeRequest) (*InternalInvokeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CallLocal not implemented")
+}
+func (UnimplementedServiceInvocationServer) Tunnel(ServiceInvocation_TunnelServer) error {
+	return status.Errorf(codes.Unimplemented, "method Tunnel not implemented")
 }
 
 // UnsafeServiceInvocationServer may be embedded to opt out of forward compatibility for this service.
@@ -118,6 +158,32 @@ func _ServiceInvocation_CallLocal_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ServiceInvocation_Tunnel_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(ServiceInvocationServer).Tunnel(&serviceInvocationTunnelServer{stream})
+}
+
+type ServiceInvocation_TunnelServer interface {
+	Send(*RawData) error
+	Recv() (*RawData, error)
+	grpc.ServerStream
+}
+
+type serviceInvocationTunnelServer struct {
+	grpc.ServerStream
+}
+
+func (x *serviceInvocationTunnelServer) Send(m *RawData) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func (x *serviceInvocationTunnelServer) Recv() (*RawData, error) {
+	m := new(RawData)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // ServiceInvocation_ServiceDesc is the grpc.ServiceDesc for ServiceInvocation service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -134,6 +200,13 @@ var ServiceInvocation_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _ServiceInvocation_CallLocal_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "Tunnel",
+			Handler:       _ServiceInvocation_Tunnel_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
+	},
 	Metadata: "dapr/proto/internals/v1/service_invocation.proto",
 }
