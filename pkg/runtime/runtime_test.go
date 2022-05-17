@@ -3895,17 +3895,27 @@ func TestStopWithErrors(t *testing.T) {
 	require.NoError(t, rt.initSecretStore(mockSecretsComponent))
 	rt.nameResolver = &mockNameResolver{closeErr: testErr}
 
-	err := rt.shutdownComponents()
-	assert.Error(t, err)
-	var merr *multierror.Error
-	merr, ok := err.(*multierror.Error)
-	require.True(t, ok)
-	assert.Equal(t, 6, len(merr.Errors))
+	{
+		err := rt.shutdownInputComponents()
+		assert.Error(t, err)
+		var merr *multierror.Error
+		merr, ok := err.(*multierror.Error)
+		require.True(t, ok)
+		assert.Equal(t, 2, len(merr.Errors))
+	}
+	{
+		err := rt.shutdownOutputComponents()
+		assert.Error(t, err)
+		var merr *multierror.Error
+		merr, ok := err.(*multierror.Error)
+		require.True(t, ok)
+		assert.Equal(t, 4, len(merr.Errors))
+	}
 }
 
 func stopRuntime(t *testing.T, rt *DaprRuntime) {
 	rt.stopActor()
-	assert.NoError(t, rt.shutdownComponents())
+	assert.NoError(t, rt.shutdownOutputComponents())
 }
 
 func TestFindMatchingRoute(t *testing.T) {

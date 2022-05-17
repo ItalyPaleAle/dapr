@@ -2034,9 +2034,10 @@ func (a *DaprRuntime) stopActor() {
 	}
 }
 
-// shutdownComponents allows for a graceful shutdown of all runtime internal operations or components.
-func (a *DaprRuntime) shutdownComponents() error {
-	log.Info("Shutting down all components")
+// shutdownInputComponents allows for a graceful shutdown of all runtime internal operations of components that bring in more work.
+// This includes input bindings and pubsub.
+func (a *DaprRuntime) shutdownInputComponents() error {
+	log.Info("Shutting down input components")
 	var merr error
 
 	// Close components if they implement `io.Closer`
@@ -2049,6 +2050,24 @@ func (a *DaprRuntime) shutdownComponents() error {
 			}
 		}
 	}
+	for name, pubSub := range a.pubSubs {
+		if err := pubSub.Close(); err != nil {
+			err = fmt.Errorf("error closing pub sub %s: %w", name, err)
+			merr = multierror.Append(merr, err)
+			log.Warn(err)
+		}
+	}
+
+	return merr
+}
+
+// shutdownOutputComponents allows for a graceful shutdown of all runtime internal operations of components that are not source of more work.
+// These are all components except bindings and pubsub
+func (a *DaprRuntime) shutdownOutputComponents() error {
+	log.Info("Shutting down all remaining components")
+	var merr error
+
+	// Close components if they implement `io.Closer`
 	for name, binding := range a.outputBindings {
 		if closer, ok := binding.(io.Closer); ok {
 			if err := closer.Close(); err != nil {
@@ -2065,13 +2084,6 @@ func (a *DaprRuntime) shutdownComponents() error {
 				merr = multierror.Append(merr, err)
 				log.Warn(err)
 			}
-		}
-	}
-	for name, pubSub := range a.pubSubs {
-		if err := pubSub.Close(); err != nil {
-			err = fmt.Errorf("error closing pub sub %s: %w", name, err)
-			merr = multierror.Append(merr, err)
-			log.Warn(err)
 		}
 	}
 	for name, stateStore := range a.stateStores {
@@ -2121,9 +2133,10 @@ func (a *DaprRuntime) Shutdown(duration time.Duration) {
 			log.Warnf("error closing API: %v", err)
 		}
 	}
+	a.shutdownInputComponents()
 	log.Infof("Waiting %s to finish outstanding operations", duration)
 	<-time.After(duration)
-	a.shutdownComponents()
+	a.shutdownOutputComponents()
 	a.shutdownC <- nil
 }
 
