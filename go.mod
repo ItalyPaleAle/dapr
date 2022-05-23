@@ -3,7 +3,7 @@ module github.com/dapr/dapr
 go 1.18
 
 require (
-	contrib.go.opencensus.io/exporter/prometheus v0.4.0
+	contrib.go.opencensus.io/exporter/prometheus v0.4.1
 	contrib.go.opencensus.io/exporter/zipkin v0.1.1
 	github.com/AdhityaRamadhanus/fasthttpcors v0.0.0-20170121111917-d4c07198763a
 	github.com/PuerkitoBio/purell v1.1.1
