@@ -12,13 +12,15 @@
 # limitations under the License.
 #
 #
-# Syntax: ./install-dapr-tools.sh [USERNAME] [DAPR_CLI_VERSION] [PROTOC_VERSION] [PROTOC_GEN_GO_VERSION] [GOLANGCI_LINT_VERSION]
+# Syntax: ./install-dapr-tools.sh [USERNAME] [GOROOT] [GOPATH] [DAPR_CLI_VERSION] [PROTOC_VERSION] [PROTOC_GEN_GO_VERSION] [GOLANGCI_LINT_VERSION]
 
 USERNAME=${1:-"dapr"}
-DAPR_CLI_VERSION=${2:-""}
-PROTOC_VERSION=${3:-"21.1"}
-PROTOC_GEN_GO_VERSION=${4:-"1.28"}
-GOLANGCI_LINT_VERSION=${5:-"1.45.2"}
+GOROOT=${2:-"/usr/local/go"}
+GOPATH=${3:-"/go"}
+DAPR_CLI_VERSION=${4:-""}
+PROTOC_VERSION=${5:-"21.1"}
+PROTOC_GEN_GO_VERSION=${6:-"1.28"}
+GOLANGCI_LINT_VERSION=${7:-"1.45.2"}
 
 set -e
 
@@ -55,7 +57,11 @@ chmod -R 755 /usr/local/include/google/protobuf
 rm -f "${PROTOC_ZIP}"
 
 # Install protoc-gen-go
-sudo -u ${USERNAME} go install "google.golang.org/protobuf/cmd/protoc-gen-go@v${PROTOC_GEN_GO_VERSION}"
+# Must be installed as the non-root user
+sudo -u ${USERNAME} --preserve-env=GOPATH,GOROOT \
+    go install "google.golang.org/protobuf/cmd/protoc-gen-go@v${PROTOC_GEN_GO_VERSION}"
 
 # Install golangci-lint using the recommended method (best to avoid using go install according to their docs)
-sudo -u ${USERNAME} sh -c 'curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin "v${GOLANGCI_LINT_VERSION}"'
+# Must be installed as the non-root user
+sudo -u ${USERNAME} --preserve-env=GOLANGCI_LINT_VERSION,GOPATH,GOROOT \
+    sh -c 'curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b ${GOPATH}/bin "v${GOLANGCI_LINT_VERSION}"'
