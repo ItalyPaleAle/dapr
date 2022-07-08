@@ -46,10 +46,10 @@ RUN apt-get update \
     && bash /tmp/staging/kubectl-helm-debian.sh "${KUBECTL_VERSION}" "${HELM_VERSION}" "${MINIKUBE_VERSION}" \
     #
     # Install Go tools.
-    && bash /tmp/staging/go-debian.sh "none" "/usr/local/go" "${GOPATH}" "${USERNAME}" "false" \
+    && bash /tmp/staging/go-debian.sh "none" "/usr/local/go" "/go" "${USERNAME}" "false" \
     #
     # Install tools for Dapr.
-    && bash /tmp/staging/install-dapr-tools.sh "${DAPR_CLI_VERSION}" "${PROTOC_VERSION}" "${PROTOC_GEN_GO_VERSION}" "${GOLANGCI_LINT_VERSION}" \
+    && bash /tmp/staging/install-dapr-tools.sh "${USERNAME}" "${DAPR_CLI_VERSION}" "${PROTOC_VERSION}" "${PROTOC_GEN_GO_VERSION}" "${GOLANGCI_LINT_VERSION}" \
     #
     # Install the GitHub CLI.
     && bash /tmp/staging/github-debian.sh "latest" \
