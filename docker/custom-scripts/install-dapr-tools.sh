@@ -58,10 +58,11 @@ rm -f "${PROTOC_ZIP}"
 
 # Install protoc-gen-go
 # Must be installed as the non-root user
-sudo -u ${USERNAME} --preserve-env=GOPATH,GOROOT \
+export GOBIN="${GOPATH}/bin"
+sudo -u ${USERNAME} --preserve-env=GOPATH,GOBIN,GOROOT \
     go install "google.golang.org/protobuf/cmd/protoc-gen-go@v${PROTOC_GEN_GO_VERSION}"
 
 # Install golangci-lint using the recommended method (best to avoid using go install according to their docs)
 # Must be installed as the non-root user
-sudo -u ${USERNAME} --preserve-env=GOLANGCI_LINT_VERSION,GOPATH,GOROOT \
-    sh -c 'curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b ${GOPATH}/bin "v${GOLANGCI_LINT_VERSION}"'
+sudo -u ${USERNAME} --preserve-env=GOLANGCI_LINT_VERSION,GOPATH,GOBIN,GOROOT \
+    sh -c 'curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b "${GOBIN}" "v${GOLANGCI_LINT_VERSION}"'
