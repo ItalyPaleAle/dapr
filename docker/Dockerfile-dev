@@ -28,6 +28,7 @@ ARG USER_GID=$USER_UID
 ENV GO111MODULE=auto
 ENV CGO_ENABLED=0
 ENV DOCKER_BUILDKIT=1
+ARG DAPR_DEFAULT_IMAGE_REGISTRY=GHCR
 
 # Setup image using library scripts and configure non-root user.
 COPY library-scripts/* custom-scripts/* first-run-notice.txt /tmp/staging/
