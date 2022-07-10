@@ -754,7 +754,6 @@ func (a *DaprRuntime) initDirectMessaging(resolver nr.Resolver) {
 		a.runtimeConfig.MaxRequestBodySize,
 		a.proxy,
 		a.runtimeConfig.ReadBufferSize,
-		a.runtimeConfig.StreamRequestBody,
 		a.resiliency,
 		config.IsFeatureEnabled(a.globalConfig.Spec.Features, config.Resiliency),
 	)
@@ -1128,7 +1127,6 @@ func (a *DaprRuntime) startHTTPServer(port int, publicPort *int, profilePort int
 		a.runtimeConfig.MaxRequestBodySize,
 		a.runtimeConfig.UnixDomainSocket,
 		a.runtimeConfig.ReadBufferSize,
-		a.runtimeConfig.StreamRequestBody,
 		a.runtimeConfig.EnableAPILogging,
 	)
 

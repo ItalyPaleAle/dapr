@@ -54,7 +54,6 @@ func TestNewConfig(t *testing.T) {
 	assert.Equal(t, 4, c.MaxRequestBodySize)
 	assert.Equal(t, "", c.UnixDomainSocket)
 	assert.Equal(t, 4, c.ReadBufferSize)
-	assert.Equal(t, true, c.StreamRequestBody)
 	assert.Equal(t, time.Second, c.GracefulShutdownDuration)
 	assert.Equal(t, true, c.EnableAPILogging)
 	assert.Equal(t, true, c.DisableBuiltinK8sSecretStore)

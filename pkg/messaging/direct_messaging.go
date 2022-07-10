@@ -91,7 +91,6 @@ func NewDirectMessaging(
 	maxRequestBodySize int,
 	proxy Proxy,
 	readBufferSize int,
-	streamRequestBody bool,
 	resiliency resiliency.Provider,
 	isResiliencyEnabled bool,
 ) DirectMessaging {
@@ -270,13 +269,12 @@ func (d *directMessaging) invokeRemote(ctx context.Context, appID, namespace, ap
 	}
 
 	// Send the request using a stream
-	stream, err := clientV1.CallLocalStream(ctx, opts)
+	stream, err := clientV1.CallLocalStream(ctx, opts...)
 	if err != nil {
 		return nil, err
 	}
 	_, r := req.RawData()
 	reqProto := req.Proto()
-	reqProto.Message.Data.Reset()
 	buf := make([]byte, 4096) // 4KB buffer
 	var (
 		proto *internalv1pb.InternalInvokeRequestStream

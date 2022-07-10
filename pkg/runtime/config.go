@@ -73,7 +73,6 @@ type Config struct {
 	MaxRequestBodySize           int
 	UnixDomainSocket             string
 	ReadBufferSize               int
-	StreamRequestBody            bool
 	GracefulShutdownDuration     time.Duration
 	EnableAPILogging             bool
 	DisableBuiltinK8sSecretStore bool
@@ -84,7 +83,7 @@ func NewRuntimeConfig(
 	id string, placementAddresses []string, controlPlaneAddress, allowedOrigins, globalConfig, componentsPath,
 	appProtocol, mode string, httpPort, internalGRPCPort, apiGRPCPort int, apiListenAddresses []string, publicPort *int,
 	appPort, profilePort int, enableProfiling bool, maxConcurrency int, mtlsEnabled bool, sentryAddress string, appSSL bool,
-	maxRequestBodySize int, unixDomainSocket string, readBufferSize int, streamRequestBody bool, gracefulShutdownDuration time.Duration, enableAPILogging bool, disableBuiltinK8sSecretStore bool,
+	maxRequestBodySize int, unixDomainSocket string, readBufferSize int, gracefulShutdownDuration time.Duration, enableAPILogging bool, disableBuiltinK8sSecretStore bool,
 ) *Config {
 	return &Config{
 		ID:                  id,
@@ -114,7 +113,6 @@ func NewRuntimeConfig(
 		MaxRequestBodySize:           maxRequestBodySize,
 		UnixDomainSocket:             unixDomainSocket,
 		ReadBufferSize:               readBufferSize,
-		StreamRequestBody:            streamRequestBody,
 		GracefulShutdownDuration:     gracefulShutdownDuration,
 		EnableAPILogging:             enableAPILogging,
 		DisableBuiltinK8sSecretStore: disableBuiltinK8sSecretStore,

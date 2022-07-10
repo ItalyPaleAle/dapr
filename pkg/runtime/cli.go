@@ -69,7 +69,6 @@ func FromFlags() (*DaprRuntime, error) {
 	daprHTTPMaxRequestSize := flag.Int("dapr-http-max-request-size", -1, "Increasing max size of request body in MB to handle uploading of big files. By default 4 MB.")
 	unixDomainSocket := flag.String("unix-domain-socket", "", "Path to a unix domain socket dir mount. If specified, Dapr API servers will use Unix Domain Sockets")
 	daprHTTPReadBufferSize := flag.Int("dapr-http-read-buffer-size", -1, "Increasing max size of read buffer in KB to handle sending multi-KB headers. By default 4 KB.")
-	daprHTTPStreamRequestBody := flag.Bool("dapr-http-stream-request-body", false, "Enables request body streaming on http server")
 	daprGracefulShutdownSeconds := flag.Int("dapr-graceful-shutdown-seconds", -1, "Graceful shutdown time in seconds.")
 	enableAPILogging := flag.Bool("enable-api-logging", false, "Enable API logging for API calls")
 	disableBuiltinK8sSecretStore := flag.Bool("disable-builtin-k8s-secret-store", false, "Disable Builtin Kubernetes Secret Store")
@@ -212,7 +211,7 @@ func FromFlags() (*DaprRuntime, error) {
 	runtimeConfig := NewRuntimeConfig(*appID, placementAddresses, *controlPlaneAddress, *allowedOrigins,
 		*config, *componentsPath, appPrtcl, *mode, daprHTTP, daprInternalGRPC, daprAPIGRPC, daprAPIListenAddressList,
 		publicPort, applicationPort, profPort, *enableProfiling, concurrency, *enableMTLS, *sentryAddress, *appSSL, maxRequestBodySize,
-		*unixDomainSocket, readBufferSize, *daprHTTPStreamRequestBody, gracefulShutdownDuration, *enableAPILogging, *disableBuiltinK8sSecretStore)
+		*unixDomainSocket, readBufferSize, gracefulShutdownDuration, *enableAPILogging, *disableBuiltinK8sSecretStore)
 
 	// set environment variables
 	// TODO - consider adding host address to runtime config and/or caching result in utils package

@@ -446,7 +446,6 @@ func (a *api) CallLocalStream(stream internalv1pb.ServiceInvocation_CallLocalStr
 	// Respond to the caller
 	_, r := res.RawData()
 	resProto := res.Proto()
-	resProto.Message.Data.Reset()
 	buf := make([]byte, 4096) // 4KB buffer
 	var (
 		proto *internalv1pb.InternalInvokeResponseStream

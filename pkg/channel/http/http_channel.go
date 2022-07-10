@@ -202,7 +202,8 @@ func (h *Channel) invokeMethodV1(ctx context.Context, req *invokev1.InvokeMethod
 func (h *Channel) constructRequest(ctx context.Context, req *invokev1.InvokeMethodRequest) (*http.Request, error) {
 	// Construct app channel URI: VERB http://localhost:3000/method?query1=value1
 	var uri string
-	method := req.Message().HttpExtension.Verb.String()
+	verb := req.Message().HttpExtension.Verb.String()
+	method := req.Message().Method
 	if strings.HasPrefix(method, "/") {
 		uri = fmt.Sprintf("%s%s", h.baseAddress, method)
 	} else {
@@ -214,7 +215,7 @@ func (h *Channel) constructRequest(ctx context.Context, req *invokev1.InvokeMeth
 	}
 
 	contentType, body := req.RawData()
-	channelReq, err := http.NewRequestWithContext(ctx, method, uri, body)
+	channelReq, err := http.NewRequestWithContext(ctx, verb, uri, body)
 	if err != nil {
 		return nil, err
 	}

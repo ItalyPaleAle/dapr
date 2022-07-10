@@ -26,12 +26,11 @@ type ServerConfig struct {
 	MaxRequestBodySize int
 	UnixDomainSocket   string
 	ReadBufferSize     int
-	StreamRequestBody  bool
 	EnableAPILogging   bool
 }
 
 // NewServerConfig returns a new HTTP server config.
-func NewServerConfig(appID string, hostAddress string, port int, apiListenAddresses []string, publicPort *int, profilePort int, allowedOrigins string, enableProfiling bool, maxRequestBodySize int, unixDomainSocket string, readBufferSize int, streamRequestBody bool, enableAPILogging bool) ServerConfig {
+func NewServerConfig(appID string, hostAddress string, port int, apiListenAddresses []string, publicPort *int, profilePort int, allowedOrigins string, enableProfiling bool, maxRequestBodySize int, unixDomainSocket string, readBufferSize int, enableAPILogging bool) ServerConfig {
 	return ServerConfig{
 		AllowedOrigins:     allowedOrigins,
 		AppID:              appID,
@@ -44,7 +43,6 @@ func NewServerConfig(appID string, hostAddress string, port int, apiListenAddres
 		MaxRequestBodySize: maxRequestBodySize,
 		UnixDomainSocket:   unixDomainSocket,
 		ReadBufferSize:     readBufferSize,
-		StreamRequestBody:  streamRequestBody,
 		EnableAPILogging:   enableAPILogging,
 	}
 }
