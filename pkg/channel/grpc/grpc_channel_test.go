@@ -54,13 +54,14 @@ func TestInvokeMethod(t *testing.T) {
 	req.WithHTTPExtension(http.MethodPost, "param1=val1&param2=val2")
 	response, err := c.InvokeMethod(context.Background(), req)
 	assert.NoError(t, err)
-	contentType, body := response.RawData()
+	contentType, r := response.RawData()
 	grpcServer.Stop()
 
 	assert.Equal(t, "application/json", contentType)
 
 	actual := map[string]string{}
-	json.Unmarshal(body, &actual)
+	err = json.NewDecoder(r).Decode(&actual)
+	assert.NoError(t, err)
 
 	assert.Equal(t, "POST", actual["httpverb"])
 	assert.Equal(t, "method", actual["method"])

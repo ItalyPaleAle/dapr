@@ -14,10 +14,12 @@ limitations under the License.
 package http
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	nethttp "net/http"
 	"strconv"
 	"strings"
@@ -789,10 +791,11 @@ type configurationEventHandler struct {
 
 func (h *configurationEventHandler) updateEventHandler(ctx context.Context, e *configuration.UpdateEvent) error {
 	for _, item := range e.Items {
-		req := invokev1.NewInvokeMethodRequest(fmt.Sprintf("/configuration/%s/%s", h.storeName, item.Key))
-		req.WithHTTPExtension(nethttp.MethodPost, "")
 		eventBody, _ := json.Marshal(e)
-		req.WithRawData(eventBody, invokev1.JSONContentType)
+		req := invokev1.
+			NewInvokeMethodRequest(fmt.Sprintf("/configuration/%s/%s", h.storeName, item.Key)).
+			WithHTTPExtension(nethttp.MethodPost, "").
+			WithRawData(io.NopCloser(bytes.NewReader(eventBody)), invokev1.JSONContentType)
 
 		policy := h.res.ComponentInboundPolicy(ctx, h.storeName)
 		err := policy(func(ctx context.Context) (err error) {
@@ -1376,18 +1379,24 @@ func (a *api) onDirectMessage(reqCtx *fasthttp.RequestCtx) {
 	}
 
 	// Construct internal invoke method request
-	req := invokev1.NewInvokeMethodRequest(invokeMethodName).WithHTTPExtension(verb, reqCtx.QueryArgs().String())
-	req.WithRawData(reqCtx.Request.Body(), string(reqCtx.Request.Header.ContentType()))
-	// Save headers to internal metadata
-	req.WithFastHTTPHeaders(&reqCtx.Request.Header)
+	req := invokev1.
+		NewInvokeMethodRequest(invokeMethodName).WithHTTPExtension(verb, reqCtx.QueryArgs().String()).
+		// Set the stream
+		WithRawData(io.NopCloser(reqCtx.RequestBodyStream()), string(reqCtx.Request.Header.ContentType())).
+		// Save headers to internal metadata
+		WithFastHTTPHeaders(&reqCtx.Request.Header)
+	defer req.Close()
 
 	policy := a.resiliency.EndpointPolicy(reqCtx, targetID, fmt.Sprintf("%s:%s", targetID, invokeMethodName))
 	// Since we don't want to return the actual error, we have to extract several things in order to construct our response.
-	var resp *invokev1.InvokeMethodResponse
-	var body []byte
-	var statusCode int
-	var msg ErrorResponse
-	errorOccurred := false
+	var (
+		resp          *invokev1.InvokeMethodResponse
+		r             io.Reader
+		statusCode    int
+		errBody       []byte
+		msg           ErrorResponse
+		errorOccurred bool = false
+	)
 	err := policy(func(ctx context.Context) (rErr error) {
 		resp, rErr = a.directMessaging.Invoke(ctx, targetID, req)
 
@@ -1406,7 +1415,7 @@ func (a *api) onDirectMessage(reqCtx *fasthttp.RequestCtx) {
 		errorOccurred = false
 		invokev1.InternalMetadataToHTTPHeader(reqCtx, resp.Headers(), reqCtx.Response.Header.Set)
 		var contentType string
-		contentType, body = resp.RawData()
+		contentType, r = resp.RawData()
 		reqCtx.Response.Header.SetContentType(contentType)
 
 		// Construct response
@@ -1414,12 +1423,14 @@ func (a *api) onDirectMessage(reqCtx *fasthttp.RequestCtx) {
 		if !resp.IsHTTPResponse() {
 			statusCode = invokev1.HTTPStatusFromCode(codes.Code(statusCode))
 			if statusCode != fasthttp.StatusOK {
-				if body, rErr = invokev1.ProtobufToJSON(resp.Status()); rErr != nil {
+				errBody, rErr = invokev1.ProtobufToJSON(resp.Status())
+				if rErr != nil {
 					errorOccurred = true
 					msg = NewErrorResponse("ERR_MALFORMED_RESPONSE", rErr.Error())
 					statusCode = fasthttp.StatusInternalServerError
 					return rErr
 				}
+				r = bytes.NewReader(errBody)
 			}
 		} else if statusCode != fasthttp.StatusOK {
 			return errors.Errorf("Received non-successful status code: %d", statusCode)
@@ -1437,7 +1448,7 @@ func (a *api) onDirectMessage(reqCtx *fasthttp.RequestCtx) {
 		respond(reqCtx, withError(statusCode, msg))
 		return
 	}
-	respond(reqCtx, with(statusCode, body))
+	respond(reqCtx, withStream(statusCode, r))
 }
 
 // findTargetID tries to find ID of the target service from the following three places:
@@ -1719,12 +1730,12 @@ func (a *api) onDirectActorMessage(reqCtx *fasthttp.RequestCtx) {
 	actorID := reqCtx.UserValue(actorIDParam).(string)
 	verb := strings.ToUpper(string(reqCtx.Method()))
 	method := reqCtx.UserValue(methodParam).(string)
-	body := reqCtx.PostBody()
 
-	req := invokev1.NewInvokeMethodRequest(method)
-	req.WithActor(actorType, actorID)
-	req.WithHTTPExtension(verb, reqCtx.QueryArgs().String())
-	req.WithRawData(body, string(reqCtx.Request.Header.ContentType()))
+	req := invokev1.
+		NewInvokeMethodRequest(method).
+		WithActor(actorType, actorID).
+		WithHTTPExtension(verb, reqCtx.QueryArgs().String()).
+		WithRawData(io.NopCloser(reqCtx.RequestBodyStream()), string(reqCtx.Request.Header.ContentType()))
 
 	// Save headers to metadata.
 	metadata := map[string][]string{}
@@ -1754,7 +1765,7 @@ func (a *api) onDirectActorMessage(reqCtx *fasthttp.RequestCtx) {
 	}
 
 	invokev1.InternalMetadataToHTTPHeader(reqCtx, resp.Headers(), reqCtx.Response.Header.Set)
-	contentType, body := resp.RawData()
+	contentType, r := resp.RawData()
 	reqCtx.Response.Header.SetContentType(contentType)
 
 	// Construct response.
@@ -1762,7 +1773,7 @@ func (a *api) onDirectActorMessage(reqCtx *fasthttp.RequestCtx) {
 	if !resp.IsHTTPResponse() {
 		statusCode = invokev1.HTTPStatusFromCode(codes.Code(statusCode))
 	}
-	respond(reqCtx, with(statusCode, body))
+	respond(reqCtx, withStream(statusCode, r))
 }
 
 func (a *api) onGetActorState(reqCtx *fasthttp.RequestCtx) {

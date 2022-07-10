@@ -15,6 +15,8 @@ syntax = "proto3";
 
 package dapr.proto.internals.v1;
 
+import "google/protobuf/any.proto";
+
 import "dapr/proto/common/v1/common.proto";
 import "dapr/proto/internals/v1/apiversion.proto";
 import "dapr/proto/internals/v1/status.proto";
@@ -37,6 +39,9 @@ service ServiceInvocation {
 
   // Invokes a method of the specific service.
   rpc CallLocal (InternalInvokeRequest) returns (InternalInvokeResponse) {}
+
+  // Invokes a method of the specific service using a stream of data.
+  rpc CallLocalStream (stream InternalInvokeRequestStream) returns (stream InternalInvokeResponseStream) {}
 }
 
 // Actor represents actor using actor_type and actor_id
@@ -46,6 +51,15 @@ message Actor {
 
   // Required. The ID of actor type (actor_type)
   string actor_id = 2;
+}
+
+// Chunk of data sent in a streaming request or response.
+message StreamPayload {
+  // Data sent in the chunk.
+  google.protobuf.Any data = 1;
+
+  // Set to true if this is the last chunk.
+  bool complete = 2;
 }
 
 // InternalInvokeRequest is the message to transfer caller's data to callee
@@ -80,6 +94,26 @@ message InternalInvokeResponse {
 
   // Callee's invocation response message.
   common.v1.InvokeResponse message = 4;
+}
+
+// InternalInvokeRequestStream is a variant of InternalInvokeRequest used in streaming RPCs.
+message InternalInvokeRequestStream {
+  // Request details.
+  // This does not contain any data in message.data.
+  InternalInvokeRequest request = 1;
+
+  // Chunk of data.
+  StreamPayload payload = 2;
+}
+
+// InternalInvokeResponseStream is a variant of InternalInvokeResponse used in streaming RPCs.
+message InternalInvokeResponseStream {
+  // Response details.
+  // This does not contain any data in message.data.
+  InternalInvokeResponse response = 1;
+
+  // Chunk of data.
+  StreamPayload payload = 2;
 }
 
 // ListStringValue represents string value array

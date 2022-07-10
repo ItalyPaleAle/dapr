@@ -14,10 +14,12 @@ limitations under the License.
 package actors
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"io"
 	nethttp "net/http"
 	"reflect"
 	"regexp"
@@ -270,7 +272,8 @@ func (a *actorsRuntime) deactivateActor(actorType, actorID string) error {
 
 	if resp.Status().Code != nethttp.StatusOK {
 		diag.DefaultMonitoring.ActorDeactivationFailed(actorType, fmt.Sprintf("status_code_%d", resp.Status().Code))
-		_, body := resp.RawData()
+		_, r := resp.RawData()
+		body, _ := io.ReadAll(r)
 		return errors.Errorf("error from actor service: %s", string(body))
 	}
 
@@ -493,8 +496,9 @@ func (a *actorsRuntime) callLocalActor(ctx context.Context, req *invokev1.Invoke
 		return nil, err
 	}
 
-	_, respData := resp.RawData()
 	if resp.Status().Code != nethttp.StatusOK {
+		_, r := resp.RawData()
+		respData, _ := io.ReadAll(r)
 		return nil, errors.Errorf("error from actor service: %s", string(respData))
 	}
 
@@ -971,7 +975,7 @@ func (a *actorsRuntime) executeReminder(reminder *Reminder) error {
 	log.Debugf("executing reminder %s for actor type %s with id %s", reminder.Name, reminder.ActorType, reminder.ActorID)
 	req := invokev1.NewInvokeMethodRequest(fmt.Sprintf("remind/%s", reminder.Name))
 	req.WithActor(reminder.ActorType, reminder.ActorID)
-	req.WithRawData(b, invokev1.JSONContentType)
+	req.WithRawData(io.NopCloser(bytes.NewReader(b)), invokev1.JSONContentType)
 
 	policy := a.resiliency.ActorPreLockPolicy(context.Background(), reminder.ActorType, reminder.ActorID)
 	return policy(func(ctx context.Context) error {
@@ -1328,7 +1332,7 @@ func (a *actorsRuntime) executeTimer(actorType, actorID, name, dueTime, period, 
 	log.Debugf("executing timer %s for actor type %s with id %s", name, actorType, actorID)
 	req := invokev1.NewInvokeMethodRequest(fmt.Sprintf("timer/%s", name))
 	req.WithActor(actorType, actorID)
-	req.WithRawData(b, invokev1.JSONContentType)
+	req.WithRawData(io.NopCloser(bytes.NewReader(b)), invokev1.JSONContentType)
 
 	policy := a.resiliency.ActorPreLockPolicy(context.Background(), actorType, actorID)
 	err = policy(func(ctx context.Context) error {

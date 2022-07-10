@@ -34,7 +34,7 @@ import (
 type Channel struct {
 	client             *grpc.ClientConn
 	baseAddress        string
-	ch                 chan int
+	ch                 chan struct{}
 	tracingSpec        config.TracingSpec
 	appMetadataToken   string
 	maxRequestBodySize int
@@ -52,7 +52,7 @@ func CreateLocalChannel(port, maxConcurrency int, conn *grpc.ClientConn, spec co
 		readBufferSize:     readBufferSize,
 	}
 	if maxConcurrency > 0 {
-		c.ch = make(chan int, maxConcurrency)
+		c.ch = make(chan struct{}, maxConcurrency)
 	}
 	return c
 }
@@ -88,7 +88,7 @@ func (g *Channel) InvokeMethod(ctx context.Context, req *invokev1.InvokeMethodRe
 // invokeMethodV1 calls user applications using daprclient v1.
 func (g *Channel) invokeMethodV1(ctx context.Context, req *invokev1.InvokeMethodRequest) (*invokev1.InvokeMethodResponse, error) {
 	if g.ch != nil {
-		g.ch <- 1
+		g.ch <- struct{}{}
 	}
 
 	clientV1 := runtimev1pb.NewAppCallbackClient(g.client)
@@ -103,9 +103,12 @@ func (g *Channel) invokeMethodV1(ctx context.Context, req *invokev1.InvokeMethod
 
 	var header, trailer metadata.MD
 
-	var opts []grpc.CallOption
-	opts = append(opts, grpc.Header(&header), grpc.Trailer(&trailer),
-		grpc.MaxCallSendMsgSize(g.maxRequestBodySize*1024*1024), grpc.MaxCallRecvMsgSize(g.maxRequestBodySize*1024*1024))
+	opts := []grpc.CallOption{
+		grpc.Header(&header),
+		grpc.Trailer(&trailer),
+		grpc.MaxCallSendMsgSize(g.maxRequestBodySize * 1024 * 1024),
+		grpc.MaxCallRecvMsgSize(g.maxRequestBodySize * 1024 * 1024),
+	}
 
 	resp, err := clientV1.OnInvoke(ctx, req.Message(), opts...)
 

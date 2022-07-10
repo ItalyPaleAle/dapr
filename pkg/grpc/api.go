@@ -14,10 +14,12 @@ limitations under the License.
 package grpc
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"sort"
 	"strconv"
 	"sync"
@@ -32,6 +34,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/dapr/components-contrib/bindings"
@@ -70,6 +73,7 @@ type API interface {
 	// DaprInternal Service methods
 	CallActor(ctx context.Context, in *internalv1pb.InternalInvokeRequest) (*internalv1pb.InternalInvokeResponse, error)
 	CallLocal(ctx context.Context, in *internalv1pb.InternalInvokeRequest) (*internalv1pb.InternalInvokeResponse, error)
+	CallLocalStream(stream internalv1pb.ServiceInvocation_CallLocalStreamServer) error
 
 	// Dapr Service methods
 	PublishEvent(ctx context.Context, in *runtimev1pb.PublishEventRequest) (*emptypb.Empty, error)
@@ -343,10 +347,149 @@ func (a *api) CallLocal(ctx context.Context, in *internalv1pb.InternalInvokeRequ
 
 	resp, err := a.appChannel.InvokeMethod(ctx, req)
 	if err != nil {
-		err = status.Errorf(codes.Internal, messages.ErrChannelInvoke, err)
-		return nil, err
+		return nil, status.Errorf(codes.Internal, messages.ErrChannelInvoke, err)
 	}
-	return resp.Proto(), err
+
+	// Response message
+	return resp.ProtoWithData()
+}
+
+// CallLocalStream is a variant of CallLocal that uses gRPC streams to send data in chunks, rather than in an unary RPC.
+// It is invoked by another Dapr instance with a request to the local app.
+func (a *api) CallLocalStream(stream internalv1pb.ServiceInvocation_CallLocalStreamServer) error {
+	if a.appChannel == nil {
+		return status.Error(codes.Internal, messages.ErrChannelNotFound)
+	}
+
+	ctx, cancel := context.WithCancel(stream.Context())
+	defer cancel()
+
+	// Read the first chunk of the incoming request
+	// This contains the metadata of the request
+	chunk := &internalv1pb.InternalInvokeRequestStream{}
+	err := stream.RecvMsg(chunk)
+	if err != nil {
+		return err
+	}
+	if chunk.Request == nil || chunk.Request.Metadata == nil || chunk.Request.Message == nil {
+		return errors.New("request does not contain the required fields in the leading chunk")
+	}
+	pr, pw := io.Pipe()
+	req, err := invokev1.InternalInvokeRequest(chunk.Request)
+	if err != nil {
+		return err
+	}
+	req.WithRawData(pr, "")
+	defer req.Close()
+
+	// Read the rest of the data in background as we submit the request
+	go func() {
+		var (
+			done    bool
+			readErr error
+		)
+		for {
+			if ctx.Err() != nil {
+				pw.CloseWithError(ctx.Err())
+				return
+			}
+
+			done, readErr = messaging.ReadChunk(chunk, pw)
+			if readErr != nil {
+				pw.CloseWithError(readErr)
+			}
+
+			if done {
+				break
+			}
+
+			readErr = stream.RecvMsg(chunk)
+			if err != nil {
+				pw.CloseWithError(readErr)
+			}
+
+			if chunk.Request != nil && (chunk.Request.Metadata != nil || chunk.Request.Message != nil) {
+				pw.CloseWithError(errors.New("request metadata found in non-leading chunk"))
+				return
+			}
+		}
+
+		pw.Close()
+	}()
+
+	// Submit the request to the app
+	if a.accessControlList != nil {
+		// An access control policy has been specified for the app. Apply the policies.
+		operation := req.Message().Method
+		var httpVerb commonv1pb.HTTPExtension_Verb
+		// Get the http verb in case the application protocol is http
+		if a.appProtocol == config.HTTPProtocol && req.Metadata() != nil && len(req.Metadata()) > 0 {
+			httpExt := req.Message().GetHttpExtension()
+			if httpExt != nil {
+				httpVerb = httpExt.GetVerb()
+			}
+		}
+		callAllowed, errMsg := acl.ApplyAccessControlPolicies(ctx, operation, httpVerb, a.appProtocol, a.accessControlList)
+
+		if !callAllowed {
+			return status.Errorf(codes.PermissionDenied, errMsg)
+		}
+	}
+
+	// Invoke the method on the app
+	res, err := a.appChannel.InvokeMethod(ctx, req)
+	if err != nil {
+		return status.Errorf(codes.Internal, messages.ErrChannelInvoke, err)
+	}
+	defer res.Close()
+
+	// Respond to the caller
+	_, r := res.RawData()
+	resProto := res.Proto()
+	resProto.Message.Data.Reset()
+	buf := make([]byte, 4096) // 4KB buffer
+	var (
+		proto *internalv1pb.InternalInvokeResponseStream
+		n     int
+	)
+	for {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		proto = &internalv1pb.InternalInvokeResponseStream{
+			Payload: &internalv1pb.StreamPayload{},
+		}
+
+		// First message only
+		if resProto != nil {
+			proto.Response = resProto
+			resProto = nil
+		}
+
+		n, err = r.Read(buf)
+		if err == io.EOF {
+			proto.Payload.Complete = true
+		} else if err != nil {
+			return err
+		}
+		if n > 0 {
+			proto.Payload.Data = &anypb.Any{
+				Value: buf[:n],
+			}
+		}
+		err = stream.Send(proto)
+		if err != nil {
+			return err
+		}
+
+		// Stop with the last chunk
+		if proto.Payload.Complete {
+			break
+		}
+	}
+
+	return nil
 }
 
 // CallActor invokes a virtual actor.
@@ -505,7 +648,8 @@ func (a *api) InvokeService(ctx context.Context, in *runtimev1pb.InvokeServiceRe
 		if resp.IsHTTPResponse() {
 			errorMessage := []byte("")
 			if resp != nil {
-				_, errorMessage = resp.RawData()
+				_, r := resp.RawData()
+				errorMessage, _ = io.ReadAll(r)
 			}
 			respError = invokev1.ErrorFromHTTPResponseCode(int(resp.Status().Code), string(errorMessage))
 			// Populate http status code to header
@@ -1417,9 +1561,10 @@ func (a *api) InvokeActor(ctx context.Context, in *runtimev1pb.InvokeActorReques
 		return &runtimev1pb.InvokeActorResponse{}, err
 	}
 
-	req := invokev1.NewInvokeMethodRequest(in.Method)
-	req.WithActor(in.ActorType, in.ActorId)
-	req.WithRawData(in.Data, "")
+	req := invokev1.
+		NewInvokeMethodRequest(in.Method).
+		WithActor(in.ActorType, in.ActorId).
+		WithRawData(io.NopCloser(bytes.NewReader(in.Data)), "")
 
 	// Unlike other actor calls, resiliency is handled here for invocation.
 	// This is due to actor invocation involving a lookup for the host.
@@ -1440,7 +1585,11 @@ func (a *api) InvokeActor(ctx context.Context, in *runtimev1pb.InvokeActorReques
 		return &runtimev1pb.InvokeActorResponse{}, err
 	}
 
-	_, body := resp.RawData()
+	_, r := resp.RawData()
+	body, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
 	return &runtimev1pb.InvokeActorResponse{
 		Data: body,
 	}, nil

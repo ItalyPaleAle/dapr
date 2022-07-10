@@ -14,10 +14,13 @@ limitations under the License.
 package v1
 
 import (
+	"bytes"
 	"errors"
+	"io"
 	"strings"
 
 	"github.com/valyala/fasthttp"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/dapr/dapr/pkg/config"
@@ -33,7 +36,8 @@ const (
 // InvokeMethodRequest holds InternalInvokeRequest protobuf message
 // and provides the helpers to manage it.
 type InvokeMethodRequest struct {
-	r *internalv1pb.InternalInvokeRequest
+	r    *internalv1pb.InternalInvokeRequest
+	data io.ReadCloser
 }
 
 // NewInvokeMethodRequest creates InvokeMethodRequest object for method.
@@ -50,12 +54,19 @@ func NewInvokeMethodRequest(method string) *InvokeMethodRequest {
 
 // FromInvokeRequestMessage creates InvokeMethodRequest object from InvokeRequest pb object.
 func FromInvokeRequestMessage(pb *commonv1pb.InvokeRequest) *InvokeMethodRequest {
-	return &InvokeMethodRequest{
+	req := &InvokeMethodRequest{
 		r: &internalv1pb.InternalInvokeRequest{
 			Ver:     DefaultAPIVersion,
 			Message: pb,
 		},
 	}
+
+	if pb != nil && pb.Data != nil && pb.Data.Value != nil {
+		req.data = io.NopCloser(bytes.NewReader(pb.Data.Value))
+		pb.Data.Reset()
+	}
+
+	return req
 }
 
 // InternalInvokeRequest creates InvokeMethodRequest object from InternalInvokeRequest pb object.
@@ -65,7 +76,25 @@ func InternalInvokeRequest(pb *internalv1pb.InternalInvokeRequest) (*InvokeMetho
 		return nil, errors.New("Message field is nil")
 	}
 
+	if pb.Message.Data != nil && pb.Message.Data.Value != nil {
+		req.data = io.NopCloser(bytes.NewReader(pb.Message.Data.Value))
+		pb.Message.Data.Reset()
+	}
+
 	return req, nil
+}
+
+// Close the data stream.
+func (imr *InvokeMethodRequest) Close() (err error) {
+	if imr.data == nil {
+		return nil
+	}
+	err = imr.data.Close()
+	if err != nil {
+		return err
+	}
+	imr.data = nil
+	return nil
 }
 
 // WithActor sets actor type and id.
@@ -91,13 +120,13 @@ func (imr *InvokeMethodRequest) WithFastHTTPHeaders(header *fasthttp.RequestHead
 }
 
 // WithRawData sets message data and content_type.
-func (imr *InvokeMethodRequest) WithRawData(data []byte, contentType string) *InvokeMethodRequest {
+func (imr *InvokeMethodRequest) WithRawData(data io.ReadCloser, contentType string) *InvokeMethodRequest {
 	// TODO: Remove the entire block once feature is finalized
 	if contentType == "" && !config.GetNoDefaultContentType() {
 		contentType = JSONContentType
 	}
 	imr.r.Message.ContentType = contentType
-	imr.r.Message.Data = &anypb.Any{Value: data}
+	imr.data = data
 	return imr
 }
 
@@ -156,6 +185,25 @@ func (imr *InvokeMethodRequest) Proto() *internalv1pb.InternalInvokeRequest {
 	return imr.r
 }
 
+// ProtoWithData returns a copy of the internal InvokeMethodRequest Proto object with the entire data stream read into the Data property.
+func (imr *InvokeMethodRequest) ProtoWithData() (*internalv1pb.InternalInvokeRequest, error) {
+	var (
+		data []byte
+		err  error
+	)
+	if imr.data != nil {
+		data, err = io.ReadAll(imr.data)
+		if err != nil {
+			return nil, err
+		}
+	}
+	m := proto.Clone(imr.r).(*internalv1pb.InternalInvokeRequest)
+	m.Message.Data = &anypb.Any{
+		Value: data,
+	}
+	return m, nil
+}
+
 // Actor returns actor type and id.
 func (imr *InvokeMethodRequest) Actor() *internalv1pb.Actor {
 	return imr.r.GetActor()
@@ -166,26 +214,41 @@ func (imr *InvokeMethodRequest) Message() *commonv1pb.InvokeRequest {
 	return imr.r.Message
 }
 
-// RawData returns content_type and byte array body.
-func (imr *InvokeMethodRequest) RawData() (string, []byte) {
+// HasMessageData returns true if the message object contains a slice of data
+func (imr *InvokeMethodRequest) HasMessageData() bool {
 	m := imr.r.Message
-	if m == nil || m.Data == nil {
+	return m != nil && m.Data != nil && len(m.Data.Value) > 0
+}
+
+// RawData returns content_type and stream body.
+func (imr *InvokeMethodRequest) RawData() (string, io.Reader) {
+	m := imr.r.Message
+	if m == nil {
 		return "", nil
 	}
 
 	contentType := m.GetContentType()
-	dataValue := m.GetData().GetValue()
+
+	// If the message has a data property, use that
+	r := imr.data
+	if imr.HasMessageData() {
+		r = io.NopCloser(bytes.NewReader(m.Data.Value))
+	}
 
 	// TODO: Remove once feature is finalized
 	if !config.GetNoDefaultContentType() {
 		dataTypeURL := m.GetData().GetTypeUrl()
 		// set content_type to application/json only if typeurl is unset and data is given
-		if contentType == "" && (dataTypeURL == "" && dataValue != nil) {
+		if contentType == "" && (dataTypeURL == "" && r != nil) {
 			contentType = JSONContentType
 		}
 	}
 
-	return contentType, dataValue
+	if r == nil {
+		r = io.NopCloser(bytes.NewReader(nil))
+	}
+
+	return contentType, r
 }
 
 // Adds a new header to the existing set.

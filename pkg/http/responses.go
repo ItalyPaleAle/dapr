@@ -15,6 +15,7 @@ package http
 
 import (
 	"encoding/json"
+	"io"
 
 	"github.com/valyala/fasthttp"
 )
@@ -97,6 +98,18 @@ func with(code int, obj []byte) option {
 	return func(ctx *fasthttp.RequestCtx) {
 		ctx.Response.SetStatusCode(code)
 		ctx.Response.SetBody(obj)
+
+		if len(ctx.Response.Header.ContentType()) == 0 {
+			ctx.Response.Header.SetContentType(jsonContentTypeHeader)
+		}
+	}
+}
+
+// withStream is like "with" but accepts a stream
+func withStream(code int, r io.Reader) option {
+	return func(ctx *fasthttp.RequestCtx) {
+		ctx.Response.SetStatusCode(code)
+		ctx.SetBodyStream(r, -1)
 
 		if len(ctx.Response.Header.ContentType()) == 0 {
 			ctx.Response.Header.SetContentType(jsonContentTypeHeader)

@@ -18,13 +18,14 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"time"
 
+	"net/http"
 	nethttp "net/http"
 
-	"github.com/valyala/fasthttp"
 	"go.opencensus.io/plugin/ochttp/propagation/tracecontext"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -50,9 +51,9 @@ const (
 
 // Channel is an HTTP implementation of an AppChannel.
 type Channel struct {
-	client              *fasthttp.Client
+	client              *http.Client
 	baseAddress         string
-	ch                  chan int
+	ch                  chan struct{}
 	tracingSpec         config.TracingSpec
 	appHeaderToken      string
 	maxResponseBodySize int
@@ -67,12 +68,12 @@ func CreateLocalChannel(port, maxConcurrency int, spec config.TracingSpec, sslEn
 	}
 
 	c := &Channel{
-		client: &fasthttp.Client{
-			MaxConnsPerHost:           1000000,
-			MaxIdemponentCallAttempts: 0,
-			MaxResponseBodySize:       maxRequestBodySize * 1024 * 1024,
-			ReadBufferSize:            readBufferSize * 1024,
-			DisablePathNormalizing:    true,
+		// We cannot use fasthttp here because of lack of streaming support
+		client: &http.Client{
+			Transport: &http.Transport{
+				ReadBufferSize:         readBufferSize * 1024,
+				MaxResponseHeaderBytes: int64(readBufferSize) * 1024,
+			},
 		},
 		baseAddress:         fmt.Sprintf("%s://%s:%d", scheme, channel.DefaultChannelAddress, port),
 		tracingSpec:         spec,
@@ -81,11 +82,13 @@ func CreateLocalChannel(port, maxConcurrency int, spec config.TracingSpec, sslEn
 	}
 
 	if sslEnabled {
-		c.client.TLSConfig = &tls.Config{InsecureSkipVerify: true}
+		(c.client.Transport.(*http.Transport)).TLSClientConfig = &tls.Config{
+			InsecureSkipVerify: true,
+		}
 	}
 
 	if maxConcurrency > 0 {
-		c.ch = make(chan int, maxConcurrency)
+		c.ch = make(chan struct{}, maxConcurrency)
 	}
 
 	return c, nil
@@ -129,8 +132,8 @@ func (h *Channel) GetAppConfig() (*config.ApplicationConfig, error) {
 	case "v1":
 		fallthrough
 	default:
-		_, body := resp.RawData()
-		if err = json.Unmarshal(body, &config); err != nil {
+		_, r := resp.RawData()
+		if err = json.NewDecoder(r).Decode(&config); err != nil {
 			return nil, err
 		}
 	}
@@ -164,61 +167,61 @@ func (h *Channel) InvokeMethod(ctx context.Context, req *invokev1.InvokeMethodRe
 }
 
 func (h *Channel) invokeMethodV1(ctx context.Context, req *invokev1.InvokeMethodRequest) (*invokev1.InvokeMethodResponse, error) {
-	channelReq := h.constructRequest(ctx, req)
+	channelReq, err := h.constructRequest(ctx, req)
 
 	if h.ch != nil {
-		h.ch <- 1
+		h.ch <- struct{}{}
 	}
+	defer func() {
+		if h.ch != nil {
+			<-h.ch
+		}
+	}()
 
 	// Emit metric when request is sent
-	verb := string(channelReq.Header.Method())
-	diag.DefaultHTTPMonitoring.ClientRequestStarted(ctx, verb, req.Message().Method, int64(len(req.Message().Data.GetValue())))
+	diag.DefaultHTTPMonitoring.ClientRequestStarted(ctx, channelReq.Method, req.Message().Method, int64(len(req.Message().Data.GetValue())))
 	startRequest := time.Now()
 
 	// Send request to user application
-	resp := fasthttp.AcquireResponse()
-
-	err := h.client.Do(channelReq, resp)
-	defer func() {
-		fasthttp.ReleaseRequest(channelReq)
-		fasthttp.ReleaseResponse(resp)
-	}()
+	resp, err := h.client.Do(channelReq)
 
 	elapsedMs := float64(time.Since(startRequest) / time.Millisecond)
 
+	contentLength, _ := strconv.Atoi(resp.Header.Get("content-length"))
 	if err != nil {
-		diag.DefaultHTTPMonitoring.ClientRequestCompleted(ctx, verb, req.Message().GetMethod(), strconv.Itoa(nethttp.StatusInternalServerError), int64(resp.Header.ContentLength()), elapsedMs)
+		diag.DefaultHTTPMonitoring.ClientRequestCompleted(ctx, channelReq.Method, req.Message().GetMethod(), strconv.Itoa(nethttp.StatusInternalServerError), int64(contentLength), elapsedMs)
 		return nil, err
 	}
 
-	if h.ch != nil {
-		<-h.ch
-	}
-
 	rsp := h.parseChannelResponse(req, resp)
-	diag.DefaultHTTPMonitoring.ClientRequestCompleted(ctx, verb, req.Message().GetMethod(), strconv.Itoa(int(rsp.Status().Code)), int64(resp.Header.ContentLength()), elapsedMs)
+	diag.DefaultHTTPMonitoring.ClientRequestCompleted(ctx, channelReq.Method, req.Message().GetMethod(), strconv.Itoa(int(rsp.Status().Code)), int64(contentLength), elapsedMs)
 
 	return rsp, nil
 }
 
-func (h *Channel) constructRequest(ctx context.Context, req *invokev1.InvokeMethodRequest) *fasthttp.Request {
-	channelReq := fasthttp.AcquireRequest()
-
+func (h *Channel) constructRequest(ctx context.Context, req *invokev1.InvokeMethodRequest) (*http.Request, error) {
 	// Construct app channel URI: VERB http://localhost:3000/method?query1=value1
 	var uri string
-	method := req.Message().GetMethod()
+	method := req.Message().HttpExtension.Verb.String()
 	if strings.HasPrefix(method, "/") {
 		uri = fmt.Sprintf("%s%s", h.baseAddress, method)
 	} else {
 		uri = fmt.Sprintf("%s/%s", h.baseAddress, method)
 	}
-	channelReq.URI().Update(uri)
-	channelReq.URI().DisablePathNormalizing = true
-	channelReq.URI().SetQueryString(req.EncodeHTTPQueryString())
-	channelReq.Header.SetMethod(req.Message().HttpExtension.Verb.String())
+	qs := req.EncodeHTTPQueryString()
+	if qs != "" {
+		uri += "?" + qs
+	}
+
+	contentType, body := req.RawData()
+	channelReq, err := http.NewRequestWithContext(ctx, method, uri, body)
+	if err != nil {
+		return nil, err
+	}
 
 	// Recover headers
 	invokev1.InternalMetadataToHTTPHeader(ctx, req.Metadata(), channelReq.Header.Set)
+	channelReq.Header.Set("content-type", contentType)
 
 	// HTTP client needs to inject traceparent header for proper tracing stack.
 	span := diag_utils.SpanFromContext(ctx)
@@ -233,31 +236,60 @@ func (h *Channel) constructRequest(ctx context.Context, req *invokev1.InvokeMeth
 		channelReq.Header.Set(auth.APITokenHeader, h.appHeaderToken)
 	}
 
-	// Set Content body and types
-	contentType, body := req.RawData()
-	channelReq.Header.SetContentType(contentType)
-	channelReq.SetBody(body)
-
-	return channelReq
+	return channelReq, nil
 }
 
-func (h *Channel) parseChannelResponse(req *invokev1.InvokeMethodRequest, resp *fasthttp.Response) *invokev1.InvokeMethodResponse {
-	var statusCode int
+func (h *Channel) parseChannelResponse(req *invokev1.InvokeMethodRequest, resp *http.Response) *invokev1.InvokeMethodResponse {
 	var contentType string
-	var body []byte
 
-	statusCode = resp.StatusCode()
-
+	contentType = resp.Header.Get("content-type")
 	// TODO: Remove entire block when feature is finalized
-	if config.GetNoDefaultContentType() {
-		resp.Header.SetNoDefaultContentType(true)
+	if contentType == "" && !config.GetNoDefaultContentType() {
+		contentType = "text/plain; charset=utf-8"
 	}
-	contentType = (string)(resp.Header.ContentType())
-	body = resp.Body()
+
+	var body io.ReadCloser = resp.Body
+	// We are not limiting the response body because we use streams
+	/*// Limit response body if needed
+	if h.maxResponseBodySize > 0 {
+		body = LimitReadCloser(body, int64(h.maxResponseBodySize)*1024*1024)
+	}*/
 
 	// Convert status code
-	rsp := invokev1.NewInvokeMethodResponse(int32(statusCode), "", nil)
-	rsp.WithFastHTTPHeaders(&resp.Header).WithRawData(body, contentType)
+	rsp := invokev1.
+		NewInvokeMethodResponse(int32(resp.StatusCode), "", nil).
+		WithHTTPHeaders(resp.Header).
+		WithRawData(body, contentType)
 
 	return rsp
+}
+
+/*!
+Adapted from the Go 1.18.3 source code
+Copyright 2009 The Go Authors. All rights reserved.
+License: BSD (https://github.com/golang/go/blob/go1.18.3/LICENSE)
+*/
+
+// LimitReadCloser returns a ReadCloser that reads from r but stops with EOF after n bytes.
+func LimitReadCloser(r io.ReadCloser, n int64) io.ReadCloser { return &limitReadCloser{r, n} }
+
+type limitReadCloser struct {
+	R io.ReadCloser
+	N int64
+}
+
+func (l *limitReadCloser) Read(p []byte) (n int, err error) {
+	if l.N <= 0 {
+		return 0, io.EOF
+	}
+	if int64(len(p)) > l.N {
+		p = p[0:l.N]
+	}
+	n, err = l.R.Read(p)
+	l.N -= int64(n)
+	return
+}
+
+func (l *limitReadCloser) Close() error {
+	return l.R.Close()
 }

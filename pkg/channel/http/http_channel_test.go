@@ -23,7 +23,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/valyala/fasthttp"
 
 	"github.com/dapr/dapr/pkg/config"
 	invokev1 "github.com/dapr/dapr/pkg/messaging/v1"
@@ -88,42 +87,50 @@ func TestInvokeMethod(t *testing.T) {
 	t.Run("query string", func(t *testing.T) {
 		c := Channel{
 			baseAddress: server.URL,
-			client:      &fasthttp.Client{},
+			client:      &http.Client{},
 			tracingSpec: config.TracingSpec{
 				SamplingRate: "0",
 			},
 		}
 		th.serverURL = server.URL[len("http://"):]
 		fakeReq := invokev1.NewInvokeMethodRequest("method")
+		defer fakeReq.Close()
 		fakeReq.WithHTTPExtension(http.MethodPost, "param1=val1&param2=val2")
 
 		// act
 		response, err := c.InvokeMethod(ctx, fakeReq)
+		defer response.Close()
 
 		// assert
 		assert.NoError(t, err)
-		_, body := response.RawData()
+		_, r := response.RawData()
+		body, err := io.ReadAll(r)
+		assert.NoError(t, err)
 		assert.Equal(t, "param1=val1&param2=val2", string(body))
 	})
 
 	t.Run("tracing is enabled", func(t *testing.T) {
 		c := Channel{
 			baseAddress: server.URL,
-			client:      &fasthttp.Client{},
+			client:      &http.Client{},
 			tracingSpec: config.TracingSpec{
 				SamplingRate: "1",
 			},
 		}
 		th.serverURL = server.URL[len("http://"):]
 		fakeReq := invokev1.NewInvokeMethodRequest("method")
+		defer fakeReq.Close()
 		fakeReq.WithHTTPExtension(http.MethodPost, "")
 
 		// act
 		response, err := c.InvokeMethod(ctx, fakeReq)
+		defer response.Close()
 
 		// assert
 		assert.NoError(t, err)
-		_, body := response.RawData()
+		_, r := response.RawData()
+		body, err := io.ReadAll(r)
+		assert.NoError(t, err)
 		assert.Equal(t, "", string(body))
 	})
 
@@ -138,8 +145,8 @@ func TestInvokeMethodMaxConcurrency(t *testing.T) {
 			lock:     sync.Mutex{},
 		}
 		server := httptest.NewServer(&handler)
-		c := Channel{baseAddress: server.URL, client: &fasthttp.Client{}}
-		c.ch = make(chan int, 1)
+		c := Channel{baseAddress: server.URL, client: &http.Client{}}
+		c.ch = make(chan struct{}, 1)
 
 		// act
 		var wg sync.WaitGroup
@@ -148,8 +155,11 @@ func TestInvokeMethodMaxConcurrency(t *testing.T) {
 			go func() {
 				request2 := invokev1.NewInvokeMethodRequest("method")
 				request2.WithRawData(nil, "")
+				defer request2.Close()
 
-				c.InvokeMethod(ctx, request2)
+				res, err := c.InvokeMethod(ctx, request2)
+				assert.NoError(t, err)
+				defer res.Close()
 				wg.Done()
 			}()
 		}
@@ -166,8 +176,8 @@ func TestInvokeMethodMaxConcurrency(t *testing.T) {
 			lock:     sync.Mutex{},
 		}
 		server := httptest.NewServer(&handler)
-		c := Channel{baseAddress: server.URL, client: &fasthttp.Client{}}
-		c.ch = make(chan int, 1)
+		c := Channel{baseAddress: server.URL, client: &http.Client{}}
+		c.ch = make(chan struct{}, 1)
 
 		// act
 		var wg sync.WaitGroup
@@ -176,7 +186,10 @@ func TestInvokeMethodMaxConcurrency(t *testing.T) {
 			go func() {
 				request2 := invokev1.NewInvokeMethodRequest("method")
 				request2.WithRawData(nil, "")
-				c.InvokeMethod(ctx, request2)
+				defer request2.Close()
+				res, err := c.InvokeMethod(ctx, request2)
+				assert.NoError(t, err)
+				defer res.Close()
 				wg.Done()
 			}()
 		}
@@ -191,9 +204,10 @@ func TestInvokeMethodMaxConcurrency(t *testing.T) {
 func TestInvokeWithHeaders(t *testing.T) {
 	ctx := context.Background()
 	testServer := httptest.NewServer(&testHandlerHeaders{})
-	c := Channel{baseAddress: testServer.URL, client: &fasthttp.Client{}}
+	c := Channel{baseAddress: testServer.URL, client: &http.Client{}}
 
 	req := invokev1.NewInvokeMethodRequest("method")
+	defer req.Close()
 	md := map[string][]string{
 		"H1": {"v1"},
 		"H2": {"v2"},
@@ -203,15 +217,16 @@ func TestInvokeWithHeaders(t *testing.T) {
 
 	// act
 	response, err := c.InvokeMethod(ctx, req)
+	defer response.Close()
 
 	// assert
 	assert.NoError(t, err)
 	_, body := response.RawData()
 
 	actual := map[string]string{}
-	json.Unmarshal(body, &actual)
-
+	err = json.NewDecoder(body).Decode(&actual)
 	assert.NoError(t, err)
+
 	assert.Contains(t, "v1", actual["H1"])
 	assert.Contains(t, "v2", actual["H2"])
 	testServer.Close()
@@ -223,17 +238,21 @@ func TestContentType(t *testing.T) {
 	t.Run("default application/json", func(t *testing.T) {
 		handler := &testContentTypeHandler{}
 		testServer := httptest.NewServer(handler)
-		c := Channel{baseAddress: testServer.URL, client: &fasthttp.Client{}}
+		c := Channel{baseAddress: testServer.URL, client: &http.Client{}}
 		req := invokev1.NewInvokeMethodRequest("method")
+		defer req.Close()
 		req.WithRawData(nil, "")
 		req.WithHTTPExtension(http.MethodPost, "")
 
 		// act
 		resp, err := c.InvokeMethod(ctx, req)
+		defer resp.Close()
 
 		// assert
 		assert.NoError(t, err)
-		contentType, body := resp.RawData()
+		contentType, r := resp.RawData()
+		body, err := io.ReadAll(r)
+		assert.NoError(t, err)
 		assert.Equal(t, "text/plain; charset=utf-8", contentType)
 		assert.Equal(t, "application/json", string(body))
 		testServer.Close()
@@ -248,18 +267,22 @@ func TestContentType(t *testing.T) {
 		testServer := httptest.NewServer(handler)
 		c := Channel{
 			baseAddress: testServer.URL,
-			client:      &fasthttp.Client{},
+			client:      &http.Client{},
 		}
 		req := invokev1.NewInvokeMethodRequest("method")
+		defer req.Close()
 		req.WithRawData(nil, "")
 		req.WithHTTPExtension(http.MethodGet, "")
 
 		// act
 		resp, err := c.InvokeMethod(ctx, req)
+		defer resp.Close()
 
 		// assert
 		assert.NoError(t, err)
-		contentType, body := resp.RawData()
+		contentType, r := resp.RawData()
+		body, err := io.ReadAll(r)
+		assert.NoError(t, err)
 		assert.Equal(t, "", contentType)
 		assert.Equal(t, []byte{}, body)
 		testServer.Close()
@@ -268,17 +291,21 @@ func TestContentType(t *testing.T) {
 	t.Run("application/json", func(t *testing.T) {
 		handler := &testContentTypeHandler{}
 		testServer := httptest.NewServer(handler)
-		c := Channel{baseAddress: testServer.URL, client: &fasthttp.Client{}}
+		c := Channel{baseAddress: testServer.URL, client: &http.Client{}}
 		req := invokev1.NewInvokeMethodRequest("method")
+		defer req.Close()
 		req.WithRawData(nil, "application/json")
 		req.WithHTTPExtension(http.MethodPost, "")
 
 		// act
 		resp, err := c.InvokeMethod(ctx, req)
+		defer resp.Close()
 
 		// assert
 		assert.NoError(t, err)
-		contentType, body := resp.RawData()
+		contentType, r := resp.RawData()
+		body, err := io.ReadAll(r)
+		assert.NoError(t, err)
 		assert.Equal(t, "text/plain; charset=utf-8", contentType)
 		assert.Equal(t, []byte("application/json"), body)
 		testServer.Close()
@@ -287,17 +314,21 @@ func TestContentType(t *testing.T) {
 	t.Run("text/plain", func(t *testing.T) {
 		handler := &testContentTypeHandler{}
 		testServer := httptest.NewServer(handler)
-		c := Channel{baseAddress: testServer.URL, client: &fasthttp.Client{}}
+		c := Channel{baseAddress: testServer.URL, client: &http.Client{}}
 		req := invokev1.NewInvokeMethodRequest("method")
+		defer req.Close()
 		req.WithRawData(nil, "text/plain")
 		req.WithHTTPExtension(http.MethodPost, "")
 
 		// act
 		resp, err := c.InvokeMethod(ctx, req)
+		defer resp.Close()
 
 		// assert
 		assert.NoError(t, err)
-		contentType, body := resp.RawData()
+		contentType, r := resp.RawData()
+		body, err := io.ReadAll(r)
+		assert.NoError(t, err)
 		assert.Equal(t, "text/plain; charset=utf-8", contentType)
 		assert.Equal(t, []byte("text/plain"), body)
 		testServer.Close()
@@ -308,23 +339,25 @@ func TestAppToken(t *testing.T) {
 	t.Run("token present", func(t *testing.T) {
 		ctx := context.Background()
 		testServer := httptest.NewServer(&testHandlerHeaders{})
-		c := Channel{baseAddress: testServer.URL, client: &fasthttp.Client{}, appHeaderToken: "token1"}
+		c := Channel{baseAddress: testServer.URL, client: &http.Client{}, appHeaderToken: "token1"}
 
 		req := invokev1.NewInvokeMethodRequest("method")
+		defer req.Close()
 		req.WithHTTPExtension(http.MethodPost, "")
 
 		// act
 		response, err := c.InvokeMethod(ctx, req)
+		defer response.Close()
 
 		// assert
 		assert.NoError(t, err)
 		_, body := response.RawData()
 
 		actual := map[string]string{}
-		json.Unmarshal(body, &actual)
+		err = json.NewDecoder(body).Decode(&actual)
+		assert.NoError(t, err)
 
 		_, hasToken := actual["Dapr-Api-Token"]
-		assert.NoError(t, err)
 		assert.True(t, hasToken)
 		testServer.Close()
 	})
@@ -332,23 +365,25 @@ func TestAppToken(t *testing.T) {
 	t.Run("token not present", func(t *testing.T) {
 		ctx := context.Background()
 		testServer := httptest.NewServer(&testHandlerHeaders{})
-		c := Channel{baseAddress: testServer.URL, client: &fasthttp.Client{}}
+		c := Channel{baseAddress: testServer.URL, client: &http.Client{}}
 
 		req := invokev1.NewInvokeMethodRequest("method")
+		defer req.Close()
 		req.WithHTTPExtension(http.MethodPost, "")
 
 		// act
 		response, err := c.InvokeMethod(ctx, req)
+		defer response.Close()
 
 		// assert
 		assert.NoError(t, err)
 		_, body := response.RawData()
 
 		actual := map[string]string{}
-		json.Unmarshal(body, &actual)
+		err = json.NewDecoder(body).Decode(&actual)
+		assert.NoError(t, err)
 
 		_, hasToken := actual["Dapr-Api-Token"]
-		assert.NoError(t, err)
 		assert.False(t, hasToken)
 		testServer.Close()
 	})

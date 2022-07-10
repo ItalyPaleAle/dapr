@@ -14,7 +14,9 @@ limitations under the License.
 package v1
 
 import (
+	"io"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -28,17 +30,18 @@ import (
 )
 
 func TestInvocationResponse(t *testing.T) {
-	req := NewInvokeMethodResponse(0, "OK", nil)
+	resp := NewInvokeMethodResponse(0, "OK", nil)
+	defer resp.Close()
 
-	assert.Equal(t, int32(0), req.r.GetStatus().Code)
-	assert.Equal(t, "OK", req.r.GetStatus().Message)
-	assert.NotNil(t, req.r.Message)
+	assert.Equal(t, int32(0), resp.r.GetStatus().Code)
+	assert.Equal(t, "OK", resp.r.GetStatus().Message)
+	assert.NotNil(t, resp.r.Message)
 }
 
 func TestInternalInvocationResponse(t *testing.T) {
-	t.Run("valid internal invoke response", func(t *testing.T) {
+	t.Run("valid internal invoke response with no data", func(t *testing.T) {
 		m := &commonv1pb.InvokeResponse{
-			Data:        &anypb.Any{Value: []byte("response")},
+			Data:        nil,
 			ContentType: "application/json",
 		}
 		pb := internalv1pb.InternalInvokeResponse{
@@ -48,8 +51,39 @@ func TestInternalInvocationResponse(t *testing.T) {
 
 		ir, err := InternalInvokeResponse(&pb)
 		assert.NoError(t, err)
+		defer ir.Close()
 		assert.NotNil(t, ir.r.Message)
 		assert.Equal(t, int32(0), ir.r.GetStatus().GetCode())
+		assert.Nil(t, ir.r.Message.GetData())
+
+		_, r := ir.RawData()
+		bData, err := io.ReadAll(r)
+		assert.NoError(t, err)
+		assert.Len(t, bData, 0)
+	})
+
+	t.Run("valid internal invoke response with data", func(t *testing.T) {
+		m := &commonv1pb.InvokeResponse{
+			Data:        &anypb.Any{Value: []byte("test")},
+			ContentType: "application/json",
+		}
+		pb := internalv1pb.InternalInvokeResponse{
+			Status:  &internalv1pb.Status{Code: 0},
+			Message: m,
+		}
+
+		ir, err := InternalInvokeResponse(&pb)
+		assert.NoError(t, err)
+		defer ir.Close()
+		assert.NotNil(t, ir.r.Message)
+		assert.Equal(t, int32(0), ir.r.GetStatus().GetCode())
+		assert.NotNil(t, ir.r.Message.GetData())
+		assert.Len(t, ir.r.Message.GetData().Value, 0)
+
+		_, r := ir.RawData()
+		bData, err := io.ReadAll(r)
+		assert.NoError(t, err)
+		assert.Equal(t, "test", string(bData))
 	})
 
 	t.Run("Message is nil", func(t *testing.T) {
@@ -60,36 +94,46 @@ func TestInternalInvocationResponse(t *testing.T) {
 
 		ir, err := InternalInvokeResponse(&pb)
 		assert.NoError(t, err)
+		defer ir.Close()
 		assert.NotNil(t, ir.r.Message)
-		assert.Equal(t, []byte{}, ir.r.Message.Data.Value)
+		assert.Nil(t, ir.r.Message.GetData())
 	})
 }
 
 func TestResponseData(t *testing.T) {
 	t.Run("contenttype is set", func(t *testing.T) {
 		resp := NewInvokeMethodResponse(0, "OK", nil)
-		resp.WithRawData([]byte("test"), "application/json")
-		_, bData := resp.RawData()
+		defer resp.Close()
+		resp.WithRawData(io.NopCloser(strings.NewReader("test")), "application/json")
+		_, r := resp.RawData()
+		bData, err := io.ReadAll(r)
+		assert.NoError(t, err)
 		contentType := resp.r.Message.ContentType
 		assert.Equal(t, "application/json", contentType)
-		assert.Equal(t, []byte("test"), bData)
+		assert.Equal(t, "test", string(bData))
 	})
 
 	t.Run("contenttype is unset", func(t *testing.T) {
 		resp := NewInvokeMethodResponse(0, "OK", nil)
+		defer resp.Close()
 
-		resp.WithRawData([]byte("test"), "")
-		contentType, bData := resp.RawData()
+		resp.WithRawData(io.NopCloser(strings.NewReader("test")), "")
+		contentType, r := resp.RawData()
+		bData, err := io.ReadAll(r)
+		assert.NoError(t, err)
 		assert.Equal(t, "application/json", resp.r.Message.ContentType)
 		assert.Equal(t, "application/json", contentType)
-		assert.Equal(t, []byte("test"), bData)
+		assert.Equal(t, "test", string(bData))
 
 		// Force the ContentType to be empty to test setting it in RawData
+		resp.WithRawData(io.NopCloser(strings.NewReader("test")), "")
 		resp.r.Message.ContentType = ""
-		contentType, bData = resp.RawData()
+		contentType, r = resp.RawData()
+		bData, err = io.ReadAll(r)
+		assert.NoError(t, err)
 		assert.Equal(t, "", resp.r.Message.ContentType)
 		assert.Equal(t, "application/json", contentType)
-		assert.Equal(t, []byte("test"), bData)
+		assert.Equal(t, "test", string(bData))
 	})
 
 	// TODO: Remove once feature is finalized
@@ -98,19 +142,25 @@ func TestResponseData(t *testing.T) {
 		defer config.SetNoDefaultContentType(false)
 
 		resp := NewInvokeMethodResponse(0, "OK", nil)
+		defer resp.Close()
 
-		resp.WithRawData([]byte("test"), "")
-		contentType, bData := resp.RawData()
+		resp.WithRawData(io.NopCloser(strings.NewReader("test")), "")
+		contentType, r := resp.RawData()
+		bData, err := io.ReadAll(r)
+		assert.NoError(t, err)
 		assert.Equal(t, "", resp.r.Message.ContentType)
 		assert.Equal(t, "", contentType)
-		assert.Equal(t, []byte("test"), bData)
+		assert.Equal(t, "test", string(bData))
 
 		// Force the ContentType to be empty to test setting it in RawData
+		resp.WithRawData(io.NopCloser(strings.NewReader("test")), "")
 		resp.r.Message.ContentType = ""
-		contentType, bData = resp.RawData()
+		contentType, r = resp.RawData()
+		bData, err = io.ReadAll(r)
+		assert.NoError(t, err)
 		assert.Equal(t, "", resp.r.Message.ContentType)
 		assert.Equal(t, "", contentType)
-		assert.Equal(t, []byte("test"), bData)
+		assert.Equal(t, "test", string(bData))
 	})
 
 	t.Run("typeurl is set but content_type is unset", func(t *testing.T) {
@@ -119,16 +169,112 @@ func TestResponseData(t *testing.T) {
 		assert.NoError(t, err)
 
 		resp := NewInvokeMethodResponse(0, "OK", nil)
+		defer resp.Close()
 		resp.r.Message.Data = b
-		contentType, bData := resp.RawData()
+		contentType, r := resp.RawData()
+		bData, err := io.ReadAll(r)
+		assert.NoError(t, err)
 		assert.Equal(t, ProtobufContentType, contentType)
 		assert.Equal(t, b.Value, bData)
+	})
+}
+
+func TestResponseProto(t *testing.T) {
+	t.Run("byte slice", func(t *testing.T) {
+		m := &commonv1pb.InvokeResponse{
+			Data:        &anypb.Any{Value: []byte("test")},
+			ContentType: "application/json",
+		}
+		pb := internalv1pb.InternalInvokeResponse{
+			Status:  &internalv1pb.Status{Code: 0},
+			Message: m,
+		}
+
+		ir, err := InternalInvokeResponse(&pb)
+		defer ir.Close()
+		assert.NoError(t, err)
+		req2 := ir.Proto()
+
+		assert.Equal(t, "application/json", req2.GetMessage().ContentType)
+		assert.Len(t, req2.GetMessage().Data.Value, 0)
+
+		_, r := ir.RawData()
+		bData, err := io.ReadAll(r)
+		assert.NoError(t, err)
+		assert.Equal(t, []byte("test"), bData)
+	})
+
+	t.Run("stream", func(t *testing.T) {
+		m := &commonv1pb.InvokeResponse{
+			ContentType: "application/json",
+		}
+		pb := internalv1pb.InternalInvokeResponse{
+			Status:  &internalv1pb.Status{Code: 0},
+			Message: m,
+		}
+
+		ir, err := InternalInvokeResponse(&pb)
+		defer ir.Close()
+		assert.NoError(t, err)
+		ir.data = io.NopCloser(strings.NewReader("test"))
+		req2 := ir.Proto()
+
+		assert.Equal(t, "application/json", req2.GetMessage().ContentType)
+		assert.Nil(t, req2.GetMessage().Data)
+
+		_, r := ir.RawData()
+		bData, err := io.ReadAll(r)
+		assert.NoError(t, err)
+		assert.Equal(t, []byte("test"), bData)
+	})
+}
+
+func TestResponseProtoWithData(t *testing.T) {
+	t.Run("byte slice", func(t *testing.T) {
+		m := &commonv1pb.InvokeResponse{
+			Data:        &anypb.Any{Value: []byte("test")},
+			ContentType: "application/json",
+		}
+		pb := internalv1pb.InternalInvokeResponse{
+			Status:  &internalv1pb.Status{Code: 0},
+			Message: m,
+		}
+
+		ir, err := InternalInvokeResponse(&pb)
+		defer ir.Close()
+		assert.NoError(t, err)
+		req2, err := ir.ProtoWithData()
+		assert.NoError(t, err)
+
+		assert.Equal(t, "application/json", req2.GetMessage().ContentType)
+		assert.Equal(t, []byte("test"), req2.GetMessage().Data.Value)
+	})
+
+	t.Run("stream", func(t *testing.T) {
+		m := &commonv1pb.InvokeResponse{
+			ContentType: "application/json",
+		}
+		pb := internalv1pb.InternalInvokeResponse{
+			Status:  &internalv1pb.Status{Code: 0},
+			Message: m,
+		}
+
+		ir, err := InternalInvokeResponse(&pb)
+		defer ir.Close()
+		assert.NoError(t, err)
+		ir.data = io.NopCloser(strings.NewReader("test"))
+		req2, err := ir.ProtoWithData()
+		assert.NoError(t, err)
+
+		assert.Equal(t, "application/json", req2.GetMessage().ContentType)
+		assert.Equal(t, []byte("test"), req2.GetMessage().Data.Value)
 	})
 }
 
 func TestResponseHeader(t *testing.T) {
 	t.Run("gRPC headers", func(t *testing.T) {
 		resp := NewInvokeMethodResponse(0, "OK", nil)
+		defer resp.Close()
 		md := map[string][]string{
 			"test1": {"val1", "val2"},
 			"test2": {"val3", "val4"},
@@ -149,6 +295,7 @@ func TestResponseHeader(t *testing.T) {
 		resp.Header.Set("Header3", "Value3")
 
 		re := NewInvokeMethodResponse(0, "OK", nil)
+		defer re.Close()
 		re.WithFastHTTPHeaders(&resp.Header)
 		mheader := re.Headers()
 
@@ -160,6 +307,7 @@ func TestResponseHeader(t *testing.T) {
 
 func TestResponseTrailer(t *testing.T) {
 	resp := NewInvokeMethodResponse(0, "OK", nil)
+	defer resp.Close()
 	md := map[string][]string{
 		"test1": {"val1", "val2"},
 		"test2": {"val3", "val4"},
@@ -176,11 +324,13 @@ func TestResponseTrailer(t *testing.T) {
 func TestIsHTTPResponse(t *testing.T) {
 	t.Run("gRPC response status", func(t *testing.T) {
 		grpcResp := NewInvokeMethodResponse(int32(codes.OK), "OK", nil)
+		defer grpcResp.Close()
 		assert.False(t, grpcResp.IsHTTPResponse())
 	})
 
 	t.Run("HTTP response status", func(t *testing.T) {
 		httpResp := NewInvokeMethodResponse(http.StatusOK, "OK", nil)
+		defer httpResp.Close()
 		assert.True(t, httpResp.IsHTTPResponse())
 	})
 }
