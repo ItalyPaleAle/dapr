@@ -1624,7 +1624,7 @@ func TestV1ActorEndpoints(t *testing.T) {
 		fakeData := []byte("fakeData")
 
 		invokeRequest.WithHTTPExtension(gohttp.MethodPost, "")
-		invokeRequest.WithRawData(fakeData, "application/json")
+		invokeRequest.WithRawData(io.NopCloser(bytes.NewReader(fakeData)), "application/json")
 		invokeRequest.WithMetadata(headerMetadata)
 		response := invokev1.NewInvokeMethodResponse(206, "OK", nil)
 		mockActors.On("Call", invokeRequest).Return(response, nil)
@@ -1654,7 +1654,7 @@ func TestV1ActorEndpoints(t *testing.T) {
 		fakeData := []byte("fakeData")
 
 		invokeRequest.WithHTTPExtension(gohttp.MethodPost, "")
-		invokeRequest.WithRawData(fakeData, "application/json")
+		invokeRequest.WithRawData(io.NopCloser(bytes.NewReader(fakeData)), "application/json")
 		invokeRequest.WithMetadata(headerMetadata)
 		mockActors.On("Call", invokeRequest).Return(nil, errors.New("UPSTREAM_ERROR"))
 

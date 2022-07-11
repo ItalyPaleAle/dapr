@@ -149,6 +149,12 @@ func (m *mockGRPCAPI) CallLocal(ctx context.Context, in *internalv1pb.InternalIn
 	return resp.Proto(), nil
 }
 
+func (m *mockGRPCAPI) CallLocalStream(stream internalv1pb.ServiceInvocation_CallLocalStreamServer) error {
+	resp := invokev1.NewInvokeMethodResponse(0, "", nil)
+	resp.WithRawData(ExtractSpanContext(stream.Context()), "text/plains")
+	return nil
+}
+
 func (m *mockGRPCAPI) CallActor(ctx context.Context, in *internalv1pb.InternalInvokeRequest) (*internalv1pb.InternalInvokeResponse, error) {
 	resp := invokev1.NewInvokeMethodResponse(0, "", nil)
 	resp.WithRawData(ExtractSpanContext(ctx), "text/plains")
@@ -199,9 +205,9 @@ func (m *mockGRPCAPI) RegisterActorTimer(ctx context.Context, in *runtimev1pb.Re
 	return &emptypb.Empty{}, nil
 }
 
-func ExtractSpanContext(ctx context.Context) io.Reader {
+func ExtractSpanContext(ctx context.Context) io.ReadCloser {
 	span := diag_utils.SpanFromContext(ctx)
-	return strings.NewReader(SerializeSpanContext(span.SpanContext()))
+	return io.NopCloser(strings.NewReader(SerializeSpanContext(span.SpanContext())))
 }
 
 // SerializeSpanContext serializes a span context into a simple string.
@@ -426,7 +432,7 @@ func TestAPIToken(t *testing.T) {
 		token := "1234"
 
 		fakeResp := invokev1.NewInvokeMethodResponse(404, "NotFound", nil)
-		fakeResp.WithRawData(strings.NewReader("fakeDirectMessageResponse"), "application/json")
+		fakeResp.WithRawData(io.NopCloser(strings.NewReader("fakeDirectMessageResponse")), "application/json")
 
 		// Set up direct messaging mock
 		mockDirectMessaging.Calls = nil // reset call count
@@ -474,7 +480,7 @@ func TestAPIToken(t *testing.T) {
 		token := "1234"
 
 		fakeResp := invokev1.NewInvokeMethodResponse(404, "NotFound", nil)
-		fakeResp.WithRawData(strings.NewReader("fakeDirectMessageResponse"), "application/json")
+		fakeResp.WithRawData(io.NopCloser(strings.NewReader("fakeDirectMessageResponse")), "application/json")
 
 		// Set up direct messaging mock
 		mockDirectMessaging.Calls = nil // reset call count
@@ -516,7 +522,7 @@ func TestAPIToken(t *testing.T) {
 		token := "1234"
 
 		fakeResp := invokev1.NewInvokeMethodResponse(404, "NotFound", nil)
-		fakeResp.WithRawData(strings.NewReader("fakeDirectMessageResponse"), "application/json")
+		fakeResp.WithRawData(io.NopCloser(strings.NewReader("fakeDirectMessageResponse")), "application/json")
 
 		// Set up direct messaging mock
 		mockDirectMessaging.Calls = nil // reset call count
@@ -608,7 +614,7 @@ func TestInvokeServiceFromHTTPResponse(t *testing.T) {
 	for _, tt := range httpResponseTests {
 		t.Run(fmt.Sprintf("handle http %d response code", tt.status), func(t *testing.T) {
 			fakeResp := invokev1.NewInvokeMethodResponse(int32(tt.status), tt.statusMessage, nil)
-			fakeResp.WithRawData(strings.NewReader(tt.errHTTPMessage), "application/json")
+			fakeResp.WithRawData(io.NopCloser(strings.NewReader(tt.errHTTPMessage)), "application/json")
 
 			// Set up direct messaging mock
 			mockDirectMessaging.Calls = nil // reset call count
@@ -678,7 +684,7 @@ func TestInvokeServiceFromGRPCResponse(t *testing.T) {
 				}),
 			},
 		)
-		fakeResp.WithRawData(strings.NewReader("fakeDirectMessageResponse"), "application/json")
+		fakeResp.WithRawData(io.NopCloser(strings.NewReader("fakeDirectMessageResponse")), "application/json")
 
 		// Set up direct messaging mock
 		mockDirectMessaging.Calls = nil // reset call count
