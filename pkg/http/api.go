@@ -796,6 +796,7 @@ func (h *configurationEventHandler) updateEventHandler(ctx context.Context, e *c
 			NewInvokeMethodRequest(fmt.Sprintf("/configuration/%s/%s", h.storeName, item.Key)).
 			WithHTTPExtension(nethttp.MethodPost, "").
 			WithRawData(io.NopCloser(bytes.NewReader(eventBody)), invokev1.JSONContentType)
+		defer req.Close()
 
 		policy := h.res.ComponentInboundPolicy(ctx, h.storeName)
 		err := policy(func(ctx context.Context) (err error) {
@@ -1391,11 +1392,11 @@ func (a *api) onDirectMessage(reqCtx *fasthttp.RequestCtx) {
 	// Since we don't want to return the actual error, we have to extract several things in order to construct our response.
 	var (
 		resp          *invokev1.InvokeMethodResponse
-		r             io.Reader
+		r             io.ReadCloser
 		statusCode    int
 		errBody       []byte
 		msg           ErrorResponse
-		errorOccurred bool = false
+		errorOccurred bool
 	)
 	err := policy(func(ctx context.Context) (rErr error) {
 		resp, rErr = a.directMessaging.Invoke(ctx, targetID, req)
@@ -1430,7 +1431,7 @@ func (a *api) onDirectMessage(reqCtx *fasthttp.RequestCtx) {
 					statusCode = fasthttp.StatusInternalServerError
 					return rErr
 				}
-				r = bytes.NewReader(errBody)
+				r = io.NopCloser(bytes.NewReader(errBody))
 			}
 		} else if statusCode != fasthttp.StatusOK {
 			return errors.Errorf("Received non-successful status code: %d", statusCode)
@@ -1736,6 +1737,7 @@ func (a *api) onDirectActorMessage(reqCtx *fasthttp.RequestCtx) {
 		WithActor(actorType, actorID).
 		WithHTTPExtension(verb, reqCtx.QueryArgs().String()).
 		WithRawData(io.NopCloser(reqCtx.RequestBodyStream()), string(reqCtx.Request.Header.ContentType()))
+	defer req.Close()
 
 	// Save headers to metadata.
 	metadata := map[string][]string{}

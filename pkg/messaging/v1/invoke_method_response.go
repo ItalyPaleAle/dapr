@@ -179,7 +179,7 @@ func (imr *InvokeMethodResponse) HasMessageData() bool {
 }
 
 // RawData returns content_type and stream body.
-func (imr *InvokeMethodResponse) RawData() (string, io.Reader) {
+func (imr *InvokeMethodResponse) RawData() (string, io.ReadCloser) {
 	m := imr.r.Message
 	if m == nil {
 		return "", nil

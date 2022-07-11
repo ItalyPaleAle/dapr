@@ -397,6 +397,7 @@ func (a *api) CallLocalStream(stream internalv1pb.ServiceInvocation_CallLocalStr
 			done, readErr = messaging.ReadChunk(chunk, pw)
 			if readErr != nil {
 				pw.CloseWithError(readErr)
+				return
 			}
 
 			if done {
@@ -406,6 +407,7 @@ func (a *api) CallLocalStream(stream internalv1pb.ServiceInvocation_CallLocalStr
 			readErr = stream.RecvMsg(chunk)
 			if err != nil {
 				pw.CloseWithError(readErr)
+				return
 			}
 
 			if chunk.Request != nil && (chunk.Request.Metadata != nil || chunk.Request.Message != nil) {
