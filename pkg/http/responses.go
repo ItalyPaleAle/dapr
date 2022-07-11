@@ -16,6 +16,7 @@ package http
 import (
 	"encoding/json"
 	"io"
+	"net"
 
 	"github.com/valyala/fasthttp"
 )
@@ -108,121 +109,25 @@ func with(code int, obj []byte) option {
 // withStream is like "with" but accepts a stream
 func withStream(code int, r io.ReadCloser) option {
 	return func(ctx *fasthttp.RequestCtx) {
-		ctx.Response.ImmediateHeaderFlush = true
 		if len(ctx.Response.Header.ContentType()) == 0 {
 			ctx.Response.Header.SetContentType(jsonContentTypeHeader)
 		}
 		ctx.Response.SetStatusCode(code)
-		ctx.SetBodyStream(r, -1)
 
-		/*ctx.SetBodyStreamWriter(func(w *bufio.Writer) {
-			buf := make([]byte, 1024) // 1KB buffer
-			var (
-				nr, nw int
-				err    error
-				done   bool
-			)
-			for !done {
-				nr, err = r.Read(buf)
-				fmt.Println("READ", nr, err == io.EOF, err)
-				if err == io.EOF {
-					done = true
-				} else if err != nil {
-					log.Warn("Failed to read from response stream; err=%v", err)
-					return
-				}
-
-				if nr > 0 {
-					nw, err = w.Write(buf[:nr])
-					if err != nil {
-						log.Warn("Failed to write into response buffer; err=%v", err)
-						return
-					}
-					if nr != nw {
-						log.Warnf("Read %d bytes from response stream, but wrote %d bytes into response buffer", nr, nw)
-						return
-					}
-					err = w.Flush()
-					if err != nil {
-						log.Warnf("Error flushing the buffer: %v", err)
-					}
-				}
+		// This is a bit hacky, but it seems to be the only way we can actually send data to the client in a streamed way
+		// (believe me, I've spent over a day on this and I'm not exaggerating)
+		ctx.HijackSetNoResponse(true)
+		ctx.Hijack(func(c net.Conn) {
+			// Write the headers
+			c.Write(ctx.Response.Header.Header())
+			// Send the data as a stream
+			_, err := io.Copy(c, r)
+			if err != nil {
+				log.Warn("Error while copying response into connection:", err)
 			}
-		})*/
-		//ctx.Response.BodyWriteTo(ctx.Response.BodyWriter())
-
-		//ctx.Response.SetBodyStream(r, -1)
-		//ctx.Response.BodyWriteTo(ctx.Response.BodyWriter())
-
-		/*ctx.Write([]byte{})
-		time.Sleep(3 * time.Second)
-		n, err := io.Copy(ctx.Response.BodyWriter(), r)
-		fmt.Println("COPIED", n, err)*/
-
-		/*w := ctx.Response.BodyWriter()
-		buf := make([]byte, 4096) // 4KB buffer
-		var (
-			nr, nw int
-			err    error
-			done   bool
-		)
-		for !done {
-			nr, err = r.Read(buf)
-			fmt.Println("READ", nr, err == io.EOF, err)
-			if err == io.EOF {
-				done = true
-			} else if err != nil {
-				log.Warn("Failed to read from response stream; err=%v", err)
-				return
-			}
-
-			if nr > 0 {
-				nw, err = w.Write(buf[:nr])
-				if err != nil {
-					log.Warn("Failed to write into response buffer; err=%v", err)
-					return
-				}
-				if nr != nw {
-					log.Warnf("Read %d bytes from response stream, but wrote %d bytes into response buffer", nr, nw)
-					return
-				}
-				//if fw, ok := w.(http.Flusher); ok {
-				//	fmt.Println("FLUSHING")
-				//	fw.Flush()
-				//}
-			}
-		}
-
-		r.Close()*/
-
-		/*go func() {
-			buf := make([]byte, 4096) // 4KB buffer
-			var (
-				nr   int
-				err  error
-				done bool
-			)
-			for !done {
-				nr, err = r.Read(buf)
-				fmt.Println("READ", nr, err == io.EOF, err)
-				if err == io.EOF {
-					done = true
-				} else if err != nil {
-					log.Warn("Failed to read from response stream; err=%v", err)
-					return
-				}
-
-				if nr > 0 {
-					ctx.Response.AppendBody(buf[:nr])
-					//if fw, ok := w.(http.Flusher); ok {
-					//	fmt.Println("FLUSHING")
-					//	fw.Flush()
-					//}
-				}
-			}
-
-			r.Close()
-		}()*/
+			_ = r.Close()
+			// c is closed automatically
+		})
 	}
 }
 
