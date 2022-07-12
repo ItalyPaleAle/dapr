@@ -1321,7 +1321,7 @@ func TestInitPubSub(t *testing.T) {
 
 		fakeResp := invokev1.NewInvokeMethodResponse(200, "OK", nil)
 		sub := getSubscriptionCustom("topic0", "customroute/topic0")
-		fakeResp.WithRawData([]byte(sub), "application/json")
+		fakeResp.WithRawDataString(sub, "application/json")
 
 		mockAppChannel.On("InvokeMethod", mock.AnythingOfType("*context.emptyCtx"), fakeReq).Return(fakeResp, nil)
 
@@ -2465,7 +2465,7 @@ func TestOnNewPublishedMessage(t *testing.T) {
 
 		fakeReqNoTraceID := invokev1.NewInvokeMethodRequest(message.topic)
 		fakeReqNoTraceID.WithHTTPExtension(http.MethodPost, "")
-		fakeReqNoTraceID.WithRawData(message.data, contenttype.CloudEventContentType)
+		fakeReqNoTraceID.WithRawDataBytes(message.data, contenttype.CloudEventContentType)
 		fakeReqNoTraceID.WithCustomHTTPMetadata(testPubSubMessage.metadata)
 		mockAppChannel.On("InvokeMethod", mock.AnythingOfType("*context.emptyCtx"), fakeReqNoTraceID).Return(fakeResp, nil)
 
@@ -2989,7 +2989,7 @@ func TestPubSubDeadLetter(t *testing.T) {
 		}
 		sub, _ := json.Marshal(subscriptionItems)
 		fakeResp := invokev1.NewInvokeMethodResponse(200, "OK", nil)
-		fakeResp.WithRawData(sub, "application/json")
+		fakeResp.WithRawDataBytes(sub, "application/json")
 
 		mockAppChannel := new(channelt.MockAppChannel)
 		rt.appChannel = mockAppChannel

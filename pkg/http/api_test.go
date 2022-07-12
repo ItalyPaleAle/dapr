@@ -495,9 +495,6 @@ func TestV1OutputBindingsEndpointsWithTracer(t *testing.T) {
 }
 
 func TestV1DirectMessagingEndpoints(t *testing.T) {
-	fakeDirectMessageResponse := invokev1.NewInvokeMethodResponse(200, "OK", nil)
-	fakeDirectMessageResponse.WithRawDataString("fakeDirectMessageResponse", "application/json")
-
 	mockDirectMessaging := new(daprt.MockDirectMessaging)
 
 	fakeServer := newFakeHTTPServer()
@@ -520,7 +517,7 @@ func TestV1DirectMessagingEndpoints(t *testing.T) {
 				return b == "fakeAppID"
 			}), mock.MatchedBy(func(c *invokev1.InvokeMethodRequest) bool {
 				return true
-			})).Return(fakeDirectMessageResponse, nil).Once()
+			})).Return(fakeDirectMessageResponse(), nil).Once()
 
 		// act
 		resp := fakeServer.DoRequest("POST", apiPath, fakeData, nil)
@@ -544,7 +541,7 @@ func TestV1DirectMessagingEndpoints(t *testing.T) {
 				return b == "fakeAppID"
 			}), mock.MatchedBy(func(c *invokev1.InvokeMethodRequest) bool {
 				return true
-			})).Return(fakeDirectMessageResponse, nil).Once()
+			})).Return(fakeDirectMessageResponse(), nil).Once()
 
 		// act
 		resp := fakeServer.DoRequest("POST", apiPath, fakeData, nil, "dapr-app-id", "fakeAppID")
@@ -568,7 +565,7 @@ func TestV1DirectMessagingEndpoints(t *testing.T) {
 				return b == "fakeAppID"
 			}), mock.MatchedBy(func(c *invokev1.InvokeMethodRequest) bool {
 				return true
-			})).Return(fakeDirectMessageResponse, nil).Once()
+			})).Return(fakeDirectMessageResponse(), nil).Once()
 
 		// act
 		resp := fakeServer.doRequest("dapr-app-id:fakeAppID", "POST", apiPath, fakeData, nil)
@@ -651,7 +648,7 @@ func TestV1DirectMessagingEndpoints(t *testing.T) {
 				return b == "fakeAppID"
 			}), mock.MatchedBy(func(c *invokev1.InvokeMethodRequest) bool {
 				return true
-			})).Return(fakeDirectMessageResponse, nil).Once()
+			})).Return(fakeDirectMessageResponse(), nil).Once()
 
 		// act
 		resp := fakeServer.DoRequest("POST", apiPath, fakeData, nil)
@@ -674,7 +671,7 @@ func TestV1DirectMessagingEndpoints(t *testing.T) {
 				return b == "fakeAppID"
 			}), mock.MatchedBy(func(c *invokev1.InvokeMethodRequest) bool {
 				return true
-			})).Return(fakeDirectMessageResponse, nil).Once()
+			})).Return(fakeDirectMessageResponse(), nil).Once()
 
 		// act
 		resp := fakeServer.DoRequest("HEAD", apiPath, nil, nil)
@@ -697,7 +694,7 @@ func TestV1DirectMessagingEndpoints(t *testing.T) {
 				return b == "fakeAppID"
 			}), mock.MatchedBy(func(c *invokev1.InvokeMethodRequest) bool {
 				return true
-			})).Return(fakeDirectMessageResponse, nil).Once()
+			})).Return(fakeDirectMessageResponse(), nil).Once()
 
 		// act
 		resp := fakeServer.DoRequest("GET", apiPath, nil, nil)
@@ -768,8 +765,6 @@ func TestV1DirectMessagingEndpointsWithTracer(t *testing.T) {
 		"User-Agent":       {"Go-http-client/1.1"},
 		"X-Correlation-Id": {"fake-correlation-id"},
 	}
-	fakeDirectMessageResponse := invokev1.NewInvokeMethodResponse(200, "OK", nil)
-	fakeDirectMessageResponse.WithRawDataString("fakeDirectMessageResponse", "application/json")
 
 	mockDirectMessaging := new(daprt.MockDirectMessaging)
 
@@ -805,7 +800,7 @@ func TestV1DirectMessagingEndpointsWithTracer(t *testing.T) {
 				return b == "fakeAppID"
 			}), mock.MatchedBy(func(c *invokev1.InvokeMethodRequest) bool {
 				return true
-			})).Return(fakeDirectMessageResponse, nil).Once()
+			})).Return(fakeDirectMessageResponse(), nil).Once()
 
 		// act
 		resp := fakeServer.DoRequest("POST", apiPath, fakeData, nil)
@@ -828,7 +823,7 @@ func TestV1DirectMessagingEndpointsWithTracer(t *testing.T) {
 				return b == "fakeAppID"
 			}), mock.MatchedBy(func(c *invokev1.InvokeMethodRequest) bool {
 				return true
-			})).Return(fakeDirectMessageResponse, nil).Once()
+			})).Return(fakeDirectMessageResponse(), nil).Once()
 
 		// act
 		resp := fakeServer.DoRequest("POST", apiPath, fakeData, nil, "dapr-app-id", "fakeAppID")
@@ -856,7 +851,7 @@ func TestV1DirectMessagingEndpointsWithTracer(t *testing.T) {
 				return b == "fakeAppID"
 			}), mock.MatchedBy(func(c *invokev1.InvokeMethodRequest) bool {
 				return true
-			})).Return(fakeDirectMessageResponse, nil).Once()
+			})).Return(fakeDirectMessageResponse(), nil).Once()
 
 		// act
 		resp := fakeServer.DoRequest("POST", apiPath, fakeData, nil)
@@ -1915,9 +1910,6 @@ func TestAPIToken(t *testing.T) {
 
 	t.Setenv("DAPR_API_TOKEN", token)
 
-	fakeDirectMessageResponse := invokev1.NewInvokeMethodResponse(200, "OK", nil)
-	fakeDirectMessageResponse.WithRawDataString("fakeDirectMessageResponse", "application/json")
-
 	mockDirectMessaging := new(daprt.MockDirectMessaging)
 
 	fakeServer := newFakeHTTPServer()
@@ -1940,7 +1932,7 @@ func TestAPIToken(t *testing.T) {
 				return b == "fakeDaprID"
 			}), mock.MatchedBy(func(c *invokev1.InvokeMethodRequest) bool {
 				return true
-			})).Return(fakeDirectMessageResponse, nil).Once()
+			})).Return(fakeDirectMessageResponse(), nil).Once()
 
 		// act
 		resp := fakeServer.DoRequestWithAPIToken("POST", apiPath, token, fakeData)
@@ -1963,7 +1955,7 @@ func TestAPIToken(t *testing.T) {
 				return b == "fakeDaprID"
 			}), mock.MatchedBy(func(c *invokev1.InvokeMethodRequest) bool {
 				return true
-			})).Return(fakeDirectMessageResponse, nil).Once()
+			})).Return(fakeDirectMessageResponse(), nil).Once()
 
 		// act
 		resp := fakeServer.DoRequestWithAPIToken("POST", apiPath, "", fakeData)
@@ -1986,7 +1978,7 @@ func TestAPIToken(t *testing.T) {
 				return b == "fakeDaprID"
 			}), mock.MatchedBy(func(c *invokev1.InvokeMethodRequest) bool {
 				return true
-			})).Return(fakeDirectMessageResponse, nil).Once()
+			})).Return(fakeDirectMessageResponse(), nil).Once()
 
 		// act
 		resp := fakeServer.DoRequestWithAPIToken("POST", apiPath, "4567", fakeData)
@@ -2009,7 +2001,7 @@ func TestAPIToken(t *testing.T) {
 				return b == "fakeDaprID"
 			}), mock.MatchedBy(func(c *invokev1.InvokeMethodRequest) bool {
 				return true
-			})).Return(fakeDirectMessageResponse, nil).Once()
+			})).Return(fakeDirectMessageResponse(), nil).Once()
 
 		// act
 		resp := fakeServer.DoRequest("POST", apiPath, fakeData, nil)
@@ -2030,9 +2022,6 @@ func TestEmptyPipelineWithTracer(t *testing.T) {
 		"User-Agent":       {"Go-http-client/1.1"},
 		"X-Correlation-Id": {"fake-correlation-id"},
 	}
-
-	fakeDirectMessageResponse := invokev1.NewInvokeMethodResponse(200, "OK", nil)
-	fakeDirectMessageResponse.WithRawDataString("fakeDirectMessageResponse", "application/json")
 
 	mockDirectMessaging := new(daprt.MockDirectMessaging)
 
@@ -2068,7 +2057,7 @@ func TestEmptyPipelineWithTracer(t *testing.T) {
 				return b == "fakeDaprID"
 			}), mock.MatchedBy(func(c *invokev1.InvokeMethodRequest) bool {
 				return true
-			})).Return(fakeDirectMessageResponse, nil).Once()
+			})).Return(fakeDirectMessageResponse(), nil).Once()
 
 		// act
 		resp := fakeServer.DoRequest("POST", apiPath, fakeData, nil)
@@ -2376,9 +2365,6 @@ func buildHTTPPineline(spec config.PipelineSpec) http_middleware.Pipeline {
 }
 
 func TestSinglePipelineWithTracer(t *testing.T) {
-	fakeDirectMessageResponse := invokev1.NewInvokeMethodResponse(200, "OK", nil)
-	fakeDirectMessageResponse.WithRawDataString("fakeDirectMessageResponse", "application/json")
-
 	mockDirectMessaging := new(daprt.MockDirectMessaging)
 
 	fakeServer := newFakeHTTPServer()
@@ -2417,7 +2403,7 @@ func TestSinglePipelineWithTracer(t *testing.T) {
 				return b == "fakeAppID"
 			}), mock.MatchedBy(func(c *invokev1.InvokeMethodRequest) bool {
 				return true
-			})).Return(fakeDirectMessageResponse, nil).Once()
+			})).Return(fakeDirectMessageResponse(), nil).Once()
 
 		// act
 		resp := fakeServer.DoRequest("POST", apiPath, fakeData, nil)
@@ -2429,10 +2415,6 @@ func TestSinglePipelineWithTracer(t *testing.T) {
 }
 
 func TestSinglePipelineWithNoTracing(t *testing.T) {
-
-	fakeDirectMessageResponse := invokev1.NewInvokeMethodResponse(200, "OK", nil)
-	fakeDirectMessageResponse.WithRawDataString("fakeDirectMessageResponse", "application/json")
-
 	mockDirectMessaging := new(daprt.MockDirectMessaging)
 
 	fakeServer := newFakeHTTPServer()
@@ -2471,7 +2453,7 @@ func TestSinglePipelineWithNoTracing(t *testing.T) {
 				return b == "fakeAppID"
 			}), mock.MatchedBy(func(c *invokev1.InvokeMethodRequest) bool {
 				return true
-			})).Return(fakeDirectMessageResponse, nil).Once()
+			})).Return(fakeDirectMessageResponse(), nil).Once()
 
 		// act
 		resp := fakeServer.DoRequest("POST", apiPath, fakeData, nil)
@@ -4045,4 +4027,10 @@ func TestExtractEtag(t *testing.T) {
 		assert.True(t, ok)
 		assert.Equal(t, "a", etag)
 	})
+}
+
+func fakeDirectMessageResponse() *invokev1.InvokeMethodResponse {
+	return invokev1.
+		NewInvokeMethodResponse(200, "OK", nil).
+		WithRawDataString("fakeDirectMessageResponse", "application/json")
 }

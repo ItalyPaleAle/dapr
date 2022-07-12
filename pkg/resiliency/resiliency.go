@@ -53,7 +53,8 @@ const (
 	BuiltInActorNotFoundRetries  BuiltInPolicyName = "DaprBuiltInActorNotFoundRetries"
 	BuiltInInitializationRetries BuiltInPolicyName = "DaprBuiltInInitializationRetries"
 	Endpoint                     PolicyType        = "endpoint"
-	Component                    PolicyType        = "component"
+	ComponentInbound             PolicyType        = "component.inbound"
+	ComponentOutbound            PolicyType        = "component.outbound"
 	Actor                        PolicyType        = "actor"
 )
 
@@ -88,7 +89,7 @@ type (
 		// BuiltInPolicy are used to replace existing retries in Dapr which may not bind specifically to one of the above categories.
 		BuiltInPolicy(ctx context.Context, name BuiltInPolicyName) Runner
 		// PolicyDefined returns a boolean stating if the given target has a policy.
-		PolicyDefined(target string, policyType PolicyType) bool
+		PolicyDefined(target string, policyType PolicyType) *PolicyDescription
 	}
 
 	// Resiliency encapsulates configuration for timeouts, retries, and circuit breakers.
@@ -147,6 +148,12 @@ type (
 	// Policy used after an actor is locked. It only uses timeout as retry/circuit breaker is handled before locking.
 	ActorPostLockPolicyNames struct {
 		Timeout string
+	}
+
+	PolicyDescription struct {
+		RetryPolicy    *retry.Config
+		TimeoutPolicy  time.Duration
+		CircuitBreaker *breaker.CircuitBreaker
 	}
 
 	BuiltInPolicyName string
@@ -669,17 +676,64 @@ func (r *Resiliency) BuiltInPolicy(ctx context.Context, name BuiltInPolicyName) 
 }
 
 // Returns true if a target has a defined policy.
-func (r *Resiliency) PolicyDefined(target string, policyType PolicyType) bool {
-	var exists bool
+func (r *Resiliency) PolicyDefined(target string, policyType PolicyType) *PolicyDescription {
+	var (
+		policyName PolicyNames
+		exists     bool
+	)
 	switch policyType {
 	case Endpoint:
-		_, exists = r.apps[target]
-	case Component:
-		_, exists = r.components[target]
+		policyName, exists = r.apps[target]
+	case ComponentInbound:
+		var componentPolicy ComponentPolicyNames
+		componentPolicy, exists = r.components[target]
+		if exists {
+			policyName = PolicyNames{
+				Retry:          componentPolicy.Inbound.Retry,
+				CircuitBreaker: componentPolicy.Inbound.CircuitBreaker,
+				Timeout:        componentPolicy.Inbound.Timeout,
+			}
+		}
+	case ComponentOutbound:
+		var componentPolicy ComponentPolicyNames
+		componentPolicy, exists = r.components[target]
+		if exists {
+			policyName = PolicyNames{
+				Retry:          componentPolicy.Outbound.Retry,
+				CircuitBreaker: componentPolicy.Outbound.CircuitBreaker,
+				Timeout:        componentPolicy.Outbound.Timeout,
+			}
+		}
 	case Actor:
-		_, exists = r.actors[target]
+		var actorPolicyName ActorPolicies
+		actorPolicyName, exists = r.actors[target]
+		if exists {
+			policyName = PolicyNames{
+				Retry:          actorPolicyName.PreLockPolicies.Retry,
+				CircuitBreaker: actorPolicyName.PreLockPolicies.CircuitBreaker,
+				Timeout:        actorPolicyName.PostLockPolicies.Timeout,
+			}
+		}
 	}
-	return exists
+
+	if !exists {
+		return nil
+	}
+	return r.policyDescription(policyName)
+}
+
+func (r *Resiliency) policyDescription(policyName PolicyNames) *PolicyDescription {
+	obj := &PolicyDescription{}
+	if policyName.Retry != "" && r.retries[policyName.Retry] != nil {
+		obj.RetryPolicy = r.retries[policyName.Retry]
+	}
+	if policyName.CircuitBreaker != "" && r.circuitBreakers[policyName.CircuitBreaker] != nil {
+		obj.CircuitBreaker = r.circuitBreakers[policyName.CircuitBreaker]
+	}
+	if policyName.Timeout != "" && r.timeouts[policyName.Timeout] > 0 {
+		obj.TimeoutPolicy = r.timeouts[policyName.Timeout]
+	}
+	return obj
 }
 
 // Get returns a cached circuit breaker if one exists.
