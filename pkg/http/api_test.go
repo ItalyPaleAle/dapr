@@ -496,7 +496,7 @@ func TestV1OutputBindingsEndpointsWithTracer(t *testing.T) {
 
 func TestV1DirectMessagingEndpoints(t *testing.T) {
 	fakeDirectMessageResponse := invokev1.NewInvokeMethodResponse(200, "OK", nil)
-	fakeDirectMessageResponse.WithRawData(io.NopCloser(strings.NewReader("fakeDirectMessageResponse")), "application/json")
+	fakeDirectMessageResponse.WithRawDataString("fakeDirectMessageResponse", "application/json")
 
 	mockDirectMessaging := new(daprt.MockDirectMessaging)
 
@@ -769,7 +769,7 @@ func TestV1DirectMessagingEndpointsWithTracer(t *testing.T) {
 		"X-Correlation-Id": {"fake-correlation-id"},
 	}
 	fakeDirectMessageResponse := invokev1.NewInvokeMethodResponse(200, "OK", nil)
-	fakeDirectMessageResponse.WithRawData(io.NopCloser(strings.NewReader("fakeDirectMessageResponse")), "application/json")
+	fakeDirectMessageResponse.WithRawDataString("fakeDirectMessageResponse", "application/json")
 
 	mockDirectMessaging := new(daprt.MockDirectMessaging)
 
@@ -794,7 +794,7 @@ func TestV1DirectMessagingEndpointsWithTracer(t *testing.T) {
 
 		fakeReq := invokev1.NewInvokeMethodRequest("fakeMethod")
 		fakeReq.WithHTTPExtension(gohttp.MethodPost, "")
-		fakeReq.WithRawData(io.NopCloser(bytes.NewReader(fakeData)), "application/json")
+		fakeReq.WithRawDataBytes(fakeData, "application/json")
 		fakeReq.WithMetadata(headerMetadata)
 
 		mockDirectMessaging.Calls = nil // reset call count
@@ -845,7 +845,7 @@ func TestV1DirectMessagingEndpointsWithTracer(t *testing.T) {
 
 		fakeReq := invokev1.NewInvokeMethodRequest("fakeMethod")
 		fakeReq.WithHTTPExtension(gohttp.MethodPost, "param1=val1&param2=val2")
-		fakeReq.WithRawData(io.NopCloser(bytes.NewReader(fakeData)), "application/json")
+		fakeReq.WithRawDataBytes(fakeData, "application/json")
 		fakeReq.WithMetadata(headerMetadata)
 
 		mockDirectMessaging.Calls = nil // reset call count
@@ -897,7 +897,7 @@ func TestV1DirectMessagingEndpointsWithResiliency(t *testing.T) {
 
 		fakeReq := invokev1.NewInvokeMethodRequest("fakeMethod")
 		fakeReq.WithHTTPExtension(gohttp.MethodPost, "")
-		fakeReq.WithRawData(io.NopCloser(bytes.NewReader(fakeData)), "application/json")
+		fakeReq.WithRawDataBytes(fakeData, "application/json")
 
 		// act
 		resp := fakeServer.DoRequest("POST", apiPath, fakeData, nil)
@@ -912,7 +912,7 @@ func TestV1DirectMessagingEndpointsWithResiliency(t *testing.T) {
 
 		fakeReq := invokev1.NewInvokeMethodRequest("fakeMethod")
 		fakeReq.WithHTTPExtension(gohttp.MethodPost, "")
-		fakeReq.WithRawData(io.NopCloser(bytes.NewReader(fakeData)), "application/json")
+		fakeReq.WithRawDataBytes(fakeData, "application/json")
 
 		// act
 		start := time.Now()
@@ -930,7 +930,7 @@ func TestV1DirectMessagingEndpointsWithResiliency(t *testing.T) {
 
 		fakeReq := invokev1.NewInvokeMethodRequest("fakeMethod")
 		fakeReq.WithHTTPExtension(gohttp.MethodPost, "")
-		fakeReq.WithRawData(io.NopCloser(bytes.NewReader(fakeData)), "application/json")
+		fakeReq.WithRawDataBytes(fakeData, "application/json")
 
 		// act
 		resp := fakeServer.DoRequest("POST", apiPath, fakeData, nil)
@@ -945,7 +945,7 @@ func TestV1DirectMessagingEndpointsWithResiliency(t *testing.T) {
 
 		fakeReq := invokev1.NewInvokeMethodRequest("fakeMethod")
 		fakeReq.WithHTTPExtension(gohttp.MethodPost, "")
-		fakeReq.WithRawData(io.NopCloser(bytes.NewReader(fakeData)), "application/json")
+		fakeReq.WithRawDataBytes(fakeData, "application/json")
 
 		// Circuit Breaker trips on the 5th failure, stopping retries.
 		resp := fakeServer.DoRequest("POST", apiPath, fakeData, nil)
@@ -1624,7 +1624,7 @@ func TestV1ActorEndpoints(t *testing.T) {
 		fakeData := []byte("fakeData")
 
 		invokeRequest.WithHTTPExtension(gohttp.MethodPost, "")
-		invokeRequest.WithRawData(io.NopCloser(bytes.NewReader(fakeData)), "application/json")
+		invokeRequest.WithRawDataBytes(fakeData, "application/json")
 		invokeRequest.WithMetadata(headerMetadata)
 		response := invokev1.NewInvokeMethodResponse(206, "OK", nil)
 		mockActors.On("Call", invokeRequest).Return(response, nil)
@@ -1654,7 +1654,7 @@ func TestV1ActorEndpoints(t *testing.T) {
 		fakeData := []byte("fakeData")
 
 		invokeRequest.WithHTTPExtension(gohttp.MethodPost, "")
-		invokeRequest.WithRawData(io.NopCloser(bytes.NewReader(fakeData)), "application/json")
+		invokeRequest.WithRawDataBytes(fakeData, "application/json")
 		invokeRequest.WithMetadata(headerMetadata)
 		mockActors.On("Call", invokeRequest).Return(nil, errors.New("UPSTREAM_ERROR"))
 
@@ -1916,7 +1916,7 @@ func TestAPIToken(t *testing.T) {
 	t.Setenv("DAPR_API_TOKEN", token)
 
 	fakeDirectMessageResponse := invokev1.NewInvokeMethodResponse(200, "OK", nil)
-	fakeDirectMessageResponse.WithRawData(io.NopCloser(strings.NewReader("fakeDirectMessageResponse")), "application/json")
+	fakeDirectMessageResponse.WithRawDataString("fakeDirectMessageResponse", "application/json")
 
 	mockDirectMessaging := new(daprt.MockDirectMessaging)
 
@@ -2032,7 +2032,7 @@ func TestEmptyPipelineWithTracer(t *testing.T) {
 	}
 
 	fakeDirectMessageResponse := invokev1.NewInvokeMethodResponse(200, "OK", nil)
-	fakeDirectMessageResponse.WithRawData(io.NopCloser(strings.NewReader("fakeDirectMessageResponse")), "application/json")
+	fakeDirectMessageResponse.WithRawDataString("fakeDirectMessageResponse", "application/json")
 
 	mockDirectMessaging := new(daprt.MockDirectMessaging)
 
@@ -2057,7 +2057,7 @@ func TestEmptyPipelineWithTracer(t *testing.T) {
 
 		fakeReq := invokev1.NewInvokeMethodRequest("fakeMethod")
 		fakeReq.WithHTTPExtension(gohttp.MethodPost, "")
-		fakeReq.WithRawData(io.NopCloser(bytes.NewReader(fakeData)), "application/json")
+		fakeReq.WithRawDataBytes(fakeData, "application/json")
 		fakeReq.WithMetadata(fakeHeaderMetadata)
 
 		mockDirectMessaging.Calls = nil // reset call count
@@ -2377,7 +2377,7 @@ func buildHTTPPineline(spec config.PipelineSpec) http_middleware.Pipeline {
 
 func TestSinglePipelineWithTracer(t *testing.T) {
 	fakeDirectMessageResponse := invokev1.NewInvokeMethodResponse(200, "OK", nil)
-	fakeDirectMessageResponse.WithRawData(io.NopCloser(strings.NewReader("fakeDirectMessageResponse")), "application/json")
+	fakeDirectMessageResponse.WithRawDataString("fakeDirectMessageResponse", "application/json")
 
 	mockDirectMessaging := new(daprt.MockDirectMessaging)
 
@@ -2431,7 +2431,7 @@ func TestSinglePipelineWithTracer(t *testing.T) {
 func TestSinglePipelineWithNoTracing(t *testing.T) {
 
 	fakeDirectMessageResponse := invokev1.NewInvokeMethodResponse(200, "OK", nil)
-	fakeDirectMessageResponse.WithRawData(io.NopCloser(strings.NewReader("fakeDirectMessageResponse")), "application/json")
+	fakeDirectMessageResponse.WithRawDataString("fakeDirectMessageResponse", "application/json")
 
 	mockDirectMessaging := new(daprt.MockDirectMessaging)
 

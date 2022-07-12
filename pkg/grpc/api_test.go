@@ -432,7 +432,7 @@ func TestAPIToken(t *testing.T) {
 		token := "1234"
 
 		fakeResp := invokev1.NewInvokeMethodResponse(404, "NotFound", nil)
-		fakeResp.WithRawData(io.NopCloser(strings.NewReader("fakeDirectMessageResponse")), "application/json")
+		fakeResp.WithRawDataString("fakeDirectMessageResponse", "application/json")
 
 		// Set up direct messaging mock
 		mockDirectMessaging.Calls = nil // reset call count
@@ -480,7 +480,7 @@ func TestAPIToken(t *testing.T) {
 		token := "1234"
 
 		fakeResp := invokev1.NewInvokeMethodResponse(404, "NotFound", nil)
-		fakeResp.WithRawData(io.NopCloser(strings.NewReader("fakeDirectMessageResponse")), "application/json")
+		fakeResp.WithRawDataString("fakeDirectMessageResponse", "application/json")
 
 		// Set up direct messaging mock
 		mockDirectMessaging.Calls = nil // reset call count
@@ -522,7 +522,7 @@ func TestAPIToken(t *testing.T) {
 		token := "1234"
 
 		fakeResp := invokev1.NewInvokeMethodResponse(404, "NotFound", nil)
-		fakeResp.WithRawData(io.NopCloser(strings.NewReader("fakeDirectMessageResponse")), "application/json")
+		fakeResp.WithRawDataString("fakeDirectMessageResponse", "application/json")
 
 		// Set up direct messaging mock
 		mockDirectMessaging.Calls = nil // reset call count
@@ -614,7 +614,7 @@ func TestInvokeServiceFromHTTPResponse(t *testing.T) {
 	for _, tt := range httpResponseTests {
 		t.Run(fmt.Sprintf("handle http %d response code", tt.status), func(t *testing.T) {
 			fakeResp := invokev1.NewInvokeMethodResponse(int32(tt.status), tt.statusMessage, nil)
-			fakeResp.WithRawData(io.NopCloser(strings.NewReader(tt.errHTTPMessage)), "application/json")
+			fakeResp.WithRawDataString(tt.errHTTPMessage, "application/json")
 
 			// Set up direct messaging mock
 			mockDirectMessaging.Calls = nil // reset call count
@@ -684,7 +684,7 @@ func TestInvokeServiceFromGRPCResponse(t *testing.T) {
 				}),
 			},
 		)
-		fakeResp.WithRawData(io.NopCloser(strings.NewReader("fakeDirectMessageResponse")), "application/json")
+		fakeResp.WithRawDataString("fakeDirectMessageResponse", "application/json")
 
 		// Set up direct messaging mock
 		mockDirectMessaging.Calls = nil // reset call count

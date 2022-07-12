@@ -14,7 +14,6 @@ limitations under the License.
 package runtime
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -1019,7 +1018,7 @@ func (a *DaprRuntime) sendBindingEventToApp(bindingName string, data []byte, met
 		req := invokev1.
 			NewInvokeMethodRequest(path).
 			WithHTTPExtension(nethttp.MethodPost, "").
-			WithRawData(io.NopCloser(bytes.NewReader(data)), invokev1.JSONContentType)
+			WithRawDataBytes(data, invokev1.JSONContentType)
 
 		reqMetadata := map[string][]string{}
 		for k, v := range metadata {
@@ -1677,7 +1676,7 @@ func (a *DaprRuntime) publishMessageHTTP(ctx context.Context, msg *pubsubSubscri
 
 	req := invokev1.NewInvokeMethodRequest(msg.path).
 		WithHTTPExtension(nethttp.MethodPost, "").
-		WithRawData(io.NopCloser(bytes.NewReader(msg.data)), contenttype.CloudEventContentType).
+		WithRawDataBytes(msg.data, contenttype.CloudEventContentType).
 		WithCustomHTTPMetadata(msg.metadata)
 
 	if cloudEvent[pubsub.TraceIDField] != nil {

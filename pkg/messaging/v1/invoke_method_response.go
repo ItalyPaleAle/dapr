@@ -16,6 +16,7 @@ package v1
 import (
 	"bytes"
 	"io"
+	"strings"
 
 	"github.com/valyala/fasthttp"
 	"google.golang.org/grpc/metadata"
@@ -76,7 +77,7 @@ func (imr *InvokeMethodResponse) WithMessage(pb *commonv1pb.InvokeResponse) *Inv
 	return imr
 }
 
-// WithRawData sets Message using byte data and content type.
+// WithRawData sets message data and content_type.
 func (imr *InvokeMethodResponse) WithRawData(data io.ReadCloser, contentType string) *InvokeMethodResponse {
 	// TODO: Remove the entire block once feature is finalized
 	if contentType == "" && !config.GetNoDefaultContentType() {
@@ -87,6 +88,16 @@ func (imr *InvokeMethodResponse) WithRawData(data io.ReadCloser, contentType str
 	imr.data = data
 
 	return imr
+}
+
+// WithRawDataBytes sets message data from a []byte and content_type.
+func (imr *InvokeMethodResponse) WithRawDataBytes(data []byte, contentType string) *InvokeMethodResponse {
+	return imr.WithRawData(io.NopCloser(bytes.NewReader(data)), contentType)
+}
+
+// WithRawDataString sets message data from a string and content_type.
+func (imr *InvokeMethodResponse) WithRawDataString(data string, contentType string) *InvokeMethodResponse {
+	return imr.WithRawData(io.NopCloser(strings.NewReader(data)), contentType)
 }
 
 // WithHeaders sets gRPC response header metadata.

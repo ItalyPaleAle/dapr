@@ -104,7 +104,7 @@ func TestResponseData(t *testing.T) {
 	t.Run("contenttype is set", func(t *testing.T) {
 		resp := NewInvokeMethodResponse(0, "OK", nil)
 		defer resp.Close()
-		resp.WithRawData(io.NopCloser(strings.NewReader("test")), "application/json")
+		resp.WithRawDataString("test", "application/json")
 		_, r := resp.RawData()
 		bData, err := io.ReadAll(r)
 		assert.NoError(t, err)
@@ -117,23 +117,24 @@ func TestResponseData(t *testing.T) {
 		resp := NewInvokeMethodResponse(0, "OK", nil)
 		defer resp.Close()
 
-		resp.WithRawData(io.NopCloser(strings.NewReader("test")), "")
+		tData := []byte("test")
+		resp.WithRawDataBytes(tData, "")
 		contentType, r := resp.RawData()
 		bData, err := io.ReadAll(r)
 		assert.NoError(t, err)
 		assert.Equal(t, "application/json", resp.r.Message.ContentType)
 		assert.Equal(t, "application/json", contentType)
-		assert.Equal(t, "test", string(bData))
+		assert.Equal(t, tData, bData)
 
 		// Force the ContentType to be empty to test setting it in RawData
-		resp.WithRawData(io.NopCloser(strings.NewReader("test")), "")
+		resp.WithRawDataBytes(tData, "")
 		resp.r.Message.ContentType = ""
 		contentType, r = resp.RawData()
 		bData, err = io.ReadAll(r)
 		assert.NoError(t, err)
 		assert.Equal(t, "", resp.r.Message.ContentType)
 		assert.Equal(t, "application/json", contentType)
-		assert.Equal(t, "test", string(bData))
+		assert.Equal(t, tData, bData)
 	})
 
 	// TODO: Remove once feature is finalized
@@ -144,7 +145,7 @@ func TestResponseData(t *testing.T) {
 		resp := NewInvokeMethodResponse(0, "OK", nil)
 		defer resp.Close()
 
-		resp.WithRawData(io.NopCloser(strings.NewReader("test")), "")
+		resp.WithRawDataString("test", "")
 		contentType, r := resp.RawData()
 		bData, err := io.ReadAll(r)
 		assert.NoError(t, err)
@@ -153,7 +154,7 @@ func TestResponseData(t *testing.T) {
 		assert.Equal(t, "test", string(bData))
 
 		// Force the ContentType to be empty to test setting it in RawData
-		resp.WithRawData(io.NopCloser(strings.NewReader("test")), "")
+		resp.WithRawDataString("test", "")
 		resp.r.Message.ContentType = ""
 		contentType, r = resp.RawData()
 		bData, err = io.ReadAll(r)

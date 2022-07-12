@@ -14,7 +14,6 @@ limitations under the License.
 package actors
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -975,7 +974,7 @@ func (a *actorsRuntime) executeReminder(reminder *Reminder) error {
 	log.Debugf("executing reminder %s for actor type %s with id %s", reminder.Name, reminder.ActorType, reminder.ActorID)
 	req := invokev1.NewInvokeMethodRequest(fmt.Sprintf("remind/%s", reminder.Name))
 	req.WithActor(reminder.ActorType, reminder.ActorID)
-	req.WithRawData(io.NopCloser(bytes.NewReader(b)), invokev1.JSONContentType)
+	req.WithRawDataBytes(b, invokev1.JSONContentType)
 
 	policy := a.resiliency.ActorPreLockPolicy(context.Background(), reminder.ActorType, reminder.ActorID)
 	return policy(func(ctx context.Context) error {
@@ -1332,7 +1331,7 @@ func (a *actorsRuntime) executeTimer(actorType, actorID, name, dueTime, period, 
 	log.Debugf("executing timer %s for actor type %s with id %s", name, actorType, actorID)
 	req := invokev1.NewInvokeMethodRequest(fmt.Sprintf("timer/%s", name))
 	req.WithActor(actorType, actorID)
-	req.WithRawData(io.NopCloser(bytes.NewReader(b)), invokev1.JSONContentType)
+	req.WithRawDataBytes(b, invokev1.JSONContentType)
 
 	policy := a.resiliency.ActorPreLockPolicy(context.Background(), actorType, actorID)
 	err = policy(func(ctx context.Context) error {

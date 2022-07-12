@@ -130,6 +130,16 @@ func (imr *InvokeMethodRequest) WithRawData(data io.ReadCloser, contentType stri
 	return imr
 }
 
+// WithRawDataBytes sets message data from a []byte and content_type.
+func (imr *InvokeMethodRequest) WithRawDataBytes(data []byte, contentType string) *InvokeMethodRequest {
+	return imr.WithRawData(io.NopCloser(bytes.NewReader(data)), contentType)
+}
+
+// WithRawDataString sets message data from a string and content_type.
+func (imr *InvokeMethodRequest) WithRawDataString(data string, contentType string) *InvokeMethodRequest {
+	return imr.WithRawData(io.NopCloser(strings.NewReader(data)), contentType)
+}
+
 // WithHTTPExtension sets new HTTP extension with verb and querystring.
 func (imr *InvokeMethodRequest) WithHTTPExtension(verb string, querystring string) *InvokeMethodRequest {
 	httpMethod, ok := commonv1pb.HTTPExtension_Verb_value[strings.ToUpper(verb)]

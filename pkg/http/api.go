@@ -795,7 +795,7 @@ func (h *configurationEventHandler) updateEventHandler(ctx context.Context, e *c
 		req := invokev1.
 			NewInvokeMethodRequest(fmt.Sprintf("/configuration/%s/%s", h.storeName, item.Key)).
 			WithHTTPExtension(nethttp.MethodPost, "").
-			WithRawData(io.NopCloser(bytes.NewReader(eventBody)), invokev1.JSONContentType)
+			WithRawDataBytes(eventBody, invokev1.JSONContentType)
 		defer req.Close()
 
 		policy := h.res.ComponentInboundPolicy(ctx, h.storeName)

@@ -306,7 +306,7 @@ func (m *mockUnstableHTTPSubscriptions) InvokeMethod(ctx context.Context, req *i
 	responseBytes, _ := json.Marshal(subs)
 
 	response := invokev1.NewInvokeMethodResponse(200, "OK", nil)
-	response.WithRawData(responseBytes, "content/json")
+	response.WithRawDataBytes(responseBytes, "content/json")
 	return response, nil
 }
 
@@ -341,7 +341,7 @@ func (m *mockHTTPSubscriptions) InvokeMethod(ctx context.Context, req *invokev1.
 	responseBytes, _ := json.Marshal(subs)
 
 	response := invokev1.NewInvokeMethodResponse(200, "OK", nil)
-	response.WithRawData(responseBytes, "content/json")
+	response.WithRawDataBytes(responseBytes, "content/json")
 	return response, nil
 }
 

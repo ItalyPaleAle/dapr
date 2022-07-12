@@ -168,7 +168,7 @@ func TestData(t *testing.T) {
 	t.Run("contenttype is set", func(t *testing.T) {
 		req := NewInvokeMethodRequest("test_method")
 		defer req.Close()
-		req.WithRawData(io.NopCloser(strings.NewReader("test")), "application/json")
+		req.WithRawDataString("test", "application/json")
 		contentType, r := req.RawData()
 		bData, err := io.ReadAll(r)
 		assert.NoError(t, err)
@@ -180,23 +180,24 @@ func TestData(t *testing.T) {
 		req := NewInvokeMethodRequest("test_method")
 		defer req.Close()
 
-		req.WithRawData(io.NopCloser(strings.NewReader("test")), "")
+		tData := []byte("test")
+		req.WithRawDataBytes(tData, "")
 		contentType, r := req.RawData()
 		bData, err := io.ReadAll(r)
 		assert.NoError(t, err)
 		assert.Equal(t, "application/json", req.r.Message.ContentType)
 		assert.Equal(t, "application/json", contentType)
-		assert.Equal(t, "test", string(bData))
+		assert.Equal(t, tData, bData)
 
 		// Force the ContentType to be empty to test setting it in RawData
-		req.WithRawData(io.NopCloser(strings.NewReader("test")), "")
+		req.WithRawDataBytes(tData, "")
 		req.r.Message.ContentType = ""
 		contentType, r = req.RawData()
 		bData, err = io.ReadAll(r)
 		assert.NoError(t, err)
 		assert.Equal(t, "", req.r.Message.ContentType)
 		assert.Equal(t, "application/json", contentType)
-		assert.Equal(t, "test", string(bData))
+		assert.Equal(t, tData, bData)
 	})
 
 	// TODO: Remove once feature is finalized
@@ -207,7 +208,7 @@ func TestData(t *testing.T) {
 		req := NewInvokeMethodRequest("test_method")
 		defer req.Close()
 
-		req.WithRawData(io.NopCloser(strings.NewReader("test")), "")
+		req.WithRawDataString("test", "")
 		contentType, r := req.RawData()
 		bData, err := io.ReadAll(r)
 		assert.NoError(t, err)
@@ -216,7 +217,7 @@ func TestData(t *testing.T) {
 		assert.Equal(t, "test", string(bData))
 
 		// Force the ContentType to be empty to test setting it in RawData
-		req.WithRawData(io.NopCloser(strings.NewReader("test")), "")
+		req.WithRawDataString("test", "")
 		req.r.Message.ContentType = ""
 		contentType, r = req.RawData()
 		bData, err = io.ReadAll(r)

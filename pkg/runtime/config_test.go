@@ -29,7 +29,7 @@ func TestNewConfig(t *testing.T) {
 		[]string{"1.2.3.4"}, &publicPort, 8080, 7070,
 		true, 1, true,
 		"localhost:5052", true, 4,
-		"", 4, true, time.Second, true, true)
+		"", 4, time.Second, true, true)
 
 	assert.Equal(t, "app1", c.ID)
 	assert.Equal(t, "localhost:5050", c.PlacementAddresses[0])

@@ -14,7 +14,6 @@ limitations under the License.
 package grpc
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -1565,7 +1564,7 @@ func (a *api) InvokeActor(ctx context.Context, in *runtimev1pb.InvokeActorReques
 	req := invokev1.
 		NewInvokeMethodRequest(in.Method).
 		WithActor(in.ActorType, in.ActorId).
-		WithRawData(io.NopCloser(bytes.NewReader(in.Data)), "")
+		WithRawDataBytes(in.Data, "")
 
 	// Unlike other actor calls, resiliency is handled here for invocation.
 	// This is due to actor invocation involving a lookup for the host.
