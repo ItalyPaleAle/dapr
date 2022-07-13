@@ -636,8 +636,11 @@ func (a *api) InvokeService(ctx context.Context, in *runtimev1pb.InvokeServiceRe
 	}
 
 	policy := a.resiliency.EndpointPolicy(ctx, in.Id, fmt.Sprintf("%s:%s", in.Id, req.Message().Method))
-	var resp *invokev1.InvokeMethodResponse
-	var requestErr bool
+	var (
+		resp       *invokev1.InvokeMethodResponse
+		proto      *internalv1pb.InternalInvokeResponse
+		requestErr bool
+	)
 	respError := policy(func(ctx context.Context) (rErr error) {
 		requestErr = false
 		resp, rErr = a.directMessaging.Invoke(ctx, in.Id, req)
@@ -650,12 +653,24 @@ func (a *api) InvokeService(ctx context.Context, in *runtimev1pb.InvokeServiceRe
 
 		headerMD := invokev1.InternalMetadataToGrpcMetadata(ctx, resp.Headers(), true)
 
+		if resp != nil {
+			defer resp.Close()
+		}
+
+		proto = nil
+		if resp != nil {
+			proto, rErr = resp.ProtoWithData()
+			if rErr != nil {
+				return rErr
+			}
+		}
+
 		// If the status is OK, respError will be nil.
 		var respError error
 		if resp.IsHTTPResponse() {
 			errorMessage := []byte("")
-			if resp != nil {
-				errorMessage, _ = io.ReadAll(resp.RawData())
+			if proto != nil && proto.Message != nil && proto.Message.Data != nil {
+				errorMessage = proto.Message.Data.Value
 			}
 			respError = invokev1.ErrorFromHTTPResponseCode(int(resp.Status().Code), string(errorMessage))
 			// Populate http status code to header
@@ -671,15 +686,16 @@ func (a *api) InvokeService(ctx context.Context, in *runtimev1pb.InvokeServiceRe
 		return respError
 	})
 
-	if resp != nil {
-		defer resp.Close()
-	}
-
 	// In this case, there was an error with the actual request or a resiliency policy stopped the request.
 	if requestErr || (errors.Is(respError, context.DeadlineExceeded) || breaker.IsErrorPermanent(respError)) {
 		return nil, respError
 	}
-	return resp.Message(), respError
+
+	if respError != nil {
+		return nil, respError
+	}
+
+	return proto.Message, nil
 }
 
 func (a *api) InvokeBinding(ctx context.Context, in *runtimev1pb.InvokeBindingRequest) (*runtimev1pb.InvokeBindingResponse, error) {
@@ -1590,10 +1606,20 @@ func (a *api) InvokeActor(ctx context.Context, in *runtimev1pb.InvokeActorReques
 	// should technically wait forever on the locking mechanism. If we timeout while
 	// waiting for the lock, we can also create a queue of calls that will try and continue
 	// after the timeout.
-	var resp *invokev1.InvokeMethodResponse
+	var (
+		resp *invokev1.InvokeMethodResponse
+		body []byte
+		rErr error
+	)
 	policy := a.resiliency.ActorPreLockPolicy(ctx, in.ActorType, in.ActorId)
-	err := policy(func(ctx context.Context) (rErr error) {
+	err := policy(func(ctx context.Context) error {
 		resp, rErr = a.actor.Call(ctx, req)
+		if rErr != nil {
+			return rErr
+		}
+		defer resp.Close()
+
+		body, rErr = io.ReadAll(resp.RawData())
 		return rErr
 	})
 	if err != nil && !errors.Is(err, actors.ErrDaprResponseHeader) {
@@ -1601,12 +1627,7 @@ func (a *api) InvokeActor(ctx context.Context, in *runtimev1pb.InvokeActorReques
 		apiServerLogger.Debug(err)
 		return &runtimev1pb.InvokeActorResponse{}, err
 	}
-	defer resp.Close()
 
-	body, err := io.ReadAll(resp.RawData())
-	if err != nil {
-		return nil, err
-	}
 	return &runtimev1pb.InvokeActorResponse{
 		Data: body,
 	}, nil

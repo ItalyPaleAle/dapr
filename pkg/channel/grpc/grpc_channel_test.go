@@ -58,6 +58,7 @@ func TestInvokeMethod(t *testing.T) {
 	r := response.RawData()
 	grpcServer.Stop()
 
+	assert.NotNil(t, r)
 	assert.Equal(t, "application/json", contentType)
 
 	actual := map[string]string{}

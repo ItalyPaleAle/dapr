@@ -34,6 +34,7 @@ import (
 	"github.com/phayes/freeport"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"go.opencensus.io/trace"
 	epb "google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
@@ -321,8 +322,10 @@ func TestCallActorWithTracing(t *testing.T) {
 
 	client := internalv1pb.NewServiceInvocationClient(clientConn)
 
-	request := invokev1.NewInvokeMethodRequest("method")
-	request.WithActor("test-actor", "actor-1")
+	request := invokev1.
+		NewInvokeMethodRequest("method").
+		WithActor("test-actor", "actor-1")
+	defer request.Close()
 
 	resp, err := client.CallActor(context.Background(), request.Proto())
 	assert.NoError(t, err)
@@ -2978,16 +2981,20 @@ func TestServiceInvocationWithResiliency(t *testing.T) {
 	client := runtimev1pb.NewDaprClient(clientConn)
 
 	t.Run("Test invoke direct message retries with resiliency", func(t *testing.T) {
-		_, err := client.InvokeService(context.Background(), &runtimev1pb.InvokeServiceRequest{
+		val := []byte("failingKey")
+		res, err := client.InvokeService(context.Background(), &runtimev1pb.InvokeServiceRequest{
 			Id: "failingApp",
 			Message: &commonv1pb.InvokeRequest{
 				Method: "test",
-				Data:   &anypb.Any{Value: []byte("failingKey")},
+				Data:   &anypb.Any{Value: val},
 			},
 		})
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Equal(t, 2, failingDirectMessaging.Failure.CallCount["failingKey"])
+		require.NotNil(t, res)
+		require.NotNil(t, res.Data)
+		assert.Equal(t, val, res.Data.Value)
 	})
 
 	t.Run("Test invoke direct message fails with timeout", func(t *testing.T) {
