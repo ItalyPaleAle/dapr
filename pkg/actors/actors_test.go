@@ -107,7 +107,7 @@ func (m *mockAppChannel) GetBaseAddress() string {
 func (m *mockAppChannel) InvokeMethod(ctx context.Context, req *invokev1.InvokeMethodRequest) (*invokev1.InvokeMethodResponse, error) {
 	if m.requestC != nil {
 		var request testRequest
-		if err := json.Unmarshal(req.Message().Data.Value, &request); err == nil {
+		if err := json.NewDecoder(req.RawData()).Decode(&request); err == nil {
 			m.requestC <- request
 		}
 	}

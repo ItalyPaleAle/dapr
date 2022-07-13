@@ -165,6 +165,8 @@ func (d *directMessaging) invokeWithRetry(
 			retriesExhaustedPath := false // Used to track final error state.
 			nullifyResponsePath := false  // Used to track final response state.
 			policy := d.resiliency.BuiltInPolicy(ctx, resiliency.BuiltInServiceRetries)
+			// This policy has built-in retries so enable replay in the request
+			req.WithReplay(true)
 			var resp *invokev1.InvokeMethodResponse
 			err := policy(func(ctx context.Context) (rErr error) {
 				retriesExhaustedPath = false
@@ -200,6 +202,9 @@ func (d *directMessaging) invokeWithRetry(
 		}
 		return fn(ctx, app.id, app.namespace, app.address, req)
 	}
+
+	// We need to enable replaying because the request may be attempted again in this path
+	req.WithReplay(true)
 	for i := 0; i < numRetries; i++ {
 		resp, err := fn(ctx, app.id, app.namespace, app.address, req)
 		if err == nil {

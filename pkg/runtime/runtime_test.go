@@ -2822,7 +2822,7 @@ func TestPubsubWithResiliency(t *testing.T) {
 			CallCount: map[string]int{},
 		},
 		KeyFunc: func(req *invokev1.InvokeMethodRequest) string {
-			rawData := req.Message().Data.Value
+			rawData, _ := io.ReadAll(req.RawData())
 			data := make(map[string]string)
 			json.Unmarshal(rawData, &data)
 			val, _ := base64.StdEncoding.DecodeString(data["data_base64"])

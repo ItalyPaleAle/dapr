@@ -298,7 +298,8 @@ func (r *Resiliency) addBuiltInPolicies() {
 	// Cover retries for remote service invocation, but don't overwrite anything that is already present.
 	if _, ok := r.retries[string(BuiltInServiceRetries)]; !ok {
 		r.retries[string(BuiltInServiceRetries)] = &retry.Config{
-			Policy:     retry.PolicyConstant,
+			Policy: retry.PolicyConstant,
+			// Note: If this value changes to 0, don't forget to disable "Replay" in direct messaging
 			MaxRetries: 3,
 			Duration:   time.Second,
 		}
@@ -768,6 +769,11 @@ func (e *circuitBreakerInstances) Remove(name string) {
 	e.Lock()
 	delete(e.cbs, name)
 	e.Unlock()
+}
+
+// HasRetries returns true if the policy is configured to have more than 1 retry.
+func (p PolicyDescription) HasRetries() bool {
+	return p.RetryPolicy != nil && p.RetryPolicy.MaxRetries != 0
 }
 
 func toMap(val interface{}) (interface{}, error) {

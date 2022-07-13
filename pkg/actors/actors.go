@@ -483,6 +483,12 @@ func (a *actorsRuntime) callLocalActor(ctx context.Context, req *invokev1.Invoke
 		req.Message().HttpExtension.Verb = commonv1pb.HTTPExtension_PUT
 	}
 
+	// If the request can be retried, we need to enable replaying
+	pd := a.resiliency.PolicyDefined(act.actorType, resiliency.Actor)
+	if pd != nil && pd.HasRetries() {
+		req.WithReplay(true)
+	}
+
 	policy := a.resiliency.ActorPostLockPolicy(ctx, act.actorType, act.actorID)
 	var resp *invokev1.InvokeMethodResponse
 	err = policy(func(ctx context.Context) (rErr error) {

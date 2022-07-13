@@ -1388,6 +1388,12 @@ func (a *api) onDirectMessage(reqCtx *fasthttp.RequestCtx) {
 		WithFastHTTPHeaders(&reqCtx.Request.Header)
 	defer req.Close()
 
+	// If the request can be retried, we need to enable replaying
+	pd := a.resiliency.PolicyDefined(targetID, resiliency.Endpoint)
+	if pd != nil && pd.HasRetries() {
+		req.WithReplay(true)
+	}
+
 	policy := a.resiliency.EndpointPolicy(reqCtx, targetID, fmt.Sprintf("%s:%s", targetID, invokeMethodName))
 	// Since we don't want to return the actual error, we have to extract several things in order to construct our response.
 	var (

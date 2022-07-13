@@ -628,6 +628,12 @@ func (a *api) InvokeService(ctx context.Context, in *runtimev1pb.InvokeServiceRe
 		return nil, status.Errorf(codes.Internal, messages.ErrDirectInvokeNotReady)
 	}
 
+	// If the request can be retried, we need to enable replaying
+	pd := a.resiliency.PolicyDefined(in.Id, resiliency.Endpoint)
+	if pd != nil && pd.HasRetries() {
+		req.WithReplay(true)
+	}
+
 	policy := a.resiliency.EndpointPolicy(ctx, in.Id, fmt.Sprintf("%s:%s", in.Id, req.Message().Method))
 	var resp *invokev1.InvokeMethodResponse
 	var requestErr bool
