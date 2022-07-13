@@ -16,6 +16,8 @@ package v1
 import (
 	"bytes"
 	"io"
+
+	streamutils "github.com/dapr/dapr/utils/streams"
 )
 
 // replayableRequest is implemented by InvokeMethodRequest and InvokeMethodResponse
@@ -33,7 +35,7 @@ func (rr *replayableRequest) SetReplay(enabled bool) {
 			rr.data = io.NopCloser(bytes.NewReader(nil))
 		}
 		rr.replay = &bytes.Buffer{}
-		rr.data = TeeReadCloser(rr.data, rr.replay)
+		rr.data = streamutils.TeeReadCloser(rr.data, rr.replay)
 	}
 }
 

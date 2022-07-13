@@ -264,33 +264,3 @@ func (h *Channel) parseChannelResponse(req *invokev1.InvokeMethodRequest, resp *
 
 	return rsp
 }
-
-/*!
-Adapted from the Go 1.18.3 source code
-Copyright 2009 The Go Authors. All rights reserved.
-License: BSD (https://github.com/golang/go/blob/go1.18.3/LICENSE)
-*/
-
-// LimitReadCloser returns a ReadCloser that reads from r but stops with EOF after n bytes.
-func LimitReadCloser(r io.ReadCloser, n int64) io.ReadCloser { return &limitReadCloser{r, n} }
-
-type limitReadCloser struct {
-	R io.ReadCloser
-	N int64
-}
-
-func (l *limitReadCloser) Read(p []byte) (n int, err error) {
-	if l.N <= 0 {
-		return 0, io.EOF
-	}
-	if int64(len(p)) > l.N {
-		p = p[0:l.N]
-	}
-	n, err = l.R.Read(p)
-	l.N -= int64(n)
-	return
-}
-
-func (l *limitReadCloser) Close() error {
-	return l.R.Close()
-}
