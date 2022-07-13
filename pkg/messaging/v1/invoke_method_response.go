@@ -31,8 +31,9 @@ import (
 // InvokeMethodResponse holds InternalInvokeResponse protobuf message
 // and provides the helpers to manage it.
 type InvokeMethodResponse struct {
-	r    *internalv1pb.InternalInvokeResponse
-	data io.ReadCloser
+	replayableRequest
+
+	r *internalv1pb.InternalInvokeResponse
 }
 
 // NewInvokeMethodResponse returns new InvokeMethodResponse object with status.
@@ -58,19 +59,6 @@ func InternalInvokeResponse(pb *internalv1pb.InternalInvokeResponse) (*InvokeMet
 	return rsp, nil
 }
 
-// Close the data stream.
-func (imr *InvokeMethodResponse) Close() (err error) {
-	if imr.data == nil {
-		return nil
-	}
-	err = imr.data.Close()
-	if err != nil {
-		return err
-	}
-	imr.data = nil
-	return nil
-}
-
 // WithMessage sets InvokeResponse pb object to Message field.
 func (imr *InvokeMethodResponse) WithMessage(pb *commonv1pb.InvokeResponse) *InvokeMethodResponse {
 	imr.r.Message = pb
@@ -79,6 +67,12 @@ func (imr *InvokeMethodResponse) WithMessage(pb *commonv1pb.InvokeResponse) *Inv
 
 // WithRawData sets message data and content_type.
 func (imr *InvokeMethodResponse) WithRawData(data io.ReadCloser, contentType string) *InvokeMethodResponse {
+	if imr.replay != nil {
+		// We are panicking here because we can't return errors
+		// This is just to catch issues during development however, and will never happen at runtime
+		panic("WithRawData cannot be invoked after replaying has been enabled")
+	}
+
 	// TODO: Remove the entire block once feature is finalized
 	if contentType == "" && !config.GetNoDefaultContentType() {
 		contentType = JSONContentType
@@ -132,6 +126,12 @@ func (imr *InvokeMethodResponse) WithTrailers(trailer metadata.MD) *InvokeMethod
 	return imr
 }
 
+// WithReplay enables replaying for the data stream.
+func (imr *InvokeMethodResponse) WithReplay(enabled bool) *InvokeMethodResponse {
+	imr.replayableRequest.SetReplay(enabled)
+	return imr
+}
+
 // Status gets Response status.
 func (imr *InvokeMethodResponse) Status() *internalv1pb.Status {
 	return imr.r.GetStatus()
@@ -156,7 +156,7 @@ func (imr *InvokeMethodResponse) ProtoWithData() (*internalv1pb.InternalInvokeRe
 		err  error
 	)
 	if imr.data != nil {
-		data, err = io.ReadAll(imr.data)
+		data, err = io.ReadAll(imr.RawData())
 		if err != nil {
 			return nil, err
 		}
@@ -224,12 +224,8 @@ func (imr *InvokeMethodResponse) RawData() (r io.Reader) {
 
 	// If the message has a data property, use that
 	if imr.HasMessageData() {
-		r = bytes.NewReader(m.Data.Value)
-	} else if imr.data == nil {
-		r = bytes.NewReader(nil)
-	} else {
-		r = imr.data
+		return bytes.NewReader(m.Data.Value)
 	}
 
-	return r
+	return imr.replayableRequest.RawData()
 }

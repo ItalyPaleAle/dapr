@@ -559,4 +559,34 @@ func TestRequestReplayable(t *testing.T) {
 			assert.Nil(t, req.replay)
 		})
 	})
+
+	t.Run("get ProtoWithData twice", func(t *testing.T) {
+		req := newReplayable()
+		defer req.Close()
+
+		t.Run("first ProtoWithData request", func(t *testing.T) {
+			pb, err := req.ProtoWithData()
+			assert.NoError(t, err)
+			assert.NotNil(t, pb)
+			assert.NotNil(t, pb.Message)
+			assert.NotNil(t, pb.Message.Data)
+			assert.Equal(t, message, pb.Message.Data.Value)
+		})
+
+		t.Run("second ProtoWithData request", func(t *testing.T) {
+			pb, err := req.ProtoWithData()
+			assert.NoError(t, err)
+			assert.NotNil(t, pb)
+			assert.NotNil(t, pb.Message)
+			assert.NotNil(t, pb.Message.Data)
+			assert.Equal(t, message, pb.Message.Data.Value)
+		})
+
+		t.Run("close request", func(t *testing.T) {
+			err := req.Close()
+			assert.NoError(t, err)
+			assert.Nil(t, req.data)
+			assert.Nil(t, req.replay)
+		})
+	})
 }

@@ -36,9 +36,9 @@ const (
 // InvokeMethodRequest holds InternalInvokeRequest protobuf message
 // and provides the helpers to manage it.
 type InvokeMethodRequest struct {
-	r      *internalv1pb.InternalInvokeRequest
-	data   io.ReadCloser
-	replay *bytes.Buffer
+	replayableRequest
+
+	r *internalv1pb.InternalInvokeRequest
 }
 
 // NewInvokeMethodRequest creates InvokeMethodRequest object for method.
@@ -83,21 +83,6 @@ func InternalInvokeRequest(pb *internalv1pb.InternalInvokeRequest) (*InvokeMetho
 	}
 
 	return req, nil
-}
-
-// Close the data stream.
-func (imr *InvokeMethodRequest) Close() (err error) {
-	imr.replay = nil
-
-	if imr.data == nil {
-		return nil
-	}
-	err = imr.data.Close()
-	if err != nil {
-		return err
-	}
-	imr.data = nil
-	return nil
 }
 
 // WithActor sets actor type and id.
@@ -182,15 +167,7 @@ func (imr *InvokeMethodRequest) WithCustomHTTPMetadata(md map[string]string) *In
 
 // WithReplay enables replaying for the data stream.
 func (imr *InvokeMethodRequest) WithReplay(enabled bool) *InvokeMethodRequest {
-	if !enabled {
-		imr.replay = nil
-	} else if imr.replay == nil {
-		if imr.data == nil {
-			imr.data = io.NopCloser(bytes.NewReader(nil))
-		}
-		imr.replay = &bytes.Buffer{}
-		imr.data = TeeReadCloser(imr.data, imr.replay)
-	}
+	imr.replayableRequest.SetReplay(enabled)
 	return imr
 }
 
@@ -226,7 +203,7 @@ func (imr *InvokeMethodRequest) ProtoWithData() (*internalv1pb.InternalInvokeReq
 		err  error
 	)
 	if imr.data != nil {
-		data, err = io.ReadAll(imr.data)
+		data, err = io.ReadAll(imr.RawData())
 		if err != nil {
 			return nil, err
 		}
@@ -286,19 +263,10 @@ func (imr *InvokeMethodRequest) RawData() (r io.Reader) {
 
 	// If the message has a data property, use that
 	if imr.HasMessageData() {
-		r = bytes.NewReader(m.Data.Value)
-	} else if imr.data == nil {
-		r = bytes.NewReader(nil)
-	} else if imr.replay != nil {
-		r = io.MultiReader(
-			bytes.NewReader(imr.replay.Bytes()),
-			imr.data,
-		)
-	} else {
-		r = imr.data
+		return bytes.NewReader(m.Data.Value)
 	}
 
-	return r
+	return imr.replayableRequest.RawData()
 }
 
 // Adds a new header to the existing set.
