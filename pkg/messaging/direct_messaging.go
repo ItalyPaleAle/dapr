@@ -259,7 +259,8 @@ func (d *directMessaging) invokeRemote(ctx context.Context, appID, namespace, ap
 
 	// If the request contains a message in the body, send an unary request
 	if req.HasMessageData() {
-		resp, err := clientV1.CallLocal(ctx, req.Proto(), opts...)
+		var resp *internalv1pb.InternalInvokeResponse
+		resp, err = clientV1.CallLocal(ctx, req.Proto(), opts...)
 		if err != nil {
 			return nil, err
 		}

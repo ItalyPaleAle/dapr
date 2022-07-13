@@ -18,13 +18,10 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"io"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
-
-	"net/http"
-	nethttp "net/http"
 
 	"go.opencensus.io/plugin/ochttp/propagation/tracecontext"
 	"google.golang.org/grpc/codes"
@@ -103,7 +100,7 @@ func (h *Channel) GetBaseAddress() string {
 // GET http://localhost:<app_port>/dapr/config
 func (h *Channel) GetAppConfig() (*config.ApplicationConfig, error) {
 	req := invokev1.NewInvokeMethodRequest(appConfigEndpoint)
-	req.WithHTTPExtension(nethttp.MethodGet, "")
+	req.WithHTTPExtension(http.MethodGet, "")
 	req.WithRawData(nil, invokev1.JSONContentType)
 
 	// TODO Propagate context
@@ -115,7 +112,7 @@ func (h *Channel) GetAppConfig() (*config.ApplicationConfig, error) {
 
 	var config config.ApplicationConfig
 
-	if resp.Status().Code != nethttp.StatusOK {
+	if resp.Status().Code != http.StatusOK {
 		return &config, nil
 	}
 
@@ -168,6 +165,9 @@ func (h *Channel) InvokeMethod(ctx context.Context, req *invokev1.InvokeMethodRe
 
 func (h *Channel) invokeMethodV1(ctx context.Context, req *invokev1.InvokeMethodRequest) (*invokev1.InvokeMethodResponse, error) {
 	channelReq, err := h.constructRequest(ctx, req)
+	if err != nil {
+		return nil, err
+	}
 
 	if h.ch != nil {
 		h.ch <- struct{}{}
@@ -189,7 +189,7 @@ func (h *Channel) invokeMethodV1(ctx context.Context, req *invokev1.InvokeMethod
 
 	contentLength, _ := strconv.Atoi(resp.Header.Get("content-length"))
 	if err != nil {
-		diag.DefaultHTTPMonitoring.ClientRequestCompleted(ctx, channelReq.Method, req.Message().GetMethod(), strconv.Itoa(nethttp.StatusInternalServerError), int64(contentLength), elapsedMs)
+		diag.DefaultHTTPMonitoring.ClientRequestCompleted(ctx, channelReq.Method, req.Message().GetMethod(), strconv.Itoa(http.StatusInternalServerError), int64(contentLength), elapsedMs)
 		return nil, err
 	}
 
@@ -249,9 +249,9 @@ func (h *Channel) parseChannelResponse(req *invokev1.InvokeMethodRequest, resp *
 		contentType = "text/plain; charset=utf-8"
 	}
 
-	var body io.ReadCloser = resp.Body
 	// We are not limiting the response body because we use streams
 	/*// Limit response body if needed
+	var body io.ReadCloser = resp.Body
 	if h.maxResponseBodySize > 0 {
 		body = LimitReadCloser(body, int64(h.maxResponseBodySize)*1024*1024)
 	}*/
@@ -260,7 +260,7 @@ func (h *Channel) parseChannelResponse(req *invokev1.InvokeMethodRequest, resp *
 	rsp := invokev1.
 		NewInvokeMethodResponse(int32(resp.StatusCode), "", nil).
 		WithHTTPHeaders(resp.Header).
-		WithRawData(body, contentType)
+		WithRawData(resp.Body, contentType)
 
 	return rsp
 }

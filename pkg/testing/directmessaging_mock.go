@@ -33,10 +33,8 @@ func (_m *MockDirectMessaging) Invoke(ctx context.Context, targetAppID string, r
 	var r0 *v1.InvokeMethodResponse
 	if rf, ok := ret.Get(0).(func(context.Context, string, *v1.InvokeMethodRequest) *v1.InvokeMethodResponse); ok {
 		r0 = rf(ctx, targetAppID, req)
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*v1.InvokeMethodResponse)
-		}
+	} else if ret.Get(0) != nil {
+		r0 = ret.Get(0).(*v1.InvokeMethodResponse)
 	}
 
 	var r1 error

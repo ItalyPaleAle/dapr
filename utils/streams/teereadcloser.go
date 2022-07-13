@@ -61,6 +61,7 @@ func (t *teeReadCloser) Close() error {
 func (t *teeReadCloser) Read(p []byte) (n int, err error) {
 	n, err = t.r.Read(p)
 	if n > 0 {
+		//nolint:govet
 		if n, err := t.w.Write(p[:n]); err != nil {
 			return n, err
 		}

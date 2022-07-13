@@ -150,6 +150,7 @@ type (
 		Timeout string
 	}
 
+	// PolicyDescription contains the policies that are applied to a target.
 	PolicyDescription struct {
 		RetryPolicy    *retry.Config
 		TimeoutPolicy  time.Duration
