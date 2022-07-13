@@ -3728,7 +3728,8 @@ func TestBindingResiliency(t *testing.T) {
 			CallCount: map[string]int{},
 		},
 		KeyFunc: func(req *invokev1.InvokeMethodRequest) string {
-			return string(req.Message().Data.Value)
+			r, _ := io.ReadAll(req.RawData())
+			return string(r)
 		},
 	}
 

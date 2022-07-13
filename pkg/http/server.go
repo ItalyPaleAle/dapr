@@ -62,16 +62,26 @@ type server struct {
 	profilingListeners []net.Listener
 }
 
+// NewServerOpts are the options for NewServer.
+type NewServerOpts struct {
+	API         API
+	Config      ServerConfig
+	TracingSpec config.TracingSpec
+	MetricSpec  config.MetricSpec
+	Pipeline    http_middleware.Pipeline
+	APISpec     config.APISpec
+}
+
 // NewServer returns a new HTTP server.
-func NewServer(api API, config ServerConfig, tracingSpec config.TracingSpec, metricSpec config.MetricSpec, pipeline http_middleware.Pipeline, apiSpec config.APISpec) Server {
+func NewServer(opts NewServerOpts) Server {
 	infoLog.SetOutputLevel(logger.LogLevel("info"))
 	return &server{
-		api:         api,
-		config:      config,
-		tracingSpec: tracingSpec,
-		metricSpec:  metricSpec,
-		pipeline:    pipeline,
-		apiSpec:     apiSpec,
+		api:         opts.API,
+		config:      opts.Config,
+		tracingSpec: opts.TracingSpec,
+		metricSpec:  opts.MetricSpec,
+		pipeline:    opts.Pipeline,
+		apiSpec:     opts.APISpec,
 	}
 }
 

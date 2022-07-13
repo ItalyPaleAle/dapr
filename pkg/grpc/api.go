@@ -653,12 +653,10 @@ func (a *api) InvokeService(ctx context.Context, in *runtimev1pb.InvokeServiceRe
 
 		headerMD := invokev1.InternalMetadataToGrpcMetadata(ctx, resp.Headers(), true)
 
-		if resp != nil {
-			defer resp.Close()
-		}
-
 		proto = nil
 		if resp != nil {
+			defer resp.Close()
+
 			proto, rErr = resp.ProtoWithData()
 			if rErr != nil {
 				return rErr

@@ -662,7 +662,14 @@ func TestClose(t *testing.T) {
 		require.NoError(t, err)
 		serverConfig := NewServerConfig("test", "127.0.0.1", port, []string{"127.0.0.1"}, nil, 0, "", false, 4, "", 4, true)
 		a := &api{}
-		server := NewServer(a, serverConfig, config.TracingSpec{}, config.MetricSpec{}, http_middleware.Pipeline{}, config.APISpec{})
+		server := NewServer(NewServerOpts{
+			API:         a,
+			Config:      serverConfig,
+			TracingSpec: config.TracingSpec{},
+			MetricSpec:  config.MetricSpec{},
+			Pipeline:    http_middleware.Pipeline{},
+			APISpec:     config.APISpec{},
+		})
 		require.NoError(t, server.StartNonBlocking())
 		dapr_testing.WaitForListeningAddress(t, 5*time.Second, fmt.Sprintf("127.0.0.1:%d", port))
 		assert.NoError(t, server.Close())
@@ -673,7 +680,14 @@ func TestClose(t *testing.T) {
 		require.NoError(t, err)
 		serverConfig := NewServerConfig("test", "127.0.0.1", port, []string{"127.0.0.1"}, nil, 0, "", false, 4, "", 4, false)
 		a := &api{}
-		server := NewServer(a, serverConfig, config.TracingSpec{}, config.MetricSpec{}, http_middleware.Pipeline{}, config.APISpec{})
+		server := NewServer(NewServerOpts{
+			API:         a,
+			Config:      serverConfig,
+			TracingSpec: config.TracingSpec{},
+			MetricSpec:  config.MetricSpec{},
+			Pipeline:    http_middleware.Pipeline{},
+			APISpec:     config.APISpec{},
+		})
 		require.NoError(t, server.StartNonBlocking())
 		dapr_testing.WaitForListeningAddress(t, 5*time.Second, fmt.Sprintf("127.0.0.1:%d", port))
 		assert.NoError(t, server.Close())
