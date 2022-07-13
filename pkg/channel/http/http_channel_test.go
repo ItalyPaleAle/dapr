@@ -103,8 +103,7 @@ func TestInvokeMethod(t *testing.T) {
 
 		// assert
 		assert.NoError(t, err)
-		_, r := response.RawData()
-		body, err := io.ReadAll(r)
+		body, err := io.ReadAll(response.RawData())
 		assert.NoError(t, err)
 		assert.Equal(t, "param1=val1&param2=val2", string(body))
 	})
@@ -128,8 +127,7 @@ func TestInvokeMethod(t *testing.T) {
 
 		// assert
 		assert.NoError(t, err)
-		_, r := response.RawData()
-		body, err := io.ReadAll(r)
+		body, err := io.ReadAll(response.RawData())
 		assert.NoError(t, err)
 		assert.Equal(t, "", string(body))
 	})
@@ -221,7 +219,7 @@ func TestInvokeWithHeaders(t *testing.T) {
 
 	// assert
 	assert.NoError(t, err)
-	_, body := response.RawData()
+	body := response.RawData()
 
 	actual := map[string]string{}
 	err = json.NewDecoder(body).Decode(&actual)
@@ -250,8 +248,8 @@ func TestContentType(t *testing.T) {
 
 		// assert
 		assert.NoError(t, err)
-		contentType, r := resp.RawData()
-		body, err := io.ReadAll(r)
+		contentType := resp.ContentType()
+		body, err := io.ReadAll(resp.RawData())
 		assert.NoError(t, err)
 		assert.Equal(t, "text/plain; charset=utf-8", contentType)
 		assert.Equal(t, "application/json", string(body))
@@ -280,8 +278,8 @@ func TestContentType(t *testing.T) {
 
 		// assert
 		assert.NoError(t, err)
-		contentType, r := resp.RawData()
-		body, err := io.ReadAll(r)
+		contentType := resp.ContentType()
+		body, err := io.ReadAll(resp.RawData())
 		assert.NoError(t, err)
 		assert.Equal(t, "", contentType)
 		assert.Equal(t, []byte{}, body)
@@ -303,8 +301,8 @@ func TestContentType(t *testing.T) {
 
 		// assert
 		assert.NoError(t, err)
-		contentType, r := resp.RawData()
-		body, err := io.ReadAll(r)
+		contentType := resp.ContentType()
+		body, err := io.ReadAll(resp.RawData())
 		assert.NoError(t, err)
 		assert.Equal(t, "text/plain; charset=utf-8", contentType)
 		assert.Equal(t, []byte("application/json"), body)
@@ -326,8 +324,8 @@ func TestContentType(t *testing.T) {
 
 		// assert
 		assert.NoError(t, err)
-		contentType, r := resp.RawData()
-		body, err := io.ReadAll(r)
+		contentType := resp.ContentType()
+		body, err := io.ReadAll(resp.RawData())
 		assert.NoError(t, err)
 		assert.Equal(t, "text/plain; charset=utf-8", contentType)
 		assert.Equal(t, []byte("text/plain"), body)
@@ -351,7 +349,7 @@ func TestAppToken(t *testing.T) {
 
 		// assert
 		assert.NoError(t, err)
-		_, body := response.RawData()
+		body := response.RawData()
 
 		actual := map[string]string{}
 		err = json.NewDecoder(body).Decode(&actual)
@@ -377,7 +375,7 @@ func TestAppToken(t *testing.T) {
 
 		// assert
 		assert.NoError(t, err)
-		_, body := response.RawData()
+		body := response.RawData()
 
 		actual := map[string]string{}
 		err = json.NewDecoder(body).Decode(&actual)

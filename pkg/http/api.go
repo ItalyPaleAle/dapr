@@ -1392,7 +1392,7 @@ func (a *api) onDirectMessage(reqCtx *fasthttp.RequestCtx) {
 	// Since we don't want to return the actual error, we have to extract several things in order to construct our response.
 	var (
 		resp          *invokev1.InvokeMethodResponse
-		r             io.ReadCloser
+		r             io.Reader
 		statusCode    int
 		errBody       []byte
 		msg           ErrorResponse
@@ -1415,9 +1415,8 @@ func (a *api) onDirectMessage(reqCtx *fasthttp.RequestCtx) {
 
 		errorOccurred = false
 		invokev1.InternalMetadataToHTTPHeader(reqCtx, resp.Headers(), reqCtx.Response.Header.Set)
-		var contentType string
-		contentType, r = resp.RawData()
-		reqCtx.Response.Header.SetContentType(contentType)
+		r = resp.RawData()
+		reqCtx.Response.Header.SetContentType(resp.ContentType())
 
 		// Construct response
 		statusCode = int(resp.Status().Code)
@@ -1767,15 +1766,14 @@ func (a *api) onDirectActorMessage(reqCtx *fasthttp.RequestCtx) {
 	}
 
 	invokev1.InternalMetadataToHTTPHeader(reqCtx, resp.Headers(), reqCtx.Response.Header.Set)
-	contentType, r := resp.RawData()
-	reqCtx.Response.Header.SetContentType(contentType)
+	reqCtx.Response.Header.SetContentType(resp.ContentType())
 
 	// Construct response.
 	statusCode := int(resp.Status().Code)
 	if !resp.IsHTTPResponse() {
 		statusCode = invokev1.HTTPStatusFromCode(codes.Code(statusCode))
 	}
-	respond(reqCtx, withStream(statusCode, r))
+	respond(reqCtx, withStream(statusCode, resp.RawData()))
 }
 
 func (a *api) onGetActorState(reqCtx *fasthttp.RequestCtx) {

@@ -271,8 +271,7 @@ func (a *actorsRuntime) deactivateActor(actorType, actorID string) error {
 
 	if resp.Status().Code != nethttp.StatusOK {
 		diag.DefaultMonitoring.ActorDeactivationFailed(actorType, fmt.Sprintf("status_code_%d", resp.Status().Code))
-		_, r := resp.RawData()
-		body, _ := io.ReadAll(r)
+		body, _ := io.ReadAll(resp.RawData())
 		return errors.Errorf("error from actor service: %s", string(body))
 	}
 
@@ -496,8 +495,7 @@ func (a *actorsRuntime) callLocalActor(ctx context.Context, req *invokev1.Invoke
 	}
 
 	if resp.Status().Code != nethttp.StatusOK {
-		_, r := resp.RawData()
-		respData, _ := io.ReadAll(r)
+		respData, _ := io.ReadAll(resp.RawData())
 		return nil, errors.Errorf("error from actor service: %s", string(respData))
 	}
 

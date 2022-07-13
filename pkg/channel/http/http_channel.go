@@ -132,7 +132,7 @@ func (h *Channel) GetAppConfig() (*config.ApplicationConfig, error) {
 	case "v1":
 		fallthrough
 	default:
-		_, r := resp.RawData()
+		r := resp.RawData()
 		if err = json.NewDecoder(r).Decode(&config); err != nil {
 			return nil, err
 		}
@@ -214,8 +214,8 @@ func (h *Channel) constructRequest(ctx context.Context, req *invokev1.InvokeMeth
 		uri += "?" + qs
 	}
 
-	contentType, body := req.RawData()
-	channelReq, err := http.NewRequestWithContext(ctx, verb, uri, body)
+	contentType := req.ContentType()
+	channelReq, err := http.NewRequestWithContext(ctx, verb, uri, req.RawData())
 	if err != nil {
 		return nil, err
 	}

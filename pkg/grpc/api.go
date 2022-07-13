@@ -445,7 +445,7 @@ func (a *api) CallLocalStream(stream internalv1pb.ServiceInvocation_CallLocalStr
 	defer res.Close()
 
 	// Respond to the caller
-	_, r := res.RawData()
+	r := res.RawData()
 	resProto := res.Proto()
 	buf := make([]byte, 4096) // 4KB buffer
 	var (
@@ -648,8 +648,7 @@ func (a *api) InvokeService(ctx context.Context, in *runtimev1pb.InvokeServiceRe
 		if resp.IsHTTPResponse() {
 			errorMessage := []byte("")
 			if resp != nil {
-				_, r := resp.RawData()
-				errorMessage, _ = io.ReadAll(r)
+				errorMessage, _ = io.ReadAll(resp.RawData())
 			}
 			respError = invokev1.ErrorFromHTTPResponseCode(int(resp.Status().Code), string(errorMessage))
 			// Populate http status code to header
@@ -1585,8 +1584,7 @@ func (a *api) InvokeActor(ctx context.Context, in *runtimev1pb.InvokeActorReques
 		return &runtimev1pb.InvokeActorResponse{}, err
 	}
 
-	_, r := resp.RawData()
-	body, err := io.ReadAll(r)
+	body, err := io.ReadAll(resp.RawData())
 	if err != nil {
 		return nil, err
 	}

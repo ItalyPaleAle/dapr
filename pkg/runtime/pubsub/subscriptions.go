@@ -100,7 +100,7 @@ func GetSubscriptionsHTTP(channel channel.AppChannel, log logger.Logger, r resil
 
 	switch resp.Status().Code {
 	case http.StatusOK:
-		_, body := resp.RawData()
+		body := resp.RawData()
 		if err := json.NewDecoder(body).Decode(&subscriptionItems); err != nil {
 			log.Errorf(deserializeTopicsError, err)
 

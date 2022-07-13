@@ -189,26 +189,21 @@ func (imr *InvokeMethodResponse) HasMessageData() bool {
 	return m != nil && m.Data != nil && len(m.Data.Value) > 0
 }
 
-// RawData returns content_type and stream body.
-func (imr *InvokeMethodResponse) RawData() (string, io.ReadCloser) {
+// ContenType returns the content type of the message.
+func (imr *InvokeMethodResponse) ContentType() string {
 	m := imr.r.Message
 	if m == nil {
-		return "", nil
+		return ""
 	}
 
 	contentType := m.GetContentType()
 	dataTypeURL := m.GetData().GetTypeUrl()
 
-	// If the message has a data property, use that
-	r := imr.data
-	if imr.HasMessageData() {
-		r = io.NopCloser(bytes.NewReader(m.Data.Value))
-	}
-
-	// TODO: Remove outer if once feature is finalized
+	// TODO: Remove once feature is finalized
 	if !config.GetNoDefaultContentType() {
 		// set content_type to application/json only if typeurl is unset and data is given
-		if contentType == "" && (dataTypeURL == "" && r != nil) {
+		hasData := imr.data != nil && !imr.HasMessageData()
+		if contentType == "" && (dataTypeURL == "" && hasData) {
 			contentType = JSONContentType
 		}
 	}
@@ -217,9 +212,24 @@ func (imr *InvokeMethodResponse) RawData() (string, io.ReadCloser) {
 		contentType = ProtobufContentType
 	}
 
-	if r == nil {
-		r = io.NopCloser(bytes.NewReader(nil))
+	return contentType
+}
+
+// RawData returns the stream body.
+func (imr *InvokeMethodResponse) RawData() (r io.Reader) {
+	m := imr.r.Message
+	if m == nil {
+		return nil
 	}
 
-	return contentType, r
+	// If the message has a data property, use that
+	if imr.HasMessageData() {
+		r = bytes.NewReader(m.Data.Value)
+	} else if imr.data == nil {
+		r = bytes.NewReader(nil)
+	} else {
+		r = imr.data
+	}
+
+	return r
 }

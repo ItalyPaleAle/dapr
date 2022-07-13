@@ -36,8 +36,9 @@ const (
 // InvokeMethodRequest holds InternalInvokeRequest protobuf message
 // and provides the helpers to manage it.
 type InvokeMethodRequest struct {
-	r    *internalv1pb.InternalInvokeRequest
-	data io.ReadCloser
+	r      *internalv1pb.InternalInvokeRequest
+	data   io.ReadCloser
+	replay *bytes.Buffer
 }
 
 // NewInvokeMethodRequest creates InvokeMethodRequest object for method.
@@ -86,6 +87,8 @@ func InternalInvokeRequest(pb *internalv1pb.InternalInvokeRequest) (*InvokeMetho
 
 // Close the data stream.
 func (imr *InvokeMethodRequest) Close() (err error) {
+	imr.replay = nil
+
 	if imr.data == nil {
 		return nil
 	}
@@ -170,6 +173,24 @@ func (imr *InvokeMethodRequest) WithCustomHTTPMetadata(md map[string]string) *In
 	return imr
 }
 
+// WithReplay enables replaying for the data stream.
+func (imr *InvokeMethodRequest) WithReplay(enabled bool) *InvokeMethodRequest {
+	if !enabled {
+		imr.replay = nil
+	} else if imr.replay == nil {
+		imr.replay = &bytes.Buffer{}
+	}
+	return imr
+}
+
+// ResetReplay resets the replay buffer.
+func (imr *InvokeMethodRequest) ResetReplay() {
+	if imr.replay == nil {
+		return
+	}
+	imr.replay.Reset()
+}
+
 // EncodeHTTPQueryString generates querystring for http using http extension object.
 func (imr *InvokeMethodRequest) EncodeHTTPQueryString() string {
 	m := imr.r.Message
@@ -230,35 +251,45 @@ func (imr *InvokeMethodRequest) HasMessageData() bool {
 	return m != nil && m.Data != nil && len(m.Data.Value) > 0
 }
 
-// RawData returns content_type and stream body.
-func (imr *InvokeMethodRequest) RawData() (string, io.Reader) {
+// ContenType returns the content type of the message.
+func (imr *InvokeMethodRequest) ContentType() string {
 	m := imr.r.Message
 	if m == nil {
-		return "", nil
+		return ""
 	}
 
 	contentType := m.GetContentType()
-
-	// If the message has a data property, use that
-	r := imr.data
-	if imr.HasMessageData() {
-		r = io.NopCloser(bytes.NewReader(m.Data.Value))
-	}
 
 	// TODO: Remove once feature is finalized
 	if !config.GetNoDefaultContentType() {
 		dataTypeURL := m.GetData().GetTypeUrl()
 		// set content_type to application/json only if typeurl is unset and data is given
-		if contentType == "" && (dataTypeURL == "" && r != nil) {
+		hasData := imr.data != nil && !imr.HasMessageData()
+		if contentType == "" && (dataTypeURL == "" && hasData) {
 			contentType = JSONContentType
 		}
 	}
 
-	if r == nil {
-		r = io.NopCloser(bytes.NewReader(nil))
+	return contentType
+}
+
+// RawData returns the stream body.
+func (imr *InvokeMethodRequest) RawData() (r io.Reader) {
+	m := imr.r.Message
+	if m == nil {
+		return nil
 	}
 
-	return contentType, r
+	// If the message has a data property, use that
+	if imr.HasMessageData() {
+		r = bytes.NewReader(m.Data.Value)
+	} else if imr.data == nil {
+		r = bytes.NewReader(nil)
+	} else {
+		r = imr.data
+	}
+
+	return r
 }
 
 // Adds a new header to the existing set.

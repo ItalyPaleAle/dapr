@@ -273,7 +273,7 @@ func (d *directMessaging) invokeRemote(ctx context.Context, appID, namespace, ap
 	if err != nil {
 		return nil, err
 	}
-	_, r := req.RawData()
+	r := req.RawData()
 	reqProto := req.Proto()
 	buf := make([]byte, 4096) // 4KB buffer
 	var (

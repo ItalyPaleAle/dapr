@@ -107,7 +107,8 @@ func with(code int, obj []byte) option {
 }
 
 // withStream is like "with" but accepts a stream
-func withStream(code int, r io.ReadCloser) option {
+// The stream is closed at the end if it implements the Close() method
+func withStream(code int, r io.Reader) option {
 	return func(ctx *fasthttp.RequestCtx) {
 		if len(ctx.Response.Header.ContentType()) == 0 {
 			ctx.Response.Header.SetContentType(jsonContentTypeHeader)
@@ -125,7 +126,9 @@ func withStream(code int, r io.ReadCloser) option {
 			if err != nil {
 				log.Warn("Error while copying response into connection:", err)
 			}
-			_ = r.Close()
+			if rc, ok := r.(io.Closer); ok {
+				_ = rc.Close()
+			}
 			// c is closed automatically
 		})
 	}

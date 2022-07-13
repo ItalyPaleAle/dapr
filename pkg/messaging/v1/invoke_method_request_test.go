@@ -45,8 +45,7 @@ func TestFromInvokeRequestMessage(t *testing.T) {
 		assert.Equal(t, internalv1pb.APIVersion_V1, req.r.GetVer())
 		assert.Equal(t, "frominvokerequestmessage", req.r.Message.GetMethod())
 
-		_, r := req.RawData()
-		bData, err := io.ReadAll(r)
+		bData, err := io.ReadAll(req.RawData())
 		assert.NoError(t, err)
 		assert.Len(t, bData, 0)
 	})
@@ -62,8 +61,7 @@ func TestFromInvokeRequestMessage(t *testing.T) {
 		assert.Equal(t, internalv1pb.APIVersion_V1, req.r.GetVer())
 		assert.Equal(t, "frominvokerequestmessage", req.r.Message.GetMethod())
 
-		_, r := req.RawData()
-		bData, err := io.ReadAll(r)
+		bData, err := io.ReadAll(req.RawData())
 		assert.NoError(t, err)
 		assert.Equal(t, "test", string(bData))
 	})
@@ -88,8 +86,7 @@ func TestInternalInvokeRequest(t *testing.T) {
 		assert.Equal(t, "invoketest", ir.r.Message.GetMethod())
 		assert.Nil(t, ir.r.Message.GetData())
 
-		_, r := ir.RawData()
-		bData, err := io.ReadAll(r)
+		bData, err := io.ReadAll(ir.RawData())
 		assert.NoError(t, err)
 		assert.Len(t, bData, 0)
 	})
@@ -113,8 +110,7 @@ func TestInternalInvokeRequest(t *testing.T) {
 		assert.NotNil(t, ir.r.Message.GetData())
 		assert.Len(t, ir.r.Message.GetData().Value, 0)
 
-		_, r := ir.RawData()
-		bData, err := io.ReadAll(r)
+		bData, err := io.ReadAll(ir.RawData())
 		assert.NoError(t, err)
 		assert.Equal(t, "test", string(bData))
 	})
@@ -169,8 +165,8 @@ func TestData(t *testing.T) {
 		req := NewInvokeMethodRequest("test_method")
 		defer req.Close()
 		req.WithRawDataString("test", "application/json")
-		contentType, r := req.RawData()
-		bData, err := io.ReadAll(r)
+		contentType := req.ContentType()
+		bData, err := io.ReadAll(req.RawData())
 		assert.NoError(t, err)
 		assert.Equal(t, "application/json", contentType)
 		assert.Equal(t, "test", string(bData))
@@ -182,8 +178,8 @@ func TestData(t *testing.T) {
 
 		tData := []byte("test")
 		req.WithRawDataBytes(tData, "")
-		contentType, r := req.RawData()
-		bData, err := io.ReadAll(r)
+		contentType := req.ContentType()
+		bData, err := io.ReadAll(req.RawData())
 		assert.NoError(t, err)
 		assert.Equal(t, "application/json", req.r.Message.ContentType)
 		assert.Equal(t, "application/json", contentType)
@@ -192,8 +188,8 @@ func TestData(t *testing.T) {
 		// Force the ContentType to be empty to test setting it in RawData
 		req.WithRawDataBytes(tData, "")
 		req.r.Message.ContentType = ""
-		contentType, r = req.RawData()
-		bData, err = io.ReadAll(r)
+		contentType = req.ContentType()
+		bData, err = io.ReadAll(req.RawData())
 		assert.NoError(t, err)
 		assert.Equal(t, "", req.r.Message.ContentType)
 		assert.Equal(t, "application/json", contentType)
@@ -209,8 +205,8 @@ func TestData(t *testing.T) {
 		defer req.Close()
 
 		req.WithRawDataString("test", "")
-		contentType, r := req.RawData()
-		bData, err := io.ReadAll(r)
+		contentType := req.ContentType()
+		bData, err := io.ReadAll(req.RawData())
 		assert.NoError(t, err)
 		assert.Equal(t, "", req.r.Message.ContentType)
 		assert.Equal(t, "", contentType)
@@ -219,8 +215,8 @@ func TestData(t *testing.T) {
 		// Force the ContentType to be empty to test setting it in RawData
 		req.WithRawDataString("test", "")
 		req.r.Message.ContentType = ""
-		contentType, r = req.RawData()
-		bData, err = io.ReadAll(r)
+		contentType = req.ContentType()
+		bData, err = io.ReadAll(req.RawData())
 		assert.NoError(t, err)
 		assert.Equal(t, "", req.r.Message.ContentType)
 		assert.Equal(t, "", contentType)
@@ -231,8 +227,8 @@ func TestData(t *testing.T) {
 		req := NewInvokeMethodRequest("test_method")
 		defer req.Close()
 		req.r.Message.Data = &anypb.Any{TypeUrl: "fake", Value: []byte("fake")}
-		contentType, r := req.RawData()
-		bData, err := io.ReadAll(r)
+		contentType := req.ContentType()
+		bData, err := io.ReadAll(req.RawData())
 		assert.NoError(t, err)
 		assert.Equal(t, "", contentType)
 		assert.Equal(t, "fake", string(bData))
@@ -275,8 +271,7 @@ func TestRequestProto(t *testing.T) {
 		assert.Equal(t, "application/json", req2.GetMessage().ContentType)
 		assert.Len(t, req2.GetMessage().Data.Value, 0)
 
-		_, r := ir.RawData()
-		bData, err := io.ReadAll(r)
+		bData, err := io.ReadAll(ir.RawData())
 		assert.NoError(t, err)
 		assert.Equal(t, []byte("test"), bData)
 	})
@@ -300,8 +295,7 @@ func TestRequestProto(t *testing.T) {
 		assert.Equal(t, "application/json", req2.GetMessage().ContentType)
 		assert.Nil(t, req2.GetMessage().Data)
 
-		_, r := ir.RawData()
-		bData, err := io.ReadAll(r)
+		bData, err := io.ReadAll(ir.RawData())
 		assert.NoError(t, err)
 		assert.Equal(t, []byte("test"), bData)
 	})

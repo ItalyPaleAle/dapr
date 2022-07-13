@@ -56,8 +56,7 @@ func TestInternalInvocationResponse(t *testing.T) {
 		assert.Equal(t, int32(0), ir.r.GetStatus().GetCode())
 		assert.Nil(t, ir.r.Message.GetData())
 
-		_, r := ir.RawData()
-		bData, err := io.ReadAll(r)
+		bData, err := io.ReadAll(ir.RawData())
 		assert.NoError(t, err)
 		assert.Len(t, bData, 0)
 	})
@@ -80,8 +79,7 @@ func TestInternalInvocationResponse(t *testing.T) {
 		assert.NotNil(t, ir.r.Message.GetData())
 		assert.Len(t, ir.r.Message.GetData().Value, 0)
 
-		_, r := ir.RawData()
-		bData, err := io.ReadAll(r)
+		bData, err := io.ReadAll(ir.RawData())
 		assert.NoError(t, err)
 		assert.Equal(t, "test", string(bData))
 	})
@@ -105,8 +103,7 @@ func TestResponseData(t *testing.T) {
 		resp := NewInvokeMethodResponse(0, "OK", nil)
 		defer resp.Close()
 		resp.WithRawDataString("test", "application/json")
-		_, r := resp.RawData()
-		bData, err := io.ReadAll(r)
+		bData, err := io.ReadAll(resp.RawData())
 		assert.NoError(t, err)
 		contentType := resp.r.Message.ContentType
 		assert.Equal(t, "application/json", contentType)
@@ -119,8 +116,8 @@ func TestResponseData(t *testing.T) {
 
 		tData := []byte("test")
 		resp.WithRawDataBytes(tData, "")
-		contentType, r := resp.RawData()
-		bData, err := io.ReadAll(r)
+		contentType := resp.ContentType()
+		bData, err := io.ReadAll(resp.RawData())
 		assert.NoError(t, err)
 		assert.Equal(t, "application/json", resp.r.Message.ContentType)
 		assert.Equal(t, "application/json", contentType)
@@ -129,8 +126,8 @@ func TestResponseData(t *testing.T) {
 		// Force the ContentType to be empty to test setting it in RawData
 		resp.WithRawDataBytes(tData, "")
 		resp.r.Message.ContentType = ""
-		contentType, r = resp.RawData()
-		bData, err = io.ReadAll(r)
+		contentType = resp.ContentType()
+		bData, err = io.ReadAll(resp.RawData())
 		assert.NoError(t, err)
 		assert.Equal(t, "", resp.r.Message.ContentType)
 		assert.Equal(t, "application/json", contentType)
@@ -146,8 +143,8 @@ func TestResponseData(t *testing.T) {
 		defer resp.Close()
 
 		resp.WithRawDataString("test", "")
-		contentType, r := resp.RawData()
-		bData, err := io.ReadAll(r)
+		contentType := resp.ContentType()
+		bData, err := io.ReadAll(resp.RawData())
 		assert.NoError(t, err)
 		assert.Equal(t, "", resp.r.Message.ContentType)
 		assert.Equal(t, "", contentType)
@@ -156,8 +153,8 @@ func TestResponseData(t *testing.T) {
 		// Force the ContentType to be empty to test setting it in RawData
 		resp.WithRawDataString("test", "")
 		resp.r.Message.ContentType = ""
-		contentType, r = resp.RawData()
-		bData, err = io.ReadAll(r)
+		contentType = resp.ContentType()
+		bData, err = io.ReadAll(resp.RawData())
 		assert.NoError(t, err)
 		assert.Equal(t, "", resp.r.Message.ContentType)
 		assert.Equal(t, "", contentType)
@@ -172,8 +169,8 @@ func TestResponseData(t *testing.T) {
 		resp := NewInvokeMethodResponse(0, "OK", nil)
 		defer resp.Close()
 		resp.r.Message.Data = b
-		contentType, r := resp.RawData()
-		bData, err := io.ReadAll(r)
+		contentType := resp.ContentType()
+		bData, err := io.ReadAll(resp.RawData())
 		assert.NoError(t, err)
 		assert.Equal(t, ProtobufContentType, contentType)
 		assert.Equal(t, b.Value, bData)
@@ -199,8 +196,7 @@ func TestResponseProto(t *testing.T) {
 		assert.Equal(t, "application/json", req2.GetMessage().ContentType)
 		assert.Len(t, req2.GetMessage().Data.Value, 0)
 
-		_, r := ir.RawData()
-		bData, err := io.ReadAll(r)
+		bData, err := io.ReadAll(ir.RawData())
 		assert.NoError(t, err)
 		assert.Equal(t, []byte("test"), bData)
 	})
@@ -223,8 +219,7 @@ func TestResponseProto(t *testing.T) {
 		assert.Equal(t, "application/json", req2.GetMessage().ContentType)
 		assert.Nil(t, req2.GetMessage().Data)
 
-		_, r := ir.RawData()
-		bData, err := io.ReadAll(r)
+		bData, err := io.ReadAll(ir.RawData())
 		assert.NoError(t, err)
 		assert.Equal(t, []byte("test"), bData)
 	})
