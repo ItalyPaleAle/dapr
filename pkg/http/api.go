@@ -1454,6 +1454,8 @@ func (a *api) onDirectMessage(reqCtx *fasthttp.RequestCtx) {
 		respond(reqCtx, withError(statusCode, msg))
 		return
 	}
+
+	// This will also close the response stream automatically; no need to invoke resp.Close()
 	respond(reqCtx, withStream(statusCode, r))
 }
 
@@ -1751,6 +1753,12 @@ func (a *api) onDirectActorMessage(reqCtx *fasthttp.RequestCtx) {
 	})
 	req.WithMetadata(metadata)
 
+	// If the request can be retried, we need to enable replaying
+	pd := a.resiliency.PolicyDefined(actorType, resiliency.Actor)
+	if pd != nil && pd.HasRetries() {
+		req.WithReplay(true)
+	}
+
 	// Unlike other actor calls, resiliency is handled here for invocation.
 	// This is due to actor invocation involving a lookup for the host.
 	// Having the retry here allows us to capture that and be resilient to host failure.
@@ -1779,6 +1787,8 @@ func (a *api) onDirectActorMessage(reqCtx *fasthttp.RequestCtx) {
 	if !resp.IsHTTPResponse() {
 		statusCode = invokev1.HTTPStatusFromCode(codes.Code(statusCode))
 	}
+
+	// This will also close the response stream automatically; no need to invoke resp.Close()
 	respond(reqCtx, withStream(statusCode, resp.RawData()))
 }
 

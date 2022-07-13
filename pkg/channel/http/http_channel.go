@@ -98,13 +98,11 @@ func (h *Channel) GetBaseAddress() string {
 
 // GetAppConfig gets application config from user application
 // GET http://localhost:<app_port>/dapr/config
-func (h *Channel) GetAppConfig() (*config.ApplicationConfig, error) {
-	req := invokev1.NewInvokeMethodRequest(appConfigEndpoint)
-	req.WithHTTPExtension(http.MethodGet, "")
-	req.WithRawData(nil, invokev1.JSONContentType)
+func (h *Channel) GetAppConfig(ctx context.Context) (*config.ApplicationConfig, error) {
+	req := invokev1.NewInvokeMethodRequest(appConfigEndpoint).
+		WithHTTPExtension(http.MethodGet, "").
+		WithRawData(nil, invokev1.JSONContentType)
 
-	// TODO Propagate context
-	ctx := context.Background()
 	resp, err := h.InvokeMethod(ctx, req)
 	if err != nil {
 		return nil, err
@@ -205,16 +203,15 @@ func (h *Channel) constructRequest(ctx context.Context, req *invokev1.InvokeMeth
 	verb := req.Message().HttpExtension.Verb.String()
 	method := req.Message().Method
 	if strings.HasPrefix(method, "/") {
-		uri = fmt.Sprintf("%s%s", h.baseAddress, method)
+		uri = h.baseAddress + method
 	} else {
-		uri = fmt.Sprintf("%s/%s", h.baseAddress, method)
+		uri = h.baseAddress + "/" + method
 	}
 	qs := req.EncodeHTTPQueryString()
 	if qs != "" {
 		uri += "?" + qs
 	}
 
-	contentType := req.ContentType()
 	channelReq, err := http.NewRequestWithContext(ctx, verb, uri, req.RawData())
 	if err != nil {
 		return nil, err
@@ -222,7 +219,7 @@ func (h *Channel) constructRequest(ctx context.Context, req *invokev1.InvokeMeth
 
 	// Recover headers
 	invokev1.InternalMetadataToHTTPHeader(ctx, req.Metadata(), channelReq.Header.Set)
-	channelReq.Header.Set("content-type", contentType)
+	channelReq.Header.Set("content-type", req.ContentType())
 
 	// HTTP client needs to inject traceparent header for proper tracing stack.
 	span := diag_utils.SpanFromContext(ctx)

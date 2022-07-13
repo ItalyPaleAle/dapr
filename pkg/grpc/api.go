@@ -619,6 +619,7 @@ func (a *api) PublishEvent(ctx context.Context, in *runtimev1pb.PublishEventRequ
 
 func (a *api) InvokeService(ctx context.Context, in *runtimev1pb.InvokeServiceRequest) (*commonv1pb.InvokeResponse, error) {
 	req := invokev1.FromInvokeRequestMessage(in.GetMessage())
+	defer req.Close()
 
 	if incomingMD, ok := metadata.FromIncomingContext(ctx); ok {
 		req.WithMetadata(incomingMD)
@@ -669,6 +670,10 @@ func (a *api) InvokeService(ctx context.Context, in *runtimev1pb.InvokeServiceRe
 
 		return respError
 	})
+
+	if resp != nil {
+		defer resp.Close()
+	}
 
 	// In this case, there was an error with the actual request or a resiliency policy stopped the request.
 	if requestErr || (errors.Is(respError, context.DeadlineExceeded) || breaker.IsErrorPermanent(respError)) {
@@ -1570,6 +1575,13 @@ func (a *api) InvokeActor(ctx context.Context, in *runtimev1pb.InvokeActorReques
 		NewInvokeMethodRequest(in.Method).
 		WithActor(in.ActorType, in.ActorId).
 		WithRawDataBytes(in.Data, "")
+	defer req.Close()
+
+	// If the request can be retried, we need to enable replaying
+	pd := a.resiliency.PolicyDefined(in.ActorType, resiliency.Actor)
+	if pd != nil && pd.HasRetries() {
+		req.WithReplay(true)
+	}
 
 	// Unlike other actor calls, resiliency is handled here for invocation.
 	// This is due to actor invocation involving a lookup for the host.
@@ -1578,7 +1590,7 @@ func (a *api) InvokeActor(ctx context.Context, in *runtimev1pb.InvokeActorReques
 	// should technically wait forever on the locking mechanism. If we timeout while
 	// waiting for the lock, we can also create a queue of calls that will try and continue
 	// after the timeout.
-	resp := invokev1.NewInvokeMethodResponse(500, "Blank request", nil)
+	var resp *invokev1.InvokeMethodResponse
 	policy := a.resiliency.ActorPreLockPolicy(ctx, in.ActorType, in.ActorId)
 	err := policy(func(ctx context.Context) (rErr error) {
 		resp, rErr = a.actor.Call(ctx, req)
@@ -1589,6 +1601,7 @@ func (a *api) InvokeActor(ctx context.Context, in *runtimev1pb.InvokeActorReques
 		apiServerLogger.Debug(err)
 		return &runtimev1pb.InvokeActorResponse{}, err
 	}
+	defer resp.Close()
 
 	body, err := io.ReadAll(resp.RawData())
 	if err != nil {

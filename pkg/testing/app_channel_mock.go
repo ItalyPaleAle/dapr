@@ -31,7 +31,7 @@ func (f *FailingAppChannel) GetBaseAddress() string {
 	return ""
 }
 
-func (f *FailingAppChannel) GetAppConfig() (*config.ApplicationConfig, error) {
+func (f *FailingAppChannel) GetAppConfig(ctx context.Context) (*config.ApplicationConfig, error) {
 	return nil, nil
 }
 

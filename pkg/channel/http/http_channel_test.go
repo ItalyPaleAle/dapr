@@ -93,9 +93,10 @@ func TestInvokeMethod(t *testing.T) {
 			},
 		}
 		th.serverURL = server.URL[len("http://"):]
-		fakeReq := invokev1.NewInvokeMethodRequest("method")
+		fakeReq := invokev1.
+			NewInvokeMethodRequest("method").
+			WithHTTPExtension(http.MethodPost, "param1=val1&param2=val2")
 		defer fakeReq.Close()
-		fakeReq.WithHTTPExtension(http.MethodPost, "param1=val1&param2=val2")
 
 		// act
 		response, err := c.InvokeMethod(ctx, fakeReq)
@@ -117,9 +118,10 @@ func TestInvokeMethod(t *testing.T) {
 			},
 		}
 		th.serverURL = server.URL[len("http://"):]
-		fakeReq := invokev1.NewInvokeMethodRequest("method")
+		fakeReq := invokev1.
+			NewInvokeMethodRequest("method").
+			WithHTTPExtension(http.MethodPost, "")
 		defer fakeReq.Close()
-		fakeReq.WithHTTPExtension(http.MethodPost, "")
 
 		// act
 		response, err := c.InvokeMethod(ctx, fakeReq)
@@ -151,8 +153,10 @@ func TestInvokeMethodMaxConcurrency(t *testing.T) {
 		wg.Add(5)
 		for i := 0; i < 5; i++ {
 			go func() {
-				request2 := invokev1.NewInvokeMethodRequest("method")
-				request2.WithRawData(nil, "")
+				request2 := invokev1.
+					NewInvokeMethodRequest("method").
+					WithRawData(nil, "").
+					WithHTTPExtension(http.MethodGet, "")
 				defer request2.Close()
 
 				res, err := c.InvokeMethod(ctx, request2)
@@ -182,9 +186,12 @@ func TestInvokeMethodMaxConcurrency(t *testing.T) {
 		wg.Add(20)
 		for i := 0; i < 20; i++ {
 			go func() {
-				request2 := invokev1.NewInvokeMethodRequest("method")
-				request2.WithRawData(nil, "")
+				request2 := invokev1.
+					NewInvokeMethodRequest("method").
+					WithRawData(nil, "").
+					WithHTTPExtension(http.MethodGet, "")
 				defer request2.Close()
+
 				res, err := c.InvokeMethod(ctx, request2)
 				assert.NoError(t, err)
 				defer res.Close()
@@ -204,14 +211,14 @@ func TestInvokeWithHeaders(t *testing.T) {
 	testServer := httptest.NewServer(&testHandlerHeaders{})
 	c := Channel{baseAddress: testServer.URL, client: &http.Client{}}
 
-	req := invokev1.NewInvokeMethodRequest("method")
+	req := invokev1.
+		NewInvokeMethodRequest("method").
+		WithMetadata(map[string][]string{
+			"H1": {"v1"},
+			"H2": {"v2"},
+		}).
+		WithHTTPExtension(http.MethodPost, "")
 	defer req.Close()
-	md := map[string][]string{
-		"H1": {"v1"},
-		"H2": {"v2"},
-	}
-	req.WithMetadata(md)
-	req.WithHTTPExtension(http.MethodPost, "")
 
 	// act
 	response, err := c.InvokeMethod(ctx, req)
@@ -237,10 +244,11 @@ func TestContentType(t *testing.T) {
 		handler := &testContentTypeHandler{}
 		testServer := httptest.NewServer(handler)
 		c := Channel{baseAddress: testServer.URL, client: &http.Client{}}
-		req := invokev1.NewInvokeMethodRequest("method")
+		req := invokev1.
+			NewInvokeMethodRequest("method").
+			WithRawData(nil, "").
+			WithHTTPExtension(http.MethodPost, "")
 		defer req.Close()
-		req.WithRawData(nil, "")
-		req.WithHTTPExtension(http.MethodPost, "")
 
 		// act
 		resp, err := c.InvokeMethod(ctx, req)
@@ -267,10 +275,11 @@ func TestContentType(t *testing.T) {
 			baseAddress: testServer.URL,
 			client:      &http.Client{},
 		}
-		req := invokev1.NewInvokeMethodRequest("method")
+		req := invokev1.
+			NewInvokeMethodRequest("method").
+			WithRawData(nil, "").
+			WithHTTPExtension(http.MethodGet, "")
 		defer req.Close()
-		req.WithRawData(nil, "")
-		req.WithHTTPExtension(http.MethodGet, "")
 
 		// act
 		resp, err := c.InvokeMethod(ctx, req)
@@ -290,10 +299,11 @@ func TestContentType(t *testing.T) {
 		handler := &testContentTypeHandler{}
 		testServer := httptest.NewServer(handler)
 		c := Channel{baseAddress: testServer.URL, client: &http.Client{}}
-		req := invokev1.NewInvokeMethodRequest("method")
+		req := invokev1.
+			NewInvokeMethodRequest("method").
+			WithRawData(nil, "application/json").
+			WithHTTPExtension(http.MethodGet, "")
 		defer req.Close()
-		req.WithRawData(nil, "application/json")
-		req.WithHTTPExtension(http.MethodPost, "")
 
 		// act
 		resp, err := c.InvokeMethod(ctx, req)
@@ -313,10 +323,11 @@ func TestContentType(t *testing.T) {
 		handler := &testContentTypeHandler{}
 		testServer := httptest.NewServer(handler)
 		c := Channel{baseAddress: testServer.URL, client: &http.Client{}}
-		req := invokev1.NewInvokeMethodRequest("method")
+		req := invokev1.
+			NewInvokeMethodRequest("method").
+			WithRawData(nil, "text/plain").
+			WithHTTPExtension(http.MethodGet, "")
 		defer req.Close()
-		req.WithRawData(nil, "text/plain")
-		req.WithHTTPExtension(http.MethodPost, "")
 
 		// act
 		resp, err := c.InvokeMethod(ctx, req)
@@ -339,9 +350,10 @@ func TestAppToken(t *testing.T) {
 		testServer := httptest.NewServer(&testHandlerHeaders{})
 		c := Channel{baseAddress: testServer.URL, client: &http.Client{}, appHeaderToken: "token1"}
 
-		req := invokev1.NewInvokeMethodRequest("method")
+		req := invokev1.
+			NewInvokeMethodRequest("method").
+			WithHTTPExtension(http.MethodPost, "")
 		defer req.Close()
-		req.WithHTTPExtension(http.MethodPost, "")
 
 		// act
 		response, err := c.InvokeMethod(ctx, req)
@@ -365,9 +377,10 @@ func TestAppToken(t *testing.T) {
 		testServer := httptest.NewServer(&testHandlerHeaders{})
 		c := Channel{baseAddress: testServer.URL, client: &http.Client{}}
 
-		req := invokev1.NewInvokeMethodRequest("method")
+		req := invokev1.
+			NewInvokeMethodRequest("method").
+			WithHTTPExtension(http.MethodPost, "")
 		defer req.Close()
-		req.WithHTTPExtension(http.MethodPost, "")
 
 		// act
 		response, err := c.InvokeMethod(ctx, req)

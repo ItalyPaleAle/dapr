@@ -63,7 +63,7 @@ func (g *Channel) GetBaseAddress() string {
 }
 
 // GetAppConfig gets application config from user application.
-func (g *Channel) GetAppConfig() (*config.ApplicationConfig, error) {
+func (g *Channel) GetAppConfig(ctx context.Context) (*config.ApplicationConfig, error) {
 	return nil, nil
 }
 

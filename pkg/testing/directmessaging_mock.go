@@ -64,5 +64,7 @@ func (f *FailingDirectMessaging) Invoke(ctx context.Context, targetAppID string,
 	if err != nil {
 		return &v1.InvokeMethodResponse{}, err
 	}
-	return v1.NewInvokeMethodResponse(200, "OK", nil), nil
+	resp := v1.NewInvokeMethodResponse(200, "OK", nil).
+		WithRawDataBytes(r.Message.Data.Value, "")
+	return resp, nil
 }

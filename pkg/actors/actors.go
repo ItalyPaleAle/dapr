@@ -374,6 +374,8 @@ func (a *actorsRuntime) callRemoteActorWithRetry(
 			retriesExhaustedPath := false // Used to track final error state.
 			nullifyResponsePath := false  // Used to track final response state.
 			policy := a.resiliency.BuiltInPolicy(ctx, resiliency.BuiltInActorRetries)
+			// This policy has built-in retries so enable replay in the request
+			req.WithReplay(true)
 			var resp *invokev1.InvokeMethodResponse
 			err := policy(func(ctx context.Context) (rErr error) {
 				retriesExhaustedPath = false
@@ -409,6 +411,9 @@ func (a *actorsRuntime) callRemoteActorWithRetry(
 		}
 		return fn(ctx, targetAddress, targetID, req)
 	}
+
+	// We need to enable replaying because the request may be attempted again in this path
+	req.WithReplay(true)
 	for i := 0; i < numRetries; i++ {
 		resp, err := fn(ctx, targetAddress, targetID, req)
 		if err == nil {
@@ -976,9 +981,17 @@ func (a *actorsRuntime) executeReminder(reminder *Reminder) error {
 	}
 
 	log.Debugf("executing reminder %s for actor type %s with id %s", reminder.Name, reminder.ActorType, reminder.ActorID)
-	req := invokev1.NewInvokeMethodRequest(fmt.Sprintf("remind/%s", reminder.Name))
-	req.WithActor(reminder.ActorType, reminder.ActorID)
-	req.WithRawDataBytes(b, invokev1.JSONContentType)
+	req := invokev1.
+		NewInvokeMethodRequest(fmt.Sprintf("remind/%s", reminder.Name)).
+		WithActor(reminder.ActorType, reminder.ActorID).
+		WithRawDataBytes(b, invokev1.JSONContentType)
+	defer req.Close()
+
+	// If the request can be retried, we need to enable replaying
+	pd := a.resiliency.PolicyDefined(reminder.ActorType, resiliency.Actor)
+	if pd != nil && pd.HasRetries() {
+		req.WithReplay(true)
+	}
 
 	policy := a.resiliency.ActorPreLockPolicy(context.Background(), reminder.ActorType, reminder.ActorID)
 	return policy(func(ctx context.Context) error {
@@ -1333,9 +1346,17 @@ func (a *actorsRuntime) executeTimer(actorType, actorID, name, dueTime, period, 
 	}
 
 	log.Debugf("executing timer %s for actor type %s with id %s", name, actorType, actorID)
-	req := invokev1.NewInvokeMethodRequest(fmt.Sprintf("timer/%s", name))
-	req.WithActor(actorType, actorID)
-	req.WithRawDataBytes(b, invokev1.JSONContentType)
+	req := invokev1.
+		NewInvokeMethodRequest(fmt.Sprintf("timer/%s", name)).
+		WithActor(actorType, actorID).
+		WithRawDataBytes(b, invokev1.JSONContentType)
+	defer req.Close()
+
+	// If the request can be retried, we need to enable replaying
+	pd := a.resiliency.PolicyDefined(actorType, resiliency.Actor)
+	if pd != nil && pd.HasRetries() {
+		req.WithReplay(true)
+	}
 
 	policy := a.resiliency.ActorPreLockPolicy(context.Background(), actorType, actorID)
 	err = policy(func(ctx context.Context) error {
