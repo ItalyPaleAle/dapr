@@ -124,10 +124,17 @@ func (imr *InvokeMethodRequest) WithFastHTTPHeaders(header *fasthttp.RequestHead
 
 // WithRawData sets message data and content_type.
 func (imr *InvokeMethodRequest) WithRawData(data io.ReadCloser, contentType string) *InvokeMethodRequest {
-	// TODO: Remove the entire block once feature is finalized
+	if imr.replay != nil {
+		// We are panicking here because we can't return errors
+		// This is just to catch issues during development however, and will never happen at runtime
+		panic("WithRawData cannot be invoked after replaying has been enabled")
+	}
+
+	// TODO: Remove this entire block once feature is finalized
 	if contentType == "" && !config.GetNoDefaultContentType() {
 		contentType = JSONContentType
 	}
+
 	imr.r.Message.ContentType = contentType
 	imr.data = data
 	return imr
@@ -178,17 +185,13 @@ func (imr *InvokeMethodRequest) WithReplay(enabled bool) *InvokeMethodRequest {
 	if !enabled {
 		imr.replay = nil
 	} else if imr.replay == nil {
+		if imr.data == nil {
+			imr.data = io.NopCloser(bytes.NewReader(nil))
+		}
 		imr.replay = &bytes.Buffer{}
+		imr.data = TeeReadCloser(imr.data, imr.replay)
 	}
 	return imr
-}
-
-// ResetReplay resets the replay buffer.
-func (imr *InvokeMethodRequest) ResetReplay() {
-	if imr.replay == nil {
-		return
-	}
-	imr.replay.Reset()
 }
 
 // EncodeHTTPQueryString generates querystring for http using http extension object.
@@ -274,6 +277,7 @@ func (imr *InvokeMethodRequest) ContentType() string {
 }
 
 // RawData returns the stream body.
+// Note: this method is not safe for concurrent use.
 func (imr *InvokeMethodRequest) RawData() (r io.Reader) {
 	m := imr.r.Message
 	if m == nil {
@@ -285,6 +289,11 @@ func (imr *InvokeMethodRequest) RawData() (r io.Reader) {
 		r = bytes.NewReader(m.Data.Value)
 	} else if imr.data == nil {
 		r = bytes.NewReader(nil)
+	} else if imr.replay != nil {
+		r = io.MultiReader(
+			bytes.NewReader(imr.replay.Bytes()),
+			imr.data,
+		)
 	} else {
 		r = imr.data
 	}

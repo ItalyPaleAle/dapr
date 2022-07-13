@@ -14,6 +14,7 @@ limitations under the License.
 package v1
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"strings"
@@ -396,4 +397,166 @@ func TestWithCustomHTTPMetadata(t *testing.T) {
 		// We assume only 1 value per key as the input map can only support string -> string mapping.
 		assert.Equal(t, customMetadataValue(i), val.Values[0])
 	}
+}
+
+func TestRequestReplayable(t *testing.T) {
+	message := []byte("Nel mezzo del cammin di nostra vita mi ritrovai per una selva oscura, che' la diritta via era smarrita.")
+	newReplayable := func() *InvokeMethodRequest {
+		return NewInvokeMethodRequest("test_method").
+			WithRawDataBytes(message, "").
+			WithReplay(true)
+	}
+
+	t.Run("read once", func(t *testing.T) {
+		req := newReplayable()
+		defer req.Close()
+
+		t.Run("first read in full", func(t *testing.T) {
+			read, err := io.ReadAll(req.RawData())
+			assert.NoError(t, err)
+			assert.Equal(t, message, read)
+		})
+
+		t.Run("req.data is EOF", func(t *testing.T) {
+			buf := make([]byte, 9)
+			n, err := io.ReadFull(req.data, buf)
+			assert.Equal(t, 0, n)
+			assert.ErrorIs(t, err, io.EOF)
+		})
+
+		t.Run("replay buffer is full", func(t *testing.T) {
+			assert.Equal(t, len(message), req.replay.Len())
+			read, err := io.ReadAll(bytes.NewReader(req.replay.Bytes()))
+			assert.NoError(t, err)
+			assert.Equal(t, message, read)
+		})
+
+		t.Run("close request", func(t *testing.T) {
+			err := req.Close()
+			assert.NoError(t, err)
+			assert.Nil(t, req.data)
+			assert.Nil(t, req.replay)
+		})
+	})
+
+	t.Run("read in full twice", func(t *testing.T) {
+		req := newReplayable()
+		defer req.Close()
+
+		t.Run("first read in full", func(t *testing.T) {
+			read, err := io.ReadAll(req.RawData())
+			assert.NoError(t, err)
+			assert.Equal(t, message, read)
+		})
+
+		t.Run("req.data is EOF", func(t *testing.T) {
+			buf := make([]byte, 9)
+			n, err := io.ReadFull(req.data, buf)
+			assert.Equal(t, 0, n)
+			assert.ErrorIs(t, err, io.EOF)
+		})
+
+		t.Run("replay buffer is full", func(t *testing.T) {
+			assert.Equal(t, len(message), req.replay.Len())
+			read, err := io.ReadAll(bytes.NewReader(req.replay.Bytes()))
+			assert.NoError(t, err)
+			assert.Equal(t, message, read)
+		})
+
+		t.Run("second read in full", func(t *testing.T) {
+			read, err := io.ReadAll(req.RawData())
+			assert.NoError(t, err)
+			assert.Equal(t, message, read)
+		})
+
+		t.Run("close request", func(t *testing.T) {
+			err := req.Close()
+			assert.NoError(t, err)
+			assert.Nil(t, req.data)
+			assert.Nil(t, req.replay)
+		})
+	})
+
+	t.Run("read in full, then partial read", func(t *testing.T) {
+		req := newReplayable()
+		defer req.Close()
+
+		t.Run("first read in full", func(t *testing.T) {
+			read, err := io.ReadAll(req.RawData())
+			assert.NoError(t, err)
+			assert.Equal(t, message, read)
+		})
+
+		r := req.RawData()
+		t.Run("second, partial read", func(t *testing.T) {
+			buf := make([]byte, 9)
+			n, err := io.ReadFull(r, buf)
+			assert.NoError(t, err)
+			assert.Equal(t, 9, n)
+			assert.Equal(t, message[:9], buf)
+		})
+
+		t.Run("read rest", func(t *testing.T) {
+			read, err := io.ReadAll(r)
+			assert.NoError(t, err)
+			assert.Len(t, read, len(message)-9)
+			// Continue from byte 9
+			assert.Equal(t, message[9:], read)
+		})
+
+		t.Run("close request", func(t *testing.T) {
+			err := req.Close()
+			assert.NoError(t, err)
+			assert.Nil(t, req.data)
+			assert.Nil(t, req.replay)
+		})
+	})
+
+	t.Run("partial read, then read in full", func(t *testing.T) {
+		req := newReplayable()
+		defer req.Close()
+
+		t.Run("first, partial read", func(t *testing.T) {
+			buf := make([]byte, 9)
+			n, err := io.ReadFull(req.RawData(), buf)
+
+			assert.NoError(t, err)
+			assert.Equal(t, 9, n)
+			assert.Equal(t, message[:9], buf)
+		})
+
+		t.Run("replay buffer has partial data", func(t *testing.T) {
+			assert.Equal(t, 9, req.replay.Len())
+			read, err := io.ReadAll(bytes.NewReader(req.replay.Bytes()))
+			assert.NoError(t, err)
+			assert.Equal(t, message[:9], read)
+		})
+
+		t.Run("second read in full", func(t *testing.T) {
+			read, err := io.ReadAll(req.RawData())
+			assert.NoError(t, err)
+			assert.Equal(t, message, read)
+		})
+
+		t.Run("req.data is EOF", func(t *testing.T) {
+			buf := make([]byte, 9)
+			n, err := io.ReadFull(req.data, buf)
+			assert.Equal(t, 0, n)
+			assert.ErrorIs(t, err, io.EOF)
+		})
+
+		t.Run("replay buffer is full", func(t *testing.T) {
+			assert.Equal(t, len(message), req.replay.Len())
+			read, err := io.ReadAll(bytes.NewReader(req.replay.Bytes()))
+			assert.NoError(t, err)
+			assert.Equal(t, message, read)
+		})
+
+		t.Run("close request", func(t *testing.T) {
+			err := req.Close()
+			assert.NoError(t, err)
+			assert.Nil(t, req.data)
+			assert.Nil(t, req.replay)
+		})
+	})
 }
