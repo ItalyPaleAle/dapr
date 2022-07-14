@@ -741,21 +741,21 @@ func matchRoutingRule(rules []*runtime_pubsub.Rule, data map[string]interface{})
 }
 
 func (a *DaprRuntime) initDirectMessaging(resolver nr.Resolver) {
-	a.directMessaging = messaging.NewDirectMessaging(
-		a.runtimeConfig.ID,
-		a.namespace,
-		a.runtimeConfig.InternalGRPCPort,
-		a.runtimeConfig.Mode,
-		a.appChannel,
-		a.grpc.GetGRPCConnection,
-		resolver,
-		a.globalConfig.Spec.TracingSpec,
-		a.runtimeConfig.MaxRequestBodySize,
-		a.proxy,
-		a.runtimeConfig.ReadBufferSize,
-		a.resiliency,
-		config.IsFeatureEnabled(a.globalConfig.Spec.Features, config.Resiliency),
-	)
+	a.directMessaging = messaging.NewDirectMessaging(messaging.NewDirectMessagingOpts{
+		AppID:               a.runtimeConfig.ID,
+		Namespace:           a.namespace,
+		Port:                a.runtimeConfig.InternalGRPCPort,
+		Mode:                a.runtimeConfig.Mode,
+		AppChannel:          a.appChannel,
+		ClientConnFn:        a.grpc.GetGRPCConnection,
+		Resolver:            resolver,
+		TracingSpec:         a.globalConfig.Spec.TracingSpec,
+		MaxRequestBodySize:  a.runtimeConfig.MaxRequestBodySize,
+		Proxy:               a.proxy,
+		ReadBufferSize:      a.runtimeConfig.ReadBufferSize,
+		Resiliency:          a.resiliency,
+		IsResiliencyEnabled: config.IsFeatureEnabled(a.globalConfig.Spec.Features, config.Resiliency),
+	})
 }
 
 func (a *DaprRuntime) initProxy() {
@@ -1110,37 +1110,39 @@ func (a *DaprRuntime) readFromBinding(name string, binding bindings.InputBinding
 }
 
 func (a *DaprRuntime) startHTTPServer(port int, publicPort *int, profilePort int, allowedOrigins string, pipeline http_middleware.Pipeline) error {
-	a.daprHTTPAPI = http.NewAPI(a.runtimeConfig.ID,
-		a.appChannel,
-		a.directMessaging,
-		a.getComponents,
-		a.resiliency,
-		a.stateStores,
-		a.lockStores,
-		a.secretStores,
-		a.secretsConfiguration,
-		a.configurationStores,
-		a.getPublishAdapter(),
-		a.actor,
-		a.sendToOutputBinding,
-		a.globalConfig.Spec.TracingSpec,
-		a.ShutdownWithWait,
-		a.getComponentsCapabilitesMap,
-	)
-	serverConf := http.NewServerConfig(
-		a.runtimeConfig.ID,
-		a.hostAddress,
-		port,
-		a.runtimeConfig.APIListenAddresses,
-		publicPort,
-		profilePort,
-		allowedOrigins,
-		a.runtimeConfig.EnableProfiling,
-		a.runtimeConfig.MaxRequestBodySize,
-		a.runtimeConfig.UnixDomainSocket,
-		a.runtimeConfig.ReadBufferSize,
-		a.runtimeConfig.EnableAPILogging,
-	)
+	a.daprHTTPAPI = http.NewAPI(http.NewAPIOpts{
+		AppID:                       a.runtimeConfig.ID,
+		AppChannel:                  a.appChannel,
+		DirectMessaging:             a.directMessaging,
+		GetComponentsFn:             a.getComponents,
+		Resiliency:                  a.resiliency,
+		StateStores:                 a.stateStores,
+		LockStores:                  a.lockStores,
+		SecretStores:                a.secretStores,
+		SecretsConfiguration:        a.secretsConfiguration,
+		ConfigurationStores:         a.configurationStores,
+		PubsubAdapter:               a.getPublishAdapter(),
+		Actor:                       a.actor,
+		SendToOutputBindingFn:       a.sendToOutputBinding,
+		TracingSpec:                 a.globalConfig.Spec.TracingSpec,
+		Shutdown:                    a.ShutdownWithWait,
+		GetComponentsCapabilitiesFn: a.getComponentsCapabilitesMap,
+	})
+
+	serverConf := http.ServerConfig{
+		AppID:              a.runtimeConfig.ID,
+		HostAddress:        a.hostAddress,
+		Port:               port,
+		APIListenAddresses: a.runtimeConfig.APIListenAddresses,
+		PublicPort:         publicPort,
+		ProfilePort:        profilePort,
+		AllowedOrigins:     allowedOrigins,
+		EnableProfiling:    a.runtimeConfig.EnableProfiling,
+		MaxRequestBodySize: a.runtimeConfig.MaxRequestBodySize,
+		UnixDomainSocket:   a.runtimeConfig.UnixDomainSocket,
+		ReadBufferSize:     a.runtimeConfig.ReadBufferSize,
+		EnableAPILogging:   a.runtimeConfig.EnableAPILogging,
+	}
 
 	server := http.NewServer(http.NewServerOpts{
 		API:         a.daprHTTPAPI,
@@ -1188,29 +1190,40 @@ func (a *DaprRuntime) getNewServerConfig(apiListenAddresses []string, port int) 
 	if a.accessControlList != nil {
 		trustDomain = a.accessControlList.TrustDomain
 	}
-	return grpc.NewServerConfig(a.runtimeConfig.ID, a.hostAddress, port, apiListenAddresses, a.namespace, trustDomain, a.runtimeConfig.MaxRequestBodySize, a.runtimeConfig.UnixDomainSocket, a.runtimeConfig.ReadBufferSize, a.runtimeConfig.EnableAPILogging)
+	return grpc.ServerConfig{
+		AppID:              a.runtimeConfig.ID,
+		HostAddress:        a.hostAddress,
+		Port:               port,
+		APIListenAddresses: apiListenAddresses,
+		NameSpace:          a.namespace,
+		TrustDomain:        trustDomain,
+		MaxRequestBodySize: a.runtimeConfig.MaxRequestBodySize,
+		UnixDomainSocket:   a.runtimeConfig.UnixDomainSocket,
+		ReadBufferSize:     a.runtimeConfig.ReadBufferSize,
+		EnableAPILogging:   a.runtimeConfig.EnableAPILogging,
+	}
 }
 
 func (a *DaprRuntime) getGRPCAPI() grpc.API {
-	return grpc.NewAPI(a.runtimeConfig.ID,
-		a.appChannel,
-		a.resiliency,
-		a.stateStores,
-		a.secretStores,
-		a.secretsConfiguration,
-		a.configurationStores,
-		a.lockStores,
-		a.getPublishAdapter(),
-		a.directMessaging,
-		a.actor,
-		a.sendToOutputBinding,
-		a.globalConfig.Spec.TracingSpec,
-		a.accessControlList,
-		string(a.runtimeConfig.ApplicationProtocol),
-		a.getComponents,
-		a.ShutdownWithWait,
-		a.getComponentsCapabilitesMap,
-	)
+	return grpc.NewAPI(grpc.NewAPIOpts{
+		AppID:                       a.runtimeConfig.ID,
+		AppChannel:                  a.appChannel,
+		Resiliency:                  a.resiliency,
+		StateStores:                 a.stateStores,
+		SecretStores:                a.secretStores,
+		SecretsConfiguration:        a.secretsConfiguration,
+		ConfigurationStores:         a.configurationStores,
+		LockStores:                  a.lockStores,
+		PubsubAdapter:               a.getPublishAdapter(),
+		DirectMessaging:             a.directMessaging,
+		Actor:                       a.actor,
+		SendToOutputBindingFn:       a.sendToOutputBinding,
+		TracingSpec:                 a.globalConfig.Spec.TracingSpec,
+		AccessControlList:           a.accessControlList,
+		AppProtocol:                 string(a.runtimeConfig.ApplicationProtocol),
+		Shutdown:                    a.ShutdownWithWait,
+		GetComponentsCapabilitiesFn: a.getComponentsCapabilitesMap,
+	})
 }
 
 func (a *DaprRuntime) getPublishAdapter() runtime_pubsub.Adapter {

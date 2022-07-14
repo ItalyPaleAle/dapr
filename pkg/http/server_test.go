@@ -660,7 +660,20 @@ func TestClose(t *testing.T) {
 	t.Run("test close with api logging enabled", func(t *testing.T) {
 		port, err := freeport.GetFreePort()
 		require.NoError(t, err)
-		serverConfig := NewServerConfig("test", "127.0.0.1", port, []string{"127.0.0.1"}, nil, 0, "", false, 4, "", 4, true)
+		serverConfig := ServerConfig{
+			AppID:              "test",
+			HostAddress:        "127.0.0.1",
+			Port:               port,
+			APIListenAddresses: []string{"127.0.0.1"},
+			PublicPort:         nil,
+			ProfilePort:        0,
+			AllowedOrigins:     "",
+			EnableProfiling:    false,
+			MaxRequestBodySize: 4,
+			UnixDomainSocket:   "",
+			ReadBufferSize:     4,
+			EnableAPILogging:   true,
+		}
 		a := &api{}
 		server := NewServer(NewServerOpts{
 			API:         a,
@@ -678,7 +691,20 @@ func TestClose(t *testing.T) {
 	t.Run("test close with api logging disabled", func(t *testing.T) {
 		port, err := freeport.GetFreePort()
 		require.NoError(t, err)
-		serverConfig := NewServerConfig("test", "127.0.0.1", port, []string{"127.0.0.1"}, nil, 0, "", false, 4, "", 4, false)
+		serverConfig := ServerConfig{
+			AppID:              "test",
+			HostAddress:        "127.0.0.1",
+			Port:               port,
+			APIListenAddresses: []string{"127.0.0.1"},
+			PublicPort:         nil,
+			ProfilePort:        0,
+			AllowedOrigins:     "",
+			EnableProfiling:    false,
+			MaxRequestBodySize: 4,
+			UnixDomainSocket:   "",
+			ReadBufferSize:     4,
+			EnableAPILogging:   false,
+		}
 		a := &api{}
 		server := NewServer(NewServerOpts{
 			API:         a,

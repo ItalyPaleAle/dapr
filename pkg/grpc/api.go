@@ -112,28 +112,28 @@ type API interface {
 }
 
 type api struct {
-	actor                      actors.Actors
-	directMessaging            messaging.DirectMessaging
-	appChannel                 channel.AppChannel
-	resiliency                 resiliency.Provider
-	stateStores                map[string]state.Store
-	transactionalStateStores   map[string]state.TransactionalStore
-	secretStores               map[string]secretstores.SecretStore
-	secretsConfiguration       map[string]config.SecretsScope
-	configurationStores        map[string]configuration.Store
-	configurationSubscribe     map[string]chan struct{} // store map[storeName||key1,key2] -> stopChan
-	configurationSubscribeLock sync.Mutex
-	lockStores                 map[string]lock.Store
-	pubsubAdapter              runtime_pubsub.Adapter
-	id                         string
-	sendToOutputBindingFn      func(name string, req *bindings.InvokeRequest) (*bindings.InvokeResponse, error)
-	tracingSpec                config.TracingSpec
-	accessControlList          *config.AccessControlList
-	appProtocol                string
-	extendedMetadata           sync.Map
-	components                 []components_v1alpha.Component
-	shutdown                   func()
-	getComponentsCapabilitesFn func() map[string][]string
+	actor                       actors.Actors
+	directMessaging             messaging.DirectMessaging
+	appChannel                  channel.AppChannel
+	resiliency                  resiliency.Provider
+	stateStores                 map[string]state.Store
+	transactionalStateStores    map[string]state.TransactionalStore
+	secretStores                map[string]secretstores.SecretStore
+	secretsConfiguration        map[string]config.SecretsScope
+	configurationStores         map[string]configuration.Store
+	configurationSubscribe      map[string]chan struct{} // store map[storeName||key1,key2] -> stopChan
+	configurationSubscribeLock  sync.Mutex
+	lockStores                  map[string]lock.Store
+	pubsubAdapter               runtime_pubsub.Adapter
+	id                          string
+	sendToOutputBindingFn       func(name string, req *bindings.InvokeRequest) (*bindings.InvokeResponse, error)
+	tracingSpec                 config.TracingSpec
+	accessControlList           *config.AccessControlList
+	appProtocol                 string
+	extendedMetadata            sync.Map
+	components                  []components_v1alpha.Component
+	shutdown                    func()
+	getComponentsCapabilitiesFn func() map[string][]string
 }
 
 func (a *api) TryLockAlpha1(ctx context.Context, req *runtimev1pb.TryLockRequest) (*runtimev1pb.TryLockResponse, error) {
@@ -265,53 +265,56 @@ func UnlockResponseToGrpcResponse(compResp *lock.UnlockResponse) *runtimev1pb.Un
 	return result
 }
 
+// NewAPIOpts contains options for NewAPI.
+type NewAPIOpts struct {
+	AppID                       string
+	AppChannel                  channel.AppChannel
+	Resiliency                  resiliency.Provider
+	StateStores                 map[string]state.Store
+	SecretStores                map[string]secretstores.SecretStore
+	SecretsConfiguration        map[string]config.SecretsScope
+	ConfigurationStores         map[string]configuration.Store
+	LockStores                  map[string]lock.Store
+	PubsubAdapter               runtime_pubsub.Adapter
+	DirectMessaging             messaging.DirectMessaging
+	Actor                       actors.Actors
+	SendToOutputBindingFn       func(name string, req *bindings.InvokeRequest) (*bindings.InvokeResponse, error)
+	TracingSpec                 config.TracingSpec
+	AccessControlList           *config.AccessControlList
+	AppProtocol                 string
+	Shutdown                    func()
+	GetComponentsCapabilitiesFn func() map[string][]string
+}
+
 // NewAPI returns a new gRPC API.
-func NewAPI(
-	appID string, appChannel channel.AppChannel,
-	resiliency resiliency.Provider,
-	stateStores map[string]state.Store,
-	secretStores map[string]secretstores.SecretStore,
-	secretsConfiguration map[string]config.SecretsScope,
-	configurationStores map[string]configuration.Store,
-	lockStores map[string]lock.Store,
-	pubsubAdapter runtime_pubsub.Adapter,
-	directMessaging messaging.DirectMessaging,
-	actor actors.Actors,
-	sendToOutputBindingFn func(name string, req *bindings.InvokeRequest) (*bindings.InvokeResponse, error),
-	tracingSpec config.TracingSpec,
-	accessControlList *config.AccessControlList,
-	appProtocol string,
-	getComponentsFn func() []components_v1alpha.Component,
-	shutdown func(),
-	getComponentsCapabilitiesFn func() map[string][]string,
-) API {
+func NewAPI(opts NewAPIOpts) API {
 	transactionalStateStores := map[string]state.TransactionalStore{}
-	for key, store := range stateStores {
+	for key, store := range opts.StateStores {
 		if state.FeatureTransactional.IsPresent(store.Features()) {
 			transactionalStateStores[key] = store.(state.TransactionalStore)
 		}
 	}
 
 	return &api{
-		directMessaging:            directMessaging,
-		actor:                      actor,
-		id:                         appID,
-		resiliency:                 resiliency,
-		appChannel:                 appChannel,
-		pubsubAdapter:              pubsubAdapter,
-		stateStores:                stateStores,
-		transactionalStateStores:   transactionalStateStores,
-		secretStores:               secretStores,
-		configurationStores:        configurationStores,
-		configurationSubscribe:     make(map[string]chan struct{}),
-		lockStores:                 lockStores,
-		secretsConfiguration:       secretsConfiguration,
-		sendToOutputBindingFn:      sendToOutputBindingFn,
-		tracingSpec:                tracingSpec,
-		accessControlList:          accessControlList,
-		appProtocol:                appProtocol,
-		shutdown:                   shutdown,
-		getComponentsCapabilitesFn: getComponentsCapabilitiesFn,
+		id:                          opts.AppID,
+		appChannel:                  opts.AppChannel,
+		resiliency:                  opts.Resiliency,
+		stateStores:                 opts.StateStores,
+		secretStores:                opts.SecretStores,
+		secretsConfiguration:        opts.SecretsConfiguration,
+		configurationStores:         opts.ConfigurationStores,
+		lockStores:                  opts.LockStores,
+		pubsubAdapter:               opts.PubsubAdapter,
+		directMessaging:             opts.DirectMessaging,
+		actor:                       opts.Actor,
+		sendToOutputBindingFn:       opts.SendToOutputBindingFn,
+		tracingSpec:                 opts.TracingSpec,
+		accessControlList:           opts.AccessControlList,
+		appProtocol:                 opts.AppProtocol,
+		shutdown:                    opts.Shutdown,
+		getComponentsCapabilitiesFn: opts.GetComponentsCapabilitiesFn,
+		transactionalStateStores:    transactionalStateStores,
+		configurationSubscribe:      make(map[string]chan struct{}),
 	}
 }
 
@@ -1660,7 +1663,7 @@ func (a *api) GetMetadata(ctx context.Context, in *emptypb.Empty) (*runtimev1pb.
 		return true
 	})
 	registeredComponents := make([]*runtimev1pb.RegisteredComponents, 0, len(a.components))
-	componentsCapabilties := a.getComponentsCapabilitesFn()
+	componentsCapabilties := a.getComponentsCapabilitiesFn()
 	for _, comp := range a.components {
 		registeredComp := &runtimev1pb.RegisteredComponents{
 			Name:         comp.Name,

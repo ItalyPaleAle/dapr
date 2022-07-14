@@ -80,44 +80,49 @@ type remoteApp struct {
 	address   string
 }
 
+// NewDirectMessaging contains the options for NewDirectMessaging.
+type NewDirectMessagingOpts struct {
+	AppID               string
+	Namespace           string
+	Port                int
+	Mode                modes.DaprMode
+	AppChannel          channel.AppChannel
+	ClientConnFn        messageClientConnection
+	Resolver            nr.Resolver
+	TracingSpec         config.TracingSpec
+	MaxRequestBodySize  int
+	Proxy               Proxy
+	ReadBufferSize      int
+	Resiliency          resiliency.Provider
+	IsResiliencyEnabled bool
+}
+
 // NewDirectMessaging returns a new direct messaging api.
-func NewDirectMessaging(
-	appID, namespace string,
-	port int, mode modes.DaprMode,
-	appChannel channel.AppChannel,
-	clientConnFn messageClientConnection,
-	resolver nr.Resolver,
-	tracingSpec config.TracingSpec,
-	maxRequestBodySize int,
-	proxy Proxy,
-	readBufferSize int,
-	resiliency resiliency.Provider,
-	isResiliencyEnabled bool,
-) DirectMessaging {
+func NewDirectMessaging(opts NewDirectMessagingOpts) DirectMessaging {
 	hAddr, _ := utils.GetHostAddress()
 	hName, _ := os.Hostname()
 
 	dm := &directMessaging{
-		appChannel:          appChannel,
-		connectionCreatorFn: clientConnFn,
-		appID:               appID,
-		mode:                mode,
-		grpcPort:            port,
-		namespace:           namespace,
-		resolver:            resolver,
-		tracingSpec:         tracingSpec,
+		appID:               opts.AppID,
+		namespace:           opts.Namespace,
+		grpcPort:            opts.Port,
+		mode:                opts.Mode,
+		appChannel:          opts.AppChannel,
+		connectionCreatorFn: opts.ClientConnFn,
+		resolver:            opts.Resolver,
+		tracingSpec:         opts.TracingSpec,
+		maxRequestBodySize:  opts.MaxRequestBodySize,
+		proxy:               opts.Proxy,
+		readBufferSize:      opts.ReadBufferSize,
+		resiliency:          opts.Resiliency,
+		isResiliencyEnabled: opts.IsResiliencyEnabled,
 		hostAddress:         hAddr,
 		hostName:            hName,
-		maxRequestBodySize:  maxRequestBodySize,
-		proxy:               proxy,
-		readBufferSize:      readBufferSize,
-		resiliency:          resiliency,
-		isResiliencyEnabled: isResiliencyEnabled,
 	}
 
-	if proxy != nil {
-		proxy.SetRemoteAppFn(dm.getRemoteApp)
-		proxy.SetTelemetryFn(dm.setContextSpan)
+	if dm.proxy != nil {
+		dm.proxy.SetRemoteAppFn(dm.getRemoteApp)
+		dm.proxy.SetTelemetryFn(dm.setContextSpan)
 	}
 
 	return dm
