@@ -1,6 +1,5 @@
-ARG WINDOWS_VERSION=1809
-#This version confirmed to work for both github and AKS
-FROM ghcr.io/dapr/windows-base:$WINDOWS_VERSION
+ARG WINDOWS_BASE_TAG=1809
+FROM ghcr.io/dapr/windows-base:$WINDOWS_BASE_TAG
 
 ARG PKG_FILES
 WORKDIR /

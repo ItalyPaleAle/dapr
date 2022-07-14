@@ -21,6 +21,8 @@ DAPR_RUNTIME_IMAGE_NAME=daprd
 DAPR_PLACEMENT_IMAGE_NAME=placement
 DAPR_SENTRY_IMAGE_NAME=sentry
 
+WINDOWS_BASE_TAG=latest
+
 # build docker image for linux
 BIN_PATH=$(OUT_DIR)/$(TARGET_OS)_$(TARGET_ARCH)
 
@@ -87,39 +89,32 @@ ifeq ($(TARGET_ARCH),)
 	$(error TARGET_ARCH environment variable must be set)
 endif
 
-
-docker-build: check-docker-env check-arch
-	$(info Building $(DOCKER_IMAGE_TAG) docker image ...)
-ifeq ($(TARGET_ARCH),amd64)
-	$(DOCKER) build --build-arg PKG_FILES=* -f $(DOCKERFILE_DIR)/$(DOCKERFILE) $(BIN_PATH) -t $(DOCKER_IMAGE_TAG)-$(TARGET_OS)-$(TARGET_ARCH)
-	$(DOCKER) build --build-arg PKG_FILES=daprd -f $(DOCKERFILE_DIR)/$(DOCKERFILE) $(BIN_PATH) -t $(DAPR_RUNTIME_DOCKER_IMAGE_TAG)-$(TARGET_OS)-$(TARGET_ARCH)
-	$(DOCKER) build --build-arg PKG_FILES=placement -f $(DOCKERFILE_DIR)/$(DOCKERFILE) $(BIN_PATH) -t $(DAPR_PLACEMENT_DOCKER_IMAGE_TAG)-$(TARGET_OS)-$(TARGET_ARCH)
-	$(DOCKER) build --build-arg PKG_FILES=sentry -f $(DOCKERFILE_DIR)/$(DOCKERFILE) $(BIN_PATH) -t $(DAPR_SENTRY_DOCKER_IMAGE_TAG)-$(TARGET_OS)-$(TARGET_ARCH)
-else
+setup-qemu:
 	-$(DOCKER) buildx create --use --name daprbuild
 	-$(DOCKER) run --rm --privileged multiarch/qemu-user-static --reset -p yes
-	$(DOCKER) buildx build --build-arg PKG_FILES=* --platform $(DOCKER_IMAGE_PLATFORM) -f $(DOCKERFILE_DIR)/$(DOCKERFILE) $(BIN_PATH) -t $(DOCKER_IMAGE_TAG)-$(TARGET_OS)-$(TARGET_ARCH)
-	$(DOCKER) buildx build --build-arg PKG_FILES=daprd --platform $(DOCKER_IMAGE_PLATFORM) -f $(DOCKERFILE_DIR)/$(DOCKERFILE) $(BIN_PATH) -t $(DAPR_RUNTIME_DOCKER_IMAGE_TAG)-$(TARGET_OS)-$(TARGET_ARCH)
-	$(DOCKER) buildx build --build-arg PKG_FILES=placement --platform $(DOCKER_IMAGE_PLATFORM) -f $(DOCKERFILE_DIR)/$(DOCKERFILE) $(BIN_PATH) -t $(DAPR_PLACEMENT_DOCKER_IMAGE_TAG)-$(TARGET_OS)-$(TARGET_ARCH)
-	$(DOCKER) buildx build --build-arg PKG_FILES=sentry --platform $(DOCKER_IMAGE_PLATFORM) -f $(DOCKERFILE_DIR)/$(DOCKERFILE) $(BIN_PATH) -t $(DAPR_SENTRY_DOCKER_IMAGE_TAG)-$(TARGET_OS)-$(TARGET_ARCH)
+
+docker-build: check-docker-env check-arch
+ifeq ($(TARGET_OS), windows)
+docker-build: get-windows-base-tag
+	$(eval EXTRA_BUILD_ARG=--build-arg WINDOWS_BASE_TAG=$(WINDOWS_BASE_TAG))
 endif
+	$(info Building $(DOCKER_IMAGE_TAG) docker image ...)
+	$(DOCKER) buildx build --build-arg PKG_FILES=* $(EXTRA_BUILD_ARG) --platform $(DOCKER_IMAGE_PLATFORM) -f $(DOCKERFILE_DIR)/$(DOCKERFILE) $(BIN_PATH) -t $(DOCKER_IMAGE_TAG)-$(TARGET_OS)-$(TARGET_ARCH)
+	$(DOCKER) buildx build --build-arg PKG_FILES=daprd $(EXTRA_BUILD_ARG) --platform $(DOCKER_IMAGE_PLATFORM) -f $(DOCKERFILE_DIR)/$(DOCKERFILE) $(BIN_PATH) -t $(DAPR_RUNTIME_DOCKER_IMAGE_TAG)-$(TARGET_OS)-$(TARGET_ARCH)
+	$(DOCKER) buildx build --build-arg PKG_FILES=placement $(EXTRA_BUILD_ARG) --platform $(DOCKER_IMAGE_PLATFORM) -f $(DOCKERFILE_DIR)/$(DOCKERFILE) $(BIN_PATH) -t $(DAPR_PLACEMENT_DOCKER_IMAGE_TAG)-$(TARGET_OS)-$(TARGET_ARCH)
+	$(DOCKER) buildx build --build-arg PKG_FILES=sentry $(EXTRA_BUILD_ARG) --platform $(DOCKER_IMAGE_PLATFORM) -f $(DOCKERFILE_DIR)/$(DOCKERFILE) $(BIN_PATH) -t $(DAPR_SENTRY_DOCKER_IMAGE_TAG)-$(TARGET_OS)-$(TARGET_ARCH)
 
 # push docker image to the registry
 docker-push: docker-build
-	$(info Pushing $(DOCKER_IMAGE_TAG) docker image ...)
-ifeq ($(TARGET_ARCH),amd64)
-	$(DOCKER) push $(DOCKER_IMAGE_TAG)-$(TARGET_OS)-$(TARGET_ARCH)
-	$(DOCKER) push $(DAPR_RUNTIME_DOCKER_IMAGE_TAG)-$(TARGET_OS)-$(TARGET_ARCH)
-	$(DOCKER) push $(DAPR_PLACEMENT_DOCKER_IMAGE_TAG)-$(TARGET_OS)-$(TARGET_ARCH)
-	$(DOCKER) push $(DAPR_SENTRY_DOCKER_IMAGE_TAG)-$(TARGET_OS)-$(TARGET_ARCH)
-else
-	-$(DOCKER) buildx create --use --name daprbuild
-	-$(DOCKER) run --rm --privileged multiarch/qemu-user-static --reset -p yes
-	$(DOCKER) buildx build --build-arg PKG_FILES=* --platform $(DOCKER_IMAGE_PLATFORM) -f $(DOCKERFILE_DIR)/$(DOCKERFILE) $(BIN_PATH) -t $(DOCKER_IMAGE_TAG)-$(TARGET_OS)-$(TARGET_ARCH) --push
-	$(DOCKER) buildx build --build-arg PKG_FILES=daprd --platform $(DOCKER_IMAGE_PLATFORM) -f $(DOCKERFILE_DIR)/$(DOCKERFILE) $(BIN_PATH) -t $(DAPR_RUNTIME_DOCKER_IMAGE_TAG)-$(TARGET_OS)-$(TARGET_ARCH) --push
-	$(DOCKER) buildx build --build-arg PKG_FILES=placement --platform $(DOCKER_IMAGE_PLATFORM) -f $(DOCKERFILE_DIR)/$(DOCKERFILE) $(BIN_PATH) -t $(DAPR_PLACEMENT_DOCKER_IMAGE_TAG)-$(TARGET_OS)-$(TARGET_ARCH) --push
-	$(DOCKER) buildx build --build-arg PKG_FILES=sentry --platform $(DOCKER_IMAGE_PLATFORM) -f $(DOCKERFILE_DIR)/$(DOCKERFILE) $(BIN_PATH) -t $(DAPR_SENTRY_DOCKER_IMAGE_TAG)-$(TARGET_OS)-$(TARGET_ARCH) --push
+ifeq ($(TARGET_OS), windows)
+docker-push: get-windows-base-tag
+	$(eval EXTRA_BUILD_ARG=--build-arg WINDOWS_BASE_TAG=$(WINDOWS_BASE_TAG))
 endif
+	$(info Pushing $(DOCKER_IMAGE_TAG) docker image ...)
+	$(DOCKER) buildx build --build-arg PKG_FILES=* $(EXTRA_BUILD_ARG) --platform $(DOCKER_IMAGE_PLATFORM) -f $(DOCKERFILE_DIR)/$(DOCKERFILE) $(BIN_PATH) -t $(DOCKER_IMAGE_TAG)-$(TARGET_OS)-$(TARGET_ARCH) --push
+	$(DOCKER) buildx build --build-arg PKG_FILES=daprd $(EXTRA_BUILD_ARG) --platform $(DOCKER_IMAGE_PLATFORM) -f $(DOCKERFILE_DIR)/$(DOCKERFILE) $(BIN_PATH) -t $(DAPR_RUNTIME_DOCKER_IMAGE_TAG)-$(TARGET_OS)-$(TARGET_ARCH) --push
+	$(DOCKER) buildx build --build-arg PKG_FILES=placement $(EXTRA_BUILD_ARG) --platform $(DOCKER_IMAGE_PLATFORM) -f $(DOCKERFILE_DIR)/$(DOCKERFILE) $(BIN_PATH) -t $(DAPR_PLACEMENT_DOCKER_IMAGE_TAG)-$(TARGET_OS)-$(TARGET_ARCH) --push
+	$(DOCKER) buildx build --build-arg PKG_FILES=sentry $(EXTRA_BUILD_ARG) --platform $(DOCKER_IMAGE_PLATFORM) -f $(DOCKERFILE_DIR)/$(DOCKERFILE) $(BIN_PATH) -t $(DAPR_SENTRY_DOCKER_IMAGE_TAG)-$(TARGET_OS)-$(TARGET_ARCH) --push
 
 # push docker image to kind cluster
 docker-push-kind: docker-build
@@ -154,20 +149,28 @@ ifeq ($(LATEST_RELEASE),true)
 	$(DOCKER) manifest push $(DAPR_SENTRY_DOCKER_IMAGE_LATEST_TAG)
 endif
 
-check-windows-version:
-ifeq ($(WINDOWS_VERSION),)
-	$(error WINDOWS_VERSION environment variable must be set)
+get-windows-base-tag:
+	$(eval WINDOWS_BASE_TAG=$(shell $(RUN_BUILD_TOOLS) docker hash \
+		--name "windows-base-1809" \
+		--dir "../$(DOCKERFILE_DIR)" \
+		--platform "$(DOCKER_IMAGE_PLATFORM)" \
+	))
+	@echo "Windows base tag: $(WINDOWS_BASE_TAG)"
+
+check-docker-env-windows-base:
+ifeq ($(DAPR_REGISTRY),)
+	$(error DAPR_REGISTRY environment variable must be set)
 endif
 
-docker-windows-base-build: check-windows-version
-	$(DOCKER) build --build-arg WINDOWS_VERSION=$(WINDOWS_VERSION) -f $(DOCKERFILE_DIR)/$(DOCKERFILE)-base $(DOCKERFILE_DIR) -t $(DAPR_REGISTRY)/windows-base:$(WINDOWS_VERSION)
-	$(DOCKER) build --build-arg WINDOWS_VERSION=$(WINDOWS_VERSION) -f $(DOCKERFILE_DIR)/$(DOCKERFILE)-php-base $(DOCKERFILE_DIR) -t $(DAPR_REGISTRY)/windows-php-base:$(WINDOWS_VERSION)
-	$(DOCKER) build --build-arg WINDOWS_VERSION=$(WINDOWS_VERSION) -f $(DOCKERFILE_DIR)/$(DOCKERFILE)-python-base $(DOCKERFILE_DIR) -t $(DAPR_REGISTRY)/windows-python-base:$(WINDOWS_VERSION)
+docker-windows-base-build: check-docker-env-windows-base get-windows-base-tag
+	$(DOCKER) build -f $(DOCKERFILE_DIR)/windows-base-1809/Dockerfile $(DOCKERFILE_DIR)/windows-base-1809 -t $(DAPR_REGISTRY)/windows-base:$(WINDOWS_BASE_TAG)
+	$(DOCKER) build --build-arg WINDOWS_VERSION=1809 -f $(DOCKERFILE_DIR)/Dockerfile-windows-php-base $(DOCKERFILE_DIR) -t $(DAPR_REGISTRY)/windows-php-base:$(WINDOWS_BASE_TAG)
+	$(DOCKER) build --build-arg WINDOWS_VERSION=1809 -f $(DOCKERFILE_DIR)/Dockerfile-windows-python-base $(DOCKERFILE_DIR) -t $(DAPR_REGISTRY)/windows-python-base:$(WINDOWS_BASE_TAG)
 
-docker-windows-base-push: check-windows-version
-	$(DOCKER) push $(DAPR_REGISTRY)/windows-base:$(WINDOWS_VERSION)
-	$(DOCKER) push $(DAPR_REGISTRY)/windows-php-base:$(WINDOWS_VERSION)
-	$(DOCKER) push $(DAPR_REGISTRY)/windows-python-base:$(WINDOWS_VERSION)
+docker-windows-base-push: check-docker-env-windows-base get-windows-base-tag
+	$(DOCKER) push $(DAPR_REGISTRY)/windows-base:$(WINDOWS_BASE_TAG)
+	$(DOCKER) push $(DAPR_REGISTRY)/windows-php-base:$(WINDOWS_BASE_TAG)
+	$(DOCKER) push $(DAPR_REGISTRY)/windows-python-base:$(WINDOWS_BASE_TAG)
 
 ################################################################################
 # Target: build-dev-container, push-dev-container                              #
@@ -182,8 +185,8 @@ DEV_CONTAINER_CLI_TAG?=1.8.0
 # Dapr container image name
 DEV_CONTAINER_IMAGE_NAME=dapr-dev
 
-DEV_CONTAINER_DOCKERFILE=Dockerfile-dev
-DOCKERFILE_DIR=./docker
+DEV_CONTAINER_DOCKERFILE=Dockerfile
+DEV_CONTAINER_DOCKERFILE_DIR=./docker/dev-container
 
 check-docker-env-for-dev-container:
 ifeq ($(DAPR_REGISTRY),)
@@ -194,9 +197,9 @@ build-dev-container:
 ifeq ($(DAPR_REGISTRY),)
 	$(info DAPR_REGISTRY environment variable not set, tagging image without registry prefix.)
 	$(info `make tag-dev-container` should be run with DAPR_REGISTRY before `make push-dev-container.)
-	$(DOCKER) build --build-arg DAPR_CLI_VERSION=$(DEV_CONTAINER_CLI_TAG) -f $(DOCKERFILE_DIR)/$(DEV_CONTAINER_DOCKERFILE) $(DOCKERFILE_DIR)/. -t $(DEV_CONTAINER_IMAGE_NAME):$(DEV_CONTAINER_VERSION_TAG)
+	$(DOCKER) build --build-arg DAPR_CLI_VERSION=$(DEV_CONTAINER_CLI_TAG) -f $(DEV_CONTAINER_DOCKERFILE_DIR)/$(DEV_CONTAINER_DOCKERFILE) $(DEV_CONTAINER_DOCKERFILE_DIR)/. -t $(DEV_CONTAINER_IMAGE_NAME):$(DEV_CONTAINER_VERSION_TAG)
 else
-	$(DOCKER) build --build-arg DAPR_CLI_VERSION=$(DEV_CONTAINER_CLI_TAG) -f $(DOCKERFILE_DIR)/$(DEV_CONTAINER_DOCKERFILE) $(DOCKERFILE_DIR)/. -t $(DAPR_REGISTRY)/$(DEV_CONTAINER_IMAGE_NAME):$(DEV_CONTAINER_VERSION_TAG)
+	$(DOCKER) build --build-arg DAPR_CLI_VERSION=$(DEV_CONTAINER_CLI_TAG) -f $(DEV_CONTAINER_DOCKERFILE_DIR)/$(DEV_CONTAINER_DOCKERFILE) $(DEV_CONTAINER_DOCKERFILE_DIR)/. -t $(DAPR_REGISTRY)/$(DEV_CONTAINER_IMAGE_NAME):$(DEV_CONTAINER_VERSION_TAG)
 endif
 
 tag-dev-container: check-docker-env-for-dev-container
@@ -210,24 +213,24 @@ ifeq ($(DAPR_REGISTRY),)
 	$(info DAPR_REGISTRY environment variable not set, tagging image without registry prefix.)
 	$(DOCKER) buildx build \
 		--build-arg DAPR_CLI_VERSION=$(DEV_CONTAINER_CLI_TAG) \
-		-f $(DOCKERFILE_DIR)/$(DEV_CONTAINER_DOCKERFILE) \
+		-f $(DEV_CONTAINER_DOCKERFILE_DIR)/$(DEV_CONTAINER_DOCKERFILE) \
 		--platform linux/amd64,linux/arm64 \
 		-t $(DEV_CONTAINER_IMAGE_NAME):$(DEV_CONTAINER_VERSION_TAG) \
-		$(DOCKERFILE_DIR)/.
+		$(DEV_CONTAINER_DOCKERFILE_DIR)/.
 else
 	$(DOCKER) buildx build \
 		--build-arg DAPR_CLI_VERSION=$(DEV_CONTAINER_CLI_TAG) \
-		-f $(DOCKERFILE_DIR)/$(DEV_CONTAINER_DOCKERFILE) \
+		-f $(DEV_CONTAINER_DOCKERFILE_DIR)/$(DEV_CONTAINER_DOCKERFILE) \
 		--platform linux/amd64,linux/arm64 \
 		-t $(DAPR_REGISTRY)/$(DEV_CONTAINER_IMAGE_NAME):$(DEV_CONTAINER_VERSION_TAG) \
-		$(DOCKERFILE_DIR)/.
+		$(DEV_CONTAINER_DOCKERFILE_DIR)/.
 endif
 
 push-dev-container-all-arch: check-docker-env-for-dev-container
 	$(DOCKER) buildx build \
 		--build-arg DAPR_CLI_VERSION=$(DEV_CONTAINER_CLI_TAG) \
-		-f $(DOCKERFILE_DIR)/$(DEV_CONTAINER_DOCKERFILE) \
+		-f $(DEV_CONTAINER_DOCKERFILE_DIR)/$(DEV_CONTAINER_DOCKERFILE) \
 		--platform linux/amd64,linux/arm64 \
 		--push \
 		-t $(DAPR_REGISTRY)/$(DEV_CONTAINER_IMAGE_NAME):$(DEV_CONTAINER_VERSION_TAG) \
-		$(DOCKERFILE_DIR)/.
+		$(DEV_CONTAINER_DOCKERFILE_DIR)/.

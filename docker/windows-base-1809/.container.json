@@ -1,0 +1,6 @@
+{
+    "RemoteImagesHash": [
+        "mcr.microsoft.com/windows/servercore:1809",
+        "mcr.microsoft.com/windows/nanoserver:1809"
+    ]
+}
