@@ -14,21 +14,16 @@ limitations under the License.
 package cmd
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"io"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"sort"
-	"strings"
 
 	"github.com/google/go-containerregistry/pkg/crane"
-	gitignore "github.com/sabhiram/go-gitignore"
 	"github.com/spf13/cobra"
+
+	"build-tools/utils"
 )
 
 // Manages the commands for e2e and perf
@@ -357,33 +352,12 @@ func (c *cmdE2EPerf) pushDockerImage(destImage string) error {
 	return nil
 }
 
-// Loads the ".gitignore" (or whatever the value of ignoreFile is) in the appDir and in the appDir/name folders
-func (c *cmdE2EPerf) getIgnores() *gitignore.GitIgnore {
-	appDir := c.getAppDir()
-	files := []string{
-		filepath.Join(appDir, c.flags.IgnoreFile),
-		// Add the ".gitignore" inside the app's folder too if it exists
-		filepath.Join(appDir, c.flags.Name, c.flags.IgnoreFile),
-	}
-	lines := []string{}
-	for _, f := range files {
-		read, err := os.ReadFile(f)
-		if err != nil {
-			continue
-		}
-		lines = append(lines, strings.Split(string(read), "\n")...)
-	}
-
-	if len(lines) == 0 {
-		return nil
-	}
-
-	return gitignore.CompileIgnoreLines(lines...)
-}
-
 // Returns the checksum of the files in the directory
 func (c *cmdE2EPerf) getHashDir() (string, error) {
-	basePath := filepath.Join(c.getAppDir(), c.flags.Name)
+	appDir := c.getAppDir()
+
+	// Base path
+	basePath := filepath.Join(appDir, c.flags.Name)
 	_, err := os.Stat(basePath)
 	if err != nil {
 		fmt.Printf("could not find app %s\n", basePath)
@@ -391,72 +365,12 @@ func (c *cmdE2EPerf) getHashDir() (string, error) {
 	}
 
 	// Load the files to exclude
-	ignores := c.getIgnores()
+	ignores := utils.GetIgnores([]string{
+		filepath.Join(appDir, c.flags.IgnoreFile),
+		// Add the ".gitignore" inside the app's folder too if it exists
+		filepath.Join(appDir, c.flags.Name, c.flags.IgnoreFile),
+	})
 
 	// Compute the hash of the app's files
-	files := []string{}
-	err = filepath.WalkDir(basePath, func(path string, d fs.DirEntry, err error) error {
-		// Check if the file is ignored
-		relPath, err := filepath.Rel(basePath, path)
-		if err != nil {
-			return err
-		}
-
-		// Skip the folders and ignored files
-		if relPath == "." || d.IsDir() || (ignores != nil && ignores.MatchesPath(path)) {
-			return nil
-		}
-
-		// Compute the sha256 of the file
-		checksum, err := checksumFile(path)
-		if err != nil {
-			return err
-		}
-
-		// Convert all slashes to / so the hash is the same on Windows and Linux
-		relPath = filepath.ToSlash(relPath)
-
-		files = append(files, relPath+" "+checksum)
-		return nil
-	})
-	if err != nil {
-		return "", err
-	}
-	if len(files) == 0 {
-		return "", fmt.Errorf("no file found in the folder")
-	}
-
-	// Sort files to have a consistent order, then compute the checksum of that slice (getting the first 10 chars only)
-	sort.Strings(files)
-	fileList := strings.Join(files, "\n")
-	hashDir := checksumString(fileList)[0:10]
-
-	return hashDir, nil
-}
-
-// Calculates the checksum of a file
-func checksumFile(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		fmt.Printf("failed to open file %s for hashing: %v\n", path, err)
-		return "", err
-	}
-	defer f.Close()
-
-	h := sha256.New()
-	_, err = io.Copy(h, f)
-	if err != nil {
-		fmt.Printf("failed to copy file %s into hasher: %v\n", path, err)
-		return "", err
-	}
-
-	res := hex.EncodeToString(h.Sum(nil))
-	return res, nil
-}
-
-// Calculates the checksum of a string
-func checksumString(str string) string {
-	h := sha256.New()
-	h.Write([]byte(str))
-	return hex.EncodeToString(h.Sum(nil))
+	return utils.HashDirectory(basePath, ignores)
 }
