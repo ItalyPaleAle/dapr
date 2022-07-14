@@ -208,10 +208,34 @@ func FromFlags() (*DaprRuntime, error) {
 	if len(daprAPIListenAddressList) == 0 {
 		daprAPIListenAddressList = []string{DefaultAPIListenAddress}
 	}
-	runtimeConfig := NewRuntimeConfig(*appID, placementAddresses, *controlPlaneAddress, *allowedOrigins,
-		*config, *componentsPath, appPrtcl, *mode, daprHTTP, daprInternalGRPC, daprAPIGRPC, daprAPIListenAddressList,
-		publicPort, applicationPort, profPort, *enableProfiling, concurrency, *enableMTLS, *sentryAddress, *appSSL, maxRequestBodySize,
-		*unixDomainSocket, readBufferSize, gracefulShutdownDuration, *enableAPILogging, *disableBuiltinK8sSecretStore)
+	runtimeConfig := NewRuntimeConfig(NewRuntimeConfigOpts{
+		ID:                           *appID,
+		PlacementAddresses:           placementAddresses,
+		controlPlaneAddress:          *controlPlaneAddress,
+		AllowedOrigins:               *allowedOrigins,
+		GlobalConfig:                 *config,
+		ComponentsPath:               *componentsPath,
+		AppProtocol:                  appPrtcl,
+		Mode:                         *mode,
+		HTTPPort:                     daprHTTP,
+		InternalGRPCPort:             daprInternalGRPC,
+		APIGRPCPort:                  daprAPIGRPC,
+		APIListenAddresses:           daprAPIListenAddressList,
+		PublicPort:                   publicPort,
+		AppPort:                      applicationPort,
+		ProfilePort:                  profPort,
+		EnableProfiling:              *enableProfiling,
+		MaxConcurrency:               concurrency,
+		MTLSEnabled:                  *enableMTLS,
+		SentryAddress:                *sentryAddress,
+		AppSSL:                       *appSSL,
+		MaxRequestBodySize:           maxRequestBodySize,
+		UnixDomainSocket:             *unixDomainSocket,
+		ReadBufferSize:               readBufferSize,
+		GracefulShutdownDuration:     gracefulShutdownDuration,
+		EnableAPILogging:             *enableAPILogging,
+		DisableBuiltinK8sSecretStore: *disableBuiltinK8sSecretStore,
+	})
 
 	// set environment variables
 	// TODO - consider adding host address to runtime config and/or caching result in utils package
