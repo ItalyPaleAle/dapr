@@ -167,13 +167,18 @@ func (d *directMessaging) invokeWithRetry(
 	// TODO: Once resiliency is out of preview, we can have this be the only path.
 	if d.isResiliencyEnabled {
 		if d.resiliency.PolicyDefined(app.id, resiliency.Endpoint) == nil {
-			retriesExhaustedPath := false // Used to track final error state.
-			nullifyResponsePath := false  // Used to track final response state.
+			var (
+				resp                 *invokev1.InvokeMethodResponse
+				retriesExhaustedPath bool // Used to track final error state.
+				nullifyResponsePath  bool // Used to track final response state.
+			)
 			policy := d.resiliency.BuiltInPolicy(ctx, resiliency.BuiltInServiceRetries)
 			// This policy has built-in retries so enable replay in the request
 			req.WithReplay(true)
-			var resp *invokev1.InvokeMethodResponse
 			err := policy(func(ctx context.Context) (rErr error) {
+				if resp != nil {
+					resp.Close()
+				}
 				retriesExhaustedPath = false
 				resp, rErr = fn(ctx, app.id, app.namespace, app.address, req)
 				if rErr == nil {
@@ -199,6 +204,9 @@ func (d *directMessaging) invokeWithRetry(
 			}
 
 			if nullifyResponsePath {
+				if resp != nil {
+					resp.Close()
+				}
 				resp = nil
 			}
 
@@ -210,8 +218,15 @@ func (d *directMessaging) invokeWithRetry(
 
 	// We need to enable replaying because the request may be attempted again in this path
 	req.WithReplay(true)
+	var (
+		resp *invokev1.InvokeMethodResponse
+		err  error
+	)
 	for i := 0; i < numRetries; i++ {
-		resp, err := fn(ctx, app.id, app.namespace, app.address, req)
+		if resp != nil {
+			resp.Close()
+		}
+		resp, err = fn(ctx, app.id, app.namespace, app.address, req)
 		if err == nil {
 			return resp, nil
 		}

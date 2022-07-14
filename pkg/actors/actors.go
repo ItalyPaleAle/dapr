@@ -257,9 +257,11 @@ func decomposeCompositeKey(compositeKey string) []string {
 }
 
 func (a *actorsRuntime) deactivateActor(actorType, actorID string) error {
-	req := invokev1.NewInvokeMethodRequest(fmt.Sprintf("actors/%s/%s", actorType, actorID))
-	req.WithHTTPExtension(nethttp.MethodDelete, "")
-	req.WithRawData(nil, invokev1.JSONContentType)
+	req := invokev1.
+		NewInvokeMethodRequest(fmt.Sprintf("actors/%s/%s", actorType, actorID)).
+		WithHTTPExtension(nethttp.MethodDelete, "").
+		WithRawData(nil, invokev1.JSONContentType)
+	defer req.Close()
 
 	// TODO Propagate context.
 	ctx := context.Background()
@@ -268,6 +270,7 @@ func (a *actorsRuntime) deactivateActor(actorType, actorID string) error {
 		diag.DefaultMonitoring.ActorDeactivationFailed(actorType, "invoke")
 		return err
 	}
+	defer resp.Close()
 
 	if resp.Status().Code != nethttp.StatusOK {
 		diag.DefaultMonitoring.ActorDeactivationFailed(actorType, fmt.Sprintf("status_code_%d", resp.Status().Code))
@@ -371,13 +374,18 @@ func (a *actorsRuntime) callRemoteActorWithRetry(
 	// TODO: Once resiliency is out of preview, we can have this be the only path.
 	if a.isResiliencyEnabled {
 		if a.resiliency.PolicyDefined(req.Actor().ActorType, resiliency.Actor) == nil {
-			retriesExhaustedPath := false // Used to track final error state.
-			nullifyResponsePath := false  // Used to track final response state.
 			policy := a.resiliency.BuiltInPolicy(ctx, resiliency.BuiltInActorRetries)
+			var (
+				resp                 *invokev1.InvokeMethodResponse
+				retriesExhaustedPath bool // Used to track final error state.
+				nullifyResponsePath  bool // Used to track final response state.
+			)
 			// This policy has built-in retries so enable replay in the request
 			req.WithReplay(true)
-			var resp *invokev1.InvokeMethodResponse
 			err := policy(func(ctx context.Context) (rErr error) {
+				if resp != nil {
+					resp.Close()
+				}
 				retriesExhaustedPath = false
 				resp, rErr = fn(ctx, targetAddress, targetID, req)
 				if rErr == nil {
@@ -403,6 +411,9 @@ func (a *actorsRuntime) callRemoteActorWithRetry(
 			}
 
 			if nullifyResponsePath {
+				if resp != nil {
+					resp.Close()
+				}
 				resp = nil
 			}
 
@@ -414,8 +425,15 @@ func (a *actorsRuntime) callRemoteActorWithRetry(
 
 	// We need to enable replaying because the request may be attempted again in this path
 	req.WithReplay(true)
+	var (
+		resp *invokev1.InvokeMethodResponse
+		err  error
+	)
 	for i := 0; i < numRetries; i++ {
-		resp, err := fn(ctx, targetAddress, targetID, req)
+		if resp != nil {
+			resp.Close()
+		}
+		resp, err = fn(ctx, targetAddress, targetID, req)
 		if err == nil {
 			return resp, nil
 		}
@@ -497,6 +515,9 @@ func (a *actorsRuntime) callLocalActor(ctx context.Context, req *invokev1.Invoke
 	policy := a.resiliency.ActorPostLockPolicy(ctx, act.actorType, act.actorID)
 	var resp *invokev1.InvokeMethodResponse
 	err = policy(func(ctx context.Context) (rErr error) {
+		if resp != nil {
+			resp.Close()
+		}
 		resp, rErr = a.appChannel.InvokeMethod(ctx, req)
 		return rErr
 	})

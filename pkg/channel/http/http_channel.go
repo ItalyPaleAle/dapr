@@ -185,7 +185,11 @@ func (h *Channel) invokeMethodV1(ctx context.Context, req *invokev1.InvokeMethod
 
 	elapsedMs := float64(time.Since(startRequest) / time.Millisecond)
 
-	contentLength, _ := strconv.Atoi(resp.Header.Get("content-length"))
+	var contentLength int
+	if resp != nil && resp.Header != nil {
+		contentLength, _ = strconv.Atoi(resp.Header.Get("content-length"))
+	}
+
 	if err != nil {
 		diag.DefaultHTTPMonitoring.ClientRequestCompleted(ctx, channelReq.Method, req.Message().GetMethod(), strconv.Itoa(http.StatusInternalServerError), int64(contentLength), elapsedMs)
 		return nil, err
