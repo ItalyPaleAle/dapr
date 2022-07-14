@@ -372,5 +372,5 @@ func (c *cmdE2EPerf) getHashDir() (string, error) {
 	})
 
 	// Compute the hash of the app's files
-	return utils.HashDirectory(basePath, ignores)
+	return utils.HashDirectory(basePath, ignores, "")
 }

@@ -27,8 +27,9 @@ import (
 	gitignore "github.com/sabhiram/go-gitignore"
 )
 
-// HashDirectory returns a hash that is based on the hash of each file in that directory,
-func HashDirectory(basePath string, ignores *gitignore.GitIgnore) (string, error) {
+// HashDirectory returns a hash that is based on the hash of each file in that directory.
+// If a prefix is given, it's included in the string to hash, at the beginning.
+func HashDirectory(basePath string, ignores *gitignore.GitIgnore, prefix string) (string, error) {
 	// Compute the hash of the app's files
 	files := []string{}
 	err := filepath.WalkDir(basePath, func(path string, d fs.DirEntry, err error) error {
@@ -37,7 +38,10 @@ func HashDirectory(basePath string, ignores *gitignore.GitIgnore) (string, error
 		if err != nil {
 			return err
 		}
-		if relPath == "." || d.IsDir() || (ignores != nil && ignores.MatchesPath(path)) {
+		if relPath == "." ||
+			relPath == ContainerConfigFile ||
+			d.IsDir() ||
+			(ignores != nil && ignores.MatchesPath(path)) {
 			return nil
 		}
 
@@ -60,10 +64,10 @@ func HashDirectory(basePath string, ignores *gitignore.GitIgnore) (string, error
 		return "", fmt.Errorf("no file found in the folder")
 	}
 
-	// Sort files to have a consistent order, then compute the checksum of that slice (getting the first 10 chars only)
+	// Sort files to have a consistent order, then compute the checksum of that string (getting the first 10 chars only)
 	sort.Strings(files)
 	fileList := strings.Join(files, "\n")
-	hashDir := ChecksumString(fileList)[0:10]
+	hashDir := ChecksumString(prefix + fileList)[0:10]
 
 	return hashDir, nil
 }
