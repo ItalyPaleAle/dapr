@@ -2367,7 +2367,7 @@ func (a *DaprRuntime) loadAppConfiguration() {
 		return
 	}
 
-	// TODO: propagate context
+	// TODO Propagate context
 	appConfig, err := a.appChannel.GetAppConfig(context.Background())
 	if err != nil {
 		return
