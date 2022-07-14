@@ -19,6 +19,20 @@ on:
   # Dispatch on external events
   repository_dispatch:
     types: [windows-base]
+  push:
+    branches:
+      - master
+      - release-*
+    paths:
+      - docker/windows-base-1809
+      - docker/Dockerfile-windows-*-base
+  pull_request:
+    branches:
+      - master
+      - release-*
+    paths:
+      - docker/windows-base-1809
+      - docker/Dockerfile-windows-*-base
 jobs:
   build:
     name: Build base Windows images
