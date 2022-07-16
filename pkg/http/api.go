@@ -1775,6 +1775,9 @@ func (a *api) onDirectActorMessage(reqCtx *fasthttp.RequestCtx) {
 	policy := a.resiliency.ActorPreLockPolicy(reqCtx, actorType, actorID)
 	var resp *invokev1.InvokeMethodResponse
 	err := policy(func(ctx context.Context) (rErr error) {
+		if resp != nil {
+			resp.Close()
+		}
 		resp, rErr = a.actor.Call(ctx, req)
 		return rErr
 	})

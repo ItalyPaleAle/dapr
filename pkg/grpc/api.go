@@ -501,6 +501,7 @@ func (a *api) CallActor(ctx context.Context, in *internalv1pb.InternalInvokeRequ
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, messages.ErrInternalInvokeRequest, err.Error())
 	}
+	defer req.Close()
 
 	// We don't do resiliency here as it is handled in the API layer. See InvokeActor().
 	resp, err := a.actor.Call(ctx, req)
@@ -1607,13 +1608,10 @@ func (a *api) InvokeActor(ctx context.Context, in *runtimev1pb.InvokeActorReques
 	// should technically wait forever on the locking mechanism. If we timeout while
 	// waiting for the lock, we can also create a queue of calls that will try and continue
 	// after the timeout.
-	var (
-		resp *invokev1.InvokeMethodResponse
-		body []byte
-		rErr error
-	)
+	var body []byte
 	policy := a.resiliency.ActorPreLockPolicy(ctx, in.ActorType, in.ActorId)
-	err := policy(func(ctx context.Context) error {
+	err := policy(func(ctx context.Context) (rErr error) {
+		var resp *invokev1.InvokeMethodResponse
 		resp, rErr = a.actor.Call(ctx, req)
 		if rErr != nil {
 			return rErr
