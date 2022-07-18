@@ -127,8 +127,10 @@ func (h *Channel) GetAppConfig(ctx context.Context) (*config.ApplicationConfig, 
 	case "v1":
 		fallthrough
 	default:
-		r := resp.RawData()
-		if err = json.NewDecoder(r).Decode(&config); err != nil {
+		err = json.
+			NewDecoder(resp.RawData()).
+			Decode(&config)
+		if err != nil {
 			return nil, err
 		}
 	}

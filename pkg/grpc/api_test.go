@@ -363,9 +363,10 @@ func TestCallLocal(t *testing.T) {
 		defer clientConn.Close()
 
 		client := internalv1pb.NewServiceInvocationClient(clientConn)
-		request := invokev1.NewInvokeMethodRequest("method").Proto()
+		request := invokev1.NewInvokeMethodRequest("method")
+		defer request.Close()
 
-		_, err := client.CallLocal(context.Background(), request)
+		_, err := client.CallLocal(context.Background(), request.Proto())
 		assert.Equal(t, codes.Internal, status.Code(err))
 	})
 

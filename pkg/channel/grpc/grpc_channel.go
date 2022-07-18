@@ -87,14 +87,14 @@ func (g *Channel) InvokeMethod(ctx context.Context, req *invokev1.InvokeMethodRe
 
 // invokeMethodV1 calls user applications using daprclient v1.
 func (g *Channel) invokeMethodV1(ctx context.Context, req *invokev1.InvokeMethodRequest) (*invokev1.InvokeMethodResponse, error) {
-	if g.ch != nil {
-		g.ch <- struct{}{}
-	}
-
 	// Read the request, including the data
 	pd, err := req.ProtoWithData()
 	if err != nil {
 		return nil, err
+	}
+
+	if g.ch != nil {
+		g.ch <- struct{}{}
 	}
 
 	clientV1 := runtimev1pb.NewAppCallbackClient(g.client)
@@ -132,7 +132,9 @@ func (g *Channel) invokeMethodV1(ctx context.Context, req *invokev1.InvokeMethod
 		rsp = invokev1.NewInvokeMethodResponse(int32(codes.OK), "", nil)
 	}
 
-	rsp.WithHeaders(header).WithTrailers(trailer)
+	rsp.WithHeaders(header).
+		WithTrailers(trailer).
+		WithMessage(resp)
 
-	return rsp.WithMessage(resp), nil
+	return rsp, nil
 }

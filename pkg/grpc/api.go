@@ -331,6 +331,7 @@ func (a *api) CallLocal(ctx context.Context, in *internalv1pb.InternalInvokeRequ
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, messages.ErrInternalInvokeRequest, err.Error())
 	}
+	defer req.Close()
 
 	if a.accessControlList != nil {
 		// An access control policy has been specified for the app. Apply the policies.
@@ -354,6 +355,7 @@ func (a *api) CallLocal(ctx context.Context, in *internalv1pb.InternalInvokeRequ
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, messages.ErrChannelInvoke, err)
 	}
+	defer resp.Close()
 
 	// Response message
 	return resp.ProtoWithData()
@@ -508,16 +510,22 @@ func (a *api) CallActor(ctx context.Context, in *internalv1pb.InternalInvokeRequ
 
 	// We don't do resiliency here as it is handled in the API layer. See InvokeActor().
 	resp, err := a.actor.Call(ctx, req)
+	defer func() {
+		if resp != nil {
+			resp.Close()
+		}
+	}()
 	if err != nil {
 		// We have to remove the error to keep the body, so callers must re-inspect for the header in the actual response.
 		if errors.Is(err, actors.ErrDaprResponseHeader) {
-			return resp.Proto(), nil
+			return resp.ProtoWithData()
 		}
 
 		err = status.Errorf(codes.Internal, messages.ErrActorInvoke, err)
 		return nil, err
 	}
-	return resp.Proto(), nil
+
+	return resp.ProtoWithData()
 }
 
 func (a *api) PublishEvent(ctx context.Context, in *runtimev1pb.PublishEventRequest) (*emptypb.Empty, error) {
@@ -1613,9 +1621,8 @@ func (a *api) InvokeActor(ctx context.Context, in *runtimev1pb.InvokeActorReques
 	// after the timeout.
 	var body []byte
 	policy := a.resiliency.ActorPreLockPolicy(ctx, in.ActorType, in.ActorId)
-	err := policy(func(ctx context.Context) (rErr error) {
-		var resp *invokev1.InvokeMethodResponse
-		resp, rErr = a.actor.Call(ctx, req)
+	err := policy(func(ctx context.Context) error {
+		resp, rErr := a.actor.Call(ctx, req)
 		if rErr != nil {
 			return rErr
 		}

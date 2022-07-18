@@ -493,17 +493,18 @@ func (a *actorsRuntime) callLocalActor(ctx context.Context, req *invokev1.Invoke
 	defer act.unlock()
 
 	// Replace method to actors method.
-	originalMethod := req.Message().Method
-	req.Message().Method = fmt.Sprintf("actors/%s/%s/method/%s", actorTypeID.GetActorType(), actorTypeID.GetActorId(), req.Message().Method)
+	msg := req.Message()
+	originalMethod := msg.Method
+	msg.Method = fmt.Sprintf("actors/%s/%s/method/%s", actorTypeID.GetActorType(), actorTypeID.GetActorId(), msg.Method)
 
 	// Reset the method so we can perform retries.
-	defer func() { req.Message().Method = originalMethod }()
+	defer func() { msg.Method = originalMethod }()
 
 	// Original code overrides method with PUT. Why?
-	if req.Message().GetHttpExtension() == nil {
+	if msg.GetHttpExtension() == nil {
 		req.WithHTTPExtension(nethttp.MethodPut, "")
 	} else {
-		req.Message().HttpExtension.Verb = commonv1pb.HTTPExtension_PUT
+		msg.HttpExtension.Verb = commonv1pb.HTTPExtension_PUT
 	}
 
 	// If the request can be retried, we need to enable replaying
@@ -528,6 +529,7 @@ func (a *actorsRuntime) callLocalActor(ctx context.Context, req *invokev1.Invoke
 
 	if resp.Status().Code != nethttp.StatusOK {
 		respData, _ := io.ReadAll(resp.RawData())
+		resp.Close()
 		return nil, errors.Errorf("error from actor service: %s", string(respData))
 	}
 
@@ -550,10 +552,15 @@ func (a *actorsRuntime) callRemoteActor(
 		return nil, err
 	}
 
+	pd, err := req.ProtoWithData()
+	if err != nil {
+		return nil, err
+	}
+
 	span := diag_utils.SpanFromContext(ctx)
 	ctx = diag.SpanContextToGRPCMetadata(ctx, span.SpanContext())
 	client := internalv1pb.NewServiceInvocationClient(conn)
-	resp, err := client.CallActor(ctx, req.Proto())
+	resp, err := client.CallActor(ctx, pd)
 	if err != nil {
 		return nil, err
 	}
@@ -1016,7 +1023,8 @@ func (a *actorsRuntime) executeReminder(reminder *Reminder) error {
 
 	policy := a.resiliency.ActorPreLockPolicy(context.Background(), reminder.ActorType, reminder.ActorID)
 	return policy(func(ctx context.Context) error {
-		_, err := a.callLocalActor(ctx, req)
+		resp, err := a.callLocalActor(ctx, req)
+		defer resp.Close()
 		return err
 	})
 }
@@ -1381,7 +1389,8 @@ func (a *actorsRuntime) executeTimer(actorType, actorID, name, dueTime, period, 
 
 	policy := a.resiliency.ActorPreLockPolicy(context.Background(), actorType, actorID)
 	err = policy(func(ctx context.Context) error {
-		_, err = a.callLocalActor(ctx, req)
+		resp, err := a.callLocalActor(ctx, req)
+		defer resp.Close()
 		return err
 	})
 	if err != nil {

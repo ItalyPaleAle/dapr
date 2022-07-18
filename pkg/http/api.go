@@ -805,12 +805,19 @@ func (h *configurationEventHandler) updateEventHandler(ctx context.Context, e *c
 			WithRawDataBytes(eventBody, invokev1.JSONContentType)
 		defer req.Close()
 
+		// If the request can be retried, we need to enable replaying
+		pd := h.res.PolicyDefined(h.storeName, resiliency.ComponentInbound)
+		if pd != nil && pd.HasRetries() {
+			req.WithReplay(true)
+		}
+
 		policy := h.res.ComponentInboundPolicy(ctx, h.storeName)
-		err := policy(func(ctx context.Context) (err error) {
+		err := policy(func(ctx context.Context) error {
 			resp, err := h.appChannel.InvokeMethod(ctx, req)
 			if err != nil {
 				return err
 			}
+			defer resp.Close()
 
 			if resp != nil && resp.Status().Code != nethttp.StatusOK {
 				return errors.Errorf("Error sending configuration item to application, status %d", resp.Status().Code)
@@ -1789,6 +1796,9 @@ func (a *api) onDirectActorMessage(reqCtx *fasthttp.RequestCtx) {
 		msg := NewErrorResponse("ERR_ACTOR_INVOKE_METHOD", fmt.Sprintf(messages.ErrActorInvoke, err))
 		respond(reqCtx, withError(fasthttp.StatusInternalServerError, msg))
 		log.Debug(msg)
+		if resp != nil {
+			resp.Close()
+		}
 		return
 	}
 
