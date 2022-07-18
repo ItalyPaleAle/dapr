@@ -1926,12 +1926,26 @@ func (a *DaprRuntime) initActors() error {
 	if a.actorStateStoreName == "" {
 		log.Info("actors: state store is not configured - this is okay for clients but services with hosted actors will fail to initialize!")
 	}
-	actorConfig := actors.NewConfig(a.hostAddress, a.runtimeConfig.ID,
-		a.runtimeConfig.PlacementAddresses, a.runtimeConfig.InternalGRPCPort,
-		a.namespace, a.appConfig)
-	act := actors.NewActors(a.stateStores[a.actorStateStoreName], a.appChannel, a.grpc.GetGRPCConnection, actorConfig,
-		a.runtimeConfig.CertChain, a.globalConfig.Spec.TracingSpec, a.globalConfig.Spec.Features,
-		a.resiliency, a.actorStateStoreName)
+	actorConfig := actors.NewConfig(actors.NewConfigOpts{
+		HostAddress:        a.hostAddress,
+		AppID:              a.runtimeConfig.ID,
+		PlacementAddresses: a.runtimeConfig.PlacementAddresses,
+		Port:               a.runtimeConfig.InternalGRPCPort,
+		Namespace:          a.namespace,
+		AppConfig:          a.appConfig,
+	})
+
+	act := actors.NewActors(actors.NewActorOpts{
+		StateStore:       a.stateStores[a.actorStateStoreName],
+		AppChannel:       a.appChannel,
+		GRPCConnectionFn: a.grpc.GetGRPCConnection,
+		Config:           actorConfig,
+		CertChain:        a.runtimeConfig.CertChain,
+		TracingSpec:      a.globalConfig.Spec.TracingSpec,
+		Features:         a.globalConfig.Spec.Features,
+		Resiliency:       a.resiliency,
+		StateStoreName:   a.actorStateStoreName,
+	})
 	err = act.Init()
 	if err == nil {
 		a.actor = act
