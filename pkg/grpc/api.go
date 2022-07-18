@@ -26,6 +26,7 @@ import (
 
 	"github.com/dapr/components-contrib/lock"
 	lock_loader "github.com/dapr/dapr/pkg/components/lock"
+	"github.com/dapr/dapr/pkg/version"
 
 	"github.com/dapr/components-contrib/configuration"
 
@@ -64,7 +65,8 @@ import (
 )
 
 const (
-	daprHTTPStatusHeader = "dapr-http-status"
+	daprHTTPStatusHeader  = "dapr-http-status"
+	daprRuntimeVersionKey = "daprRuntimeVersion"
 )
 
 // API is the gRPC interface for the Dapr gRPC API. It implements both the internal and external proto definitions.
@@ -134,6 +136,7 @@ type api struct {
 	components                  []components_v1alpha.Component
 	shutdown                    func()
 	getComponentsCapabilitiesFn func() map[string][]string
+	daprRunTimeVersion          string
 }
 
 func (a *api) TryLockAlpha1(ctx context.Context, req *runtimev1pb.TryLockRequest) (*runtimev1pb.TryLockResponse, error) {
@@ -294,7 +297,6 @@ func NewAPI(opts NewAPIOpts) API {
 			transactionalStateStores[key] = store.(state.TransactionalStore)
 		}
 	}
-
 	return &api{
 		id:                          opts.AppID,
 		appChannel:                  opts.AppChannel,
@@ -315,6 +317,7 @@ func NewAPI(opts NewAPIOpts) API {
 		getComponentsCapabilitiesFn: opts.GetComponentsCapabilitiesFn,
 		transactionalStateStores:    transactionalStateStores,
 		configurationSubscribe:      make(map[string]chan struct{}),
+		daprRunTimeVersion:          version.Version(),
 	}
 }
 
@@ -1660,6 +1663,7 @@ func (a *api) GetMetadata(ctx context.Context, in *emptypb.Empty) (*runtimev1pb.
 		temp[key.(string)] = value.(string)
 		return true
 	})
+	temp[daprRuntimeVersionKey] = a.daprRunTimeVersion
 	registeredComponents := make([]*runtimev1pb.RegisteredComponents, 0, len(a.components))
 	componentsCapabilties := a.getComponentsCapabilitiesFn()
 	for _, comp := range a.components {
