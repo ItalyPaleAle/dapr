@@ -1388,7 +1388,7 @@ func (a *actorsRuntime) executeTimer(actorType, actorID, name, dueTime, period, 
 	}
 
 	policy := a.resiliency.ActorPreLockPolicy(context.Background(), actorType, actorID)
-	err = policy(func(ctx context.Context) error {
+	err = policy(func(ctx context.Context) (err error) {
 		resp, err := a.callLocalActor(ctx, req)
 		defer resp.Close()
 		return err
