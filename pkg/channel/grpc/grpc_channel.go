@@ -91,8 +91,14 @@ func (g *Channel) invokeMethodV1(ctx context.Context, req *invokev1.InvokeMethod
 		g.ch <- struct{}{}
 	}
 
+	// Read the request, including the data
+	pd, err := req.ProtoWithData()
+	if err != nil {
+		return nil, err
+	}
+
 	clientV1 := runtimev1pb.NewAppCallbackClient(g.client)
-	grpcMetadata := invokev1.InternalMetadataToGrpcMetadata(ctx, req.Metadata(), true)
+	grpcMetadata := invokev1.InternalMetadataToGrpcMetadata(ctx, pd.Metadata, true)
 
 	if g.appMetadataToken != "" {
 		grpcMetadata.Set(auth.APITokenHeader, g.appMetadataToken)
@@ -110,7 +116,7 @@ func (g *Channel) invokeMethodV1(ctx context.Context, req *invokev1.InvokeMethod
 		grpc.MaxCallRecvMsgSize(g.maxRequestBodySize * 1024 * 1024),
 	}
 
-	resp, err := clientV1.OnInvoke(ctx, req.Message(), opts...)
+	resp, err := clientV1.OnInvoke(ctx, pd.Message, opts...)
 
 	if g.ch != nil {
 		<-g.ch
