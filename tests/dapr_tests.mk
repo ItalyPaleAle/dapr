@@ -508,6 +508,11 @@ describe-minikube-env:
 	export DAPR_TEST_REGISTRY=\n\
 	export MINIKUBE_NODE_IP="
 
-# Setup minikube
+# Delete minikube
 delete-minikube:
 	minikube delete
+
+# Delete all stored test results
+test-clean:
+	-rm -rv ./tests/e2e/*/dist
+	-rm -rv ./tests/perf/*/dist
