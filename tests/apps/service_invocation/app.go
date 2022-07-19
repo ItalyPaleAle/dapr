@@ -42,12 +42,25 @@ import (
 
 var httpMethods []string
 
-const (
+var (
 	appPort  = 3000
 	daprPort = 3500
+)
 
+const (
 	jsonContentType = "application/json"
 )
+
+func init() {
+	p := os.Getenv("DAPR_HTTP_PORT")
+	if p != "" && p != "0" {
+		daprPort, _ = strconv.Atoi(p)
+	}
+	p = os.Getenv("PORT")
+	if p != "" && p != "0" {
+		appPort, _ = strconv.Atoi(p)
+	}
+}
 
 type testCommandRequest struct {
 	RemoteApp        string `json:"remoteApp,omitempty"`
@@ -825,6 +838,7 @@ func httpToGrpcTest(w http.ResponseWriter, r *http.Request) {
 // It calls methods with all 4 http methods (verbs)
 func httpTohttpTest(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Enter httpTohttpTest")
+	defer r.Body.Close()
 	var commandBody testCommandRequest
 	err := json.NewDecoder(r.Body).Decode(&commandBody)
 	if err != nil {

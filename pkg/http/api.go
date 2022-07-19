@@ -1393,11 +1393,17 @@ func (a *api) onDirectMessage(reqCtx *fasthttp.RequestCtx) {
 		return
 	}
 
+	var reqBody io.Reader = reqCtx.RequestBodyStream()
+	// It's possible for the body stream to be nil if the request is being read in a non-streaming way
+	if reqBody == nil {
+		reqBody = bytes.NewReader(reqCtx.Request.Body())
+	}
+
 	// Construct internal invoke method request
 	req := invokev1.
 		NewInvokeMethodRequest(invokeMethodName).WithHTTPExtension(verb, reqCtx.QueryArgs().String()).
 		// Set the stream
-		WithRawData(io.NopCloser(reqCtx.RequestBodyStream()), string(reqCtx.Request.Header.ContentType())).
+		WithRawData(io.NopCloser(reqBody), string(reqCtx.Request.Header.ContentType())).
 		// Save headers to internal metadata
 		WithFastHTTPHeaders(&reqCtx.Request.Header)
 	defer req.Close()
@@ -1756,11 +1762,17 @@ func (a *api) onDirectActorMessage(reqCtx *fasthttp.RequestCtx) {
 	verb := strings.ToUpper(string(reqCtx.Method()))
 	method := reqCtx.UserValue(methodParam).(string)
 
+	var reqBody io.Reader = reqCtx.RequestBodyStream()
+	// It's possible for the body stream to be nil if the request is being read in a non-streaming way
+	if reqBody == nil {
+		reqBody = bytes.NewReader(reqCtx.Request.Body())
+	}
+
 	req := invokev1.
 		NewInvokeMethodRequest(method).
 		WithActor(actorType, actorID).
 		WithHTTPExtension(verb, reqCtx.QueryArgs().String()).
-		WithRawData(io.NopCloser(reqCtx.RequestBodyStream()), string(reqCtx.Request.Header.ContentType()))
+		WithRawData(io.NopCloser(reqBody), string(reqCtx.Request.Header.ContentType()))
 	defer req.Close()
 
 	// Save headers to metadata.

@@ -60,13 +60,13 @@ func (rr *replayableRequest) RawData() (r io.Reader) {
 func (rr *replayableRequest) Close() (err error) {
 	rr.replay = nil
 
-	if rr.data == nil {
-		return nil
+	if rr.data != nil {
+		err = rr.data.Close()
+		if err != nil {
+			return err
+		}
+		rr.data = nil
 	}
-	err = rr.data.Close()
-	if err != nil {
-		return err
-	}
-	rr.data = nil
+
 	return nil
 }
