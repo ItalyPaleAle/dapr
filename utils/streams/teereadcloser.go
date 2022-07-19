@@ -59,6 +59,9 @@ func (t *teeReadCloser) Close() error {
 
 // Read from the R stream and tee it into the w stream.
 func (t *teeReadCloser) Read(p []byte) (n int, err error) {
+	if t.r == nil {
+		return 0, io.ErrClosedPipe
+	}
 	n, err = t.r.Read(p)
 	if n > 0 {
 		//nolint:govet
