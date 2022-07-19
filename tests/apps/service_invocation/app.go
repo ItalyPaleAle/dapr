@@ -122,12 +122,13 @@ var testMethods = []httpTestMethods{
 		SendBody:   true,
 		ExpectBody: true,
 	},
-	{
+	// Go's net/http library does not support sending requests with the CONNECT method
+	/*{
 		Verb:       "CONNECT",
 		Callback:   "connecthandler",
 		SendBody:   true,
 		ExpectBody: true,
-	},
+	},*/
 	{
 		Verb:       "OPTIONS",
 		Callback:   "optionshandler",

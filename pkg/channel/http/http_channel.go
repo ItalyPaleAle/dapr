@@ -145,7 +145,8 @@ func (h *Channel) InvokeMethod(ctx context.Context, req *invokev1.InvokeMethodRe
 	if httpExt == nil {
 		return nil, status.Error(codes.InvalidArgument, "missing HTTP extension field")
 	}
-	if httpExt.GetVerb() == commonv1pb.HTTPExtension_NONE {
+	// Go's net/http library does not support sending requests with the CONNECT method
+	if httpExt.Verb == commonv1pb.HTTPExtension_NONE || httpExt.Verb == commonv1pb.HTTPExtension_CONNECT {
 		return nil, status.Error(codes.InvalidArgument, "invalid HTTP verb")
 	}
 
