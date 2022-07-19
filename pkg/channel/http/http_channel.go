@@ -18,6 +18,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -35,6 +36,7 @@ import (
 	commonv1pb "github.com/dapr/dapr/pkg/proto/common/v1"
 	internalv1pb "github.com/dapr/dapr/pkg/proto/internals/v1"
 	auth "github.com/dapr/dapr/pkg/runtime/security"
+	streamutils "github.com/dapr/dapr/utils/streams"
 )
 
 const (
@@ -254,11 +256,11 @@ func (h *Channel) parseChannelResponse(req *invokev1.InvokeMethodRequest, resp *
 	}
 
 	// We are not limiting the response body because we use streams
-	/*// Limit response body if needed
+	// Limit response body if needed
 	var body io.ReadCloser = resp.Body
 	if h.maxResponseBodySize > 0 {
-		body = LimitReadCloser(body, int64(h.maxResponseBodySize)*1024*1024)
-	}*/
+		body = streamutils.LimitReadCloser(body, int64(h.maxResponseBodySize)*1024*1024)
+	}
 
 	// Convert status code
 	rsp := invokev1.

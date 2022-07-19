@@ -485,7 +485,7 @@ func TestHeaders(t *testing.T) {
 			assert.Equal(t, hostIP, requestHeaders["x-forwarded-for"][0])
 		_ = assert.NotEmpty(t, requestHeaders["x-forwarded-host"]) &&
 			assert.Equal(t, hostname, requestHeaders["x-forwarded-host"][0])
-		_ = assert.NotEmpty(t, requestHeaders["x-forwarded"]) &&
+		_ = assert.NotEmpty(t, requestHeaders["forwarded"]) &&
 			assert.Equal(t, expectedForwarded, requestHeaders["forwarded"][0])
 
 		_ = assert.NotEmpty(t, responseHeaders["content-type"]) &&
@@ -547,13 +547,13 @@ func TestHeaders(t *testing.T) {
 			assert.Equal(t, "DaprValue2", requestHeaders["Daprtest-Request-2"][0])
 		_ = assert.NotEmpty(t, requestHeaders["Traceparent"]) &&
 			assert.NotNil(t, requestHeaders["Traceparent"][0])
-		_ = assert.NotEmpty(t, requestHeaders["user-agent"]) &&
+		_ = assert.NotEmpty(t, requestHeaders["User-Agent"]) &&
 			assert.NotNil(t, requestHeaders["User-Agent"][0])
-		_ = assert.NotEmpty(t, requestHeaders["x-forwarded-for"]) &&
+		_ = assert.NotEmpty(t, requestHeaders["X-Forwarded-For"]) &&
 			assert.Equal(t, hostIP, requestHeaders["X-Forwarded-For"][0])
-		_ = assert.NotEmpty(t, requestHeaders["x-forwarded-host"]) &&
+		_ = assert.NotEmpty(t, requestHeaders["X-Forwarded-Host"]) &&
 			assert.Equal(t, hostname, requestHeaders["X-Forwarded-Host"][0])
-		_ = assert.NotEmpty(t, requestHeaders["x-forwarded"]) &&
+		_ = assert.NotEmpty(t, requestHeaders["Forwarded"]) &&
 			assert.Equal(t, expectedForwarded, requestHeaders["Forwarded"][0])
 
 		_ = assert.NotEmpty(t, responseHeaders["content-type"]) &&
@@ -619,7 +619,7 @@ func TestHeaders(t *testing.T) {
 				assert.NotEqual(t, "", grpcTraceBinRq[0], "grpc-trace-bin is missing from the request")
 			}
 		}
-		traceParentRq := requestHeaders["traceparent"]
+		traceParentRq := requestHeaders["Traceparent"]
 		if assert.NotNil(t, traceParentRq, "traceparent is missing from the request") {
 			if assert.Equal(t, 1, len(traceParentRq), "traceparent is missing from the request") {
 				assert.NotEqual(t, "", traceParentRq[0], "traceparent is missing from the request")
@@ -629,16 +629,16 @@ func TestHeaders(t *testing.T) {
 			assert.Equal(t, hostIP, requestHeaders["x-forwarded-for"][0])
 		_ = assert.NotEmpty(t, requestHeaders["x-forwarded-host"]) &&
 			assert.Equal(t, hostname, requestHeaders["x-forwarded-host"][0])
-		_ = assert.NotEmpty(t, requestHeaders["x-forwarded"]) &&
+		_ = assert.NotEmpty(t, requestHeaders["forwarded"]) &&
 			assert.Equal(t, expectedForwarded, requestHeaders["forwarded"][0])
 
-		_ = assert.NotEmpty(t, responseHeaders["content-type"]) &&
+		_ = assert.NotEmpty(t, responseHeaders["Content-Type"]) &&
 			assert.Equal(t, "application/json", responseHeaders["Content-Type"][0])
-		_ = assert.NotEmpty(t, responseHeaders["date"]) &&
+		_ = assert.NotEmpty(t, responseHeaders["Date"]) &&
 			assert.NotNil(t, responseHeaders["Date"][0])
-		_ = assert.NotEmpty(t, responseHeaders["daprtest-response-1"]) &&
+		_ = assert.NotEmpty(t, responseHeaders["Daprtest-Response-1"]) &&
 			assert.Equal(t, "DaprTest-Response-Value-1", responseHeaders["Daprtest-Response-1"][0])
-		_ = assert.NotEmpty(t, responseHeaders["daprtest-response-2"]) &&
+		_ = assert.NotEmpty(t, responseHeaders["Daprtest-Response-2"]) &&
 			assert.Equal(t, "DaprTest-Response-Value-2", responseHeaders["Daprtest-Response-2"][0])
 		_ = assert.NotEmpty(t, responseHeaders["Traceparent"]) &&
 			assert.NotNil(t, responseHeaders["Traceparent"][0])
@@ -891,18 +891,18 @@ func verifyHTTPToHTTP(t *testing.T, hostIP string, hostname string, url string, 
 		assert.NotNil(t, requestHeaders["Traceparent"][0])
 	_ = assert.NotEmpty(t, requestHeaders["User-Agent"]) &&
 		assert.NotNil(t, requestHeaders["User-Agent"][0])
-	_ = assert.NotEmpty(t, requestHeaders["x-forwarded-for"]) &&
+	_ = assert.NotEmpty(t, requestHeaders["X-Forwarded-For"]) &&
 		assert.Equal(t, hostIP, requestHeaders["X-Forwarded-For"][0])
-	_ = assert.NotEmpty(t, requestHeaders["x-forwarded-host"]) &&
+	_ = assert.NotEmpty(t, requestHeaders["X-Forwarded-Host"]) &&
 		assert.Equal(t, hostname, requestHeaders["X-Forwarded-Host"][0])
-	_ = assert.NotEmpty(t, requestHeaders["x-forwarded"]) &&
+	_ = assert.NotEmpty(t, requestHeaders["Forwarded"]) &&
 		assert.Equal(t, expectedForwarded, requestHeaders["Forwarded"][0])
 
 	_ = assert.NotEmpty(t, responseHeaders["Content-Type"]) &&
-		assert.Equal(t, "application/json; utf-8", responseHeaders["Content-Type"][0])
-	_ = assert.NotEmpty(t, responseHeaders["daprtest-response-1"]) &&
+		assert.Equal(t, "application/json", responseHeaders["Content-Type"][0])
+	_ = assert.NotEmpty(t, responseHeaders["Daprtest-Response-1"]) &&
 		assert.Equal(t, "DaprTest-Response-Value-1", responseHeaders["Daprtest-Response-1"][0])
-	_ = assert.NotEmpty(t, responseHeaders["daprtest-response-2"]) &&
+	_ = assert.NotEmpty(t, responseHeaders["Daprtest-Response-2"]) &&
 		assert.Equal(t, "DaprTest-Response-Value-2", responseHeaders["Daprtest-Response-2"][0])
 	_ = assert.NotEmpty(t, responseHeaders["Traceparent"]) &&
 		assert.NotNil(t, responseHeaders["Traceparent"][0])

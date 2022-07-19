@@ -278,9 +278,6 @@ push-kind-perf-app-all: $(PUSH_KIND_PERF_APPS_TARGETS)
 .PHONY: test-deps
 test-deps:
 	# The desire here is to download this test dependency without polluting go.mod
-	# In golang >=1.16 there is a new way to do this with `go install gotest.tools/gotestsum@latest`
-	# But this doesn't work with <=1.15.
-	# (see: https://golang.org/ref/mod#go-install)
 	command -v gotestsum || go install gotest.tools/gotestsum@latest
 
 # start all e2e tests
