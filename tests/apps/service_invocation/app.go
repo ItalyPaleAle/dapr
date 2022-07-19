@@ -233,30 +233,29 @@ func invokeService(remoteApp, method string) (appResponse, int, error) {
 
 func invokeServiceWithBody(remoteApp, method string, data []byte) (appResponse, int, error) {
 	resp, err := invokeServiceWithBodyHeader(remoteApp, method, data, map[string]string{})
-	if err != nil {
-		return appResponse{}, resp.StatusCode, err
+	var statusCode int
+	if resp != nil {
+		statusCode = resp.StatusCode
 	}
-
-	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return appResponse{}, statusCode, err
+	}
 	defer resp.Body.Close()
-	if err != nil {
-		return appResponse{}, resp.StatusCode, err
-	}
 
 	var appResp appResponse
-	err = json.Unmarshal(body, &appResp)
+	err = json.NewDecoder(resp.Body).Decode(&appResp)
 	if err != nil {
-		return appResponse{}, resp.StatusCode, err
+		return appResponse{}, statusCode, err
 	}
 
 	// invokeServiceWithBodyHeader uses http client.Do method which
 	// returns success for everything except 2xx error codes. Check
 	// the status code to extract non 2xx errors.
-	if resp.StatusCode != http.StatusOK {
-		return appResponse{}, resp.StatusCode, errors.New(appResp.Message)
+	if statusCode != http.StatusOK {
+		return appResponse{}, statusCode, errors.New(appResp.Message)
 	}
 
-	return appResp, resp.StatusCode, nil
+	return appResp, statusCode, nil
 }
 
 func invokeServiceWithBodyHeader(remoteApp, method string, data []byte, headers map[string]string) (*http.Response, error) {
@@ -265,7 +264,7 @@ func invokeServiceWithBodyHeader(remoteApp, method string, data []byte, headers 
 
 	var t io.Reader
 	if data != nil {
-		t = bytes.NewBuffer(data)
+		t = bytes.NewReader(data)
 	}
 
 	/* #nosec */
@@ -284,7 +283,7 @@ func invokeServiceWithDaprAppIDHeader(remoteApp, method string, data []byte, hea
 
 	var t io.Reader
 	if data != nil {
-		t = bytes.NewBuffer(data)
+		t = bytes.NewReader(data)
 	}
 
 	/* #nosec */
@@ -893,20 +892,19 @@ func httpWrapper(httpMethod string, url string, data []byte) (appResponse, error
 
 	var requestBody io.Reader
 	if data != nil && len(data) > 0 {
-		requestBody = bytes.NewBuffer(data)
+		requestBody = bytes.NewReader(data)
 	}
 
 	req, err := http.NewRequest(httpMethod, sanitizeHTTPURL(url), requestBody)
 	if err != nil {
 		return appResponse{}, err
 	}
-	var res *http.Response
-	res, err = httpClient.Do(req)
+	res, err := httpClient.Do(req)
 	if err != nil {
 		return appResponse{}, err
 	}
 
-	body, err = extractBody(res.Body)
+	body, err = io.ReadAll(res.Body)
 	if err != nil {
 		return appResponse{}, err
 	}
@@ -1055,7 +1053,7 @@ func badServiceCallTestHTTP(w http.ResponseWriter, r *http.Request) {
 	if commandBody.Method == "timeouterror" {
 		httpClient.Timeout = 5 * time.Second
 	}
-	resp, err := httpClient.Post(sanitizeHTTPURL(url), jsonContentType, bytes.NewBuffer(b))
+	resp, err := httpClient.Post(sanitizeHTTPURL(url), jsonContentType, bytes.NewReader(b))
 	if commandBody.Method == "timeouterror" {
 		httpClient.Timeout = prevTimeout
 	}
@@ -1065,7 +1063,7 @@ func badServiceCallTestHTTP(w http.ResponseWriter, r *http.Request) {
 	if resp != nil && resp.Body != nil {
 		fmt.Printf("badServiceCallTestHTTP - Response Code: %d", resp.StatusCode)
 		w.WriteHeader(resp.StatusCode)
-		rawBody, _ := extractBody(resp.Body)
+		rawBody, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		testResponse.RawBody = rawBody
 		json.NewDecoder(strings.NewReader(string(rawBody))).Decode(&testResponse.Results)
@@ -1202,7 +1200,7 @@ func largeDataErrorServiceCall(w http.ResponseWriter, r *http.Request, isHTTP bo
 		fmt.Printf("largeDataErrorServiceCall - Request size: %d\n", len(jsonBody))
 
 		if isHTTP {
-			resp, err := httpClient.Post(sanitizeHTTPURL(url), jsonContentType, bytes.NewBuffer(jsonBody))
+			resp, err := httpClient.Post(sanitizeHTTPURL(url), jsonContentType, bytes.NewReader(jsonBody))
 
 			result.CallSuccessful = !((resp != nil && resp.StatusCode != 200) || err != nil)
 		} else {
@@ -1273,15 +1271,6 @@ func sanitizeHTTPURL(url string) string {
 	}
 
 	return url
-}
-
-func extractBody(r io.ReadCloser) ([]byte, error) {
-	body, err := io.ReadAll(r)
-	if err != nil {
-		return nil, err
-	}
-
-	return body, nil
 }
 
 func initGRPCClient() {

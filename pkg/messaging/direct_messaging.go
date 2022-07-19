@@ -321,16 +321,20 @@ func (d *directMessaging) invokeRemote(ctx context.Context, appID, namespace, ap
 			reqProto = nil
 		}
 
-		n, err = r.Read(buf)
-		if err == io.EOF {
-			proto.Payload.Complete = true
-		} else if err != nil {
-			return nil, err
-		}
-		if n > 0 {
-			proto.Payload.Data = &anypb.Any{
-				Value: buf[:n],
+		if r != nil {
+			n, err = r.Read(buf)
+			if err == io.EOF {
+				proto.Payload.Complete = true
+			} else if err != nil {
+				return nil, err
 			}
+			if n > 0 {
+				proto.Payload.Data = &anypb.Any{
+					Value: buf[:n],
+				}
+			}
+		} else {
+			proto.Payload.Complete = true
 		}
 		err = stream.Send(proto)
 		if err != nil {

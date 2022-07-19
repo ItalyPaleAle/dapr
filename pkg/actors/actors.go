@@ -326,7 +326,10 @@ func (a *actorsRuntime) startDeactivationTicker(configuration Config) {
 }
 
 func (a *actorsRuntime) Call(ctx context.Context, req *invokev1.InvokeMethodRequest) (*invokev1.InvokeMethodResponse, error) {
-	a.placement.WaitUntilPlacementTableIsReady()
+	err := a.placement.WaitUntilPlacementTableIsReady(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	actor := req.Actor()
 	targetActorAddress, appID := "", ""
@@ -351,8 +354,6 @@ func (a *actorsRuntime) Call(ctx context.Context, req *invokev1.InvokeMethodRequ
 	}
 
 	var resp *invokev1.InvokeMethodResponse
-	var err error
-
 	if a.isActorLocal(targetActorAddress, a.config.HostAddress, a.config.Port) {
 		resp, err = a.callLocalActor(ctx, req)
 	} else {
@@ -363,6 +364,9 @@ func (a *actorsRuntime) Call(ctx context.Context, req *invokev1.InvokeMethodRequ
 		if errors.Is(err, ErrDaprResponseHeader) {
 			// We return the response to maintain the .NET Actor contract which communicates errors via the body, but resiliency needs the error to retry.
 			return resp, err
+		}
+		if resp != nil {
+			resp.Close()
 		}
 		return nil, err
 	}
@@ -507,7 +511,7 @@ func (a *actorsRuntime) callLocalActor(ctx context.Context, req *invokev1.Invoke
 	defer func() { msg.Method = originalMethod }()
 
 	// Original code overrides method with PUT. Why?
-	if msg.GetHttpExtension() == nil {
+	if msg.HttpExtension == nil {
 		req.WithHTTPExtension(nethttp.MethodPut, "")
 	} else {
 		msg.HttpExtension.Verb = commonv1pb.HTTPExtension_PUT
