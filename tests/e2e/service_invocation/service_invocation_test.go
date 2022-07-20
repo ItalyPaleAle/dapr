@@ -619,7 +619,7 @@ func TestHeaders(t *testing.T) {
 				assert.NotEqual(t, "", grpcTraceBinRq[0], "grpc-trace-bin is missing from the request")
 			}
 		}
-		traceParentRq := requestHeaders["Traceparent"]
+		traceParentRq := requestHeaders["traceparent"]
 		if assert.NotNil(t, traceParentRq, "traceparent is missing from the request") {
 			if assert.Equal(t, 1, len(traceParentRq), "traceparent is missing from the request") {
 				assert.NotEqual(t, "", traceParentRq[0], "traceparent is missing from the request")
