@@ -37,7 +37,7 @@ type limitReadCloser struct {
 }
 
 func (l *limitReadCloser) Read(p []byte) (n int, err error) {
-	if l.N <= 0 {
+	if l.N <= 0 || l.R == nil {
 		return 0, io.EOF
 	}
 	if int64(len(p)) > l.N {

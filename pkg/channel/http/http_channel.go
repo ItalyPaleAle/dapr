@@ -246,10 +246,10 @@ func (h *Channel) constructRequest(ctx context.Context, req *invokev1.InvokeMeth
 	return channelReq, nil
 }
 
-func (h *Channel) parseChannelResponse(req *invokev1.InvokeMethodRequest, resp *http.Response) *invokev1.InvokeMethodResponse {
+func (h *Channel) parseChannelResponse(req *invokev1.InvokeMethodRequest, channelResp *http.Response) *invokev1.InvokeMethodResponse {
 	var contentType string
 
-	contentType = resp.Header.Get("content-type")
+	contentType = channelResp.Header.Get("content-type")
 	// TODO: Remove entire block when feature is finalized
 	if contentType == "" && !config.GetNoDefaultContentType() {
 		contentType = "text/plain; charset=utf-8"
@@ -257,16 +257,18 @@ func (h *Channel) parseChannelResponse(req *invokev1.InvokeMethodRequest, resp *
 
 	// We are not limiting the response body because we use streams
 	// Limit response body if needed
-	var body io.ReadCloser = resp.Body
+	var body io.ReadCloser
 	if h.maxResponseBodySize > 0 {
-		body = streamutils.LimitReadCloser(body, int64(h.maxResponseBodySize)*1024*1024)
+		body = streamutils.LimitReadCloser(channelResp.Body, int64(h.maxResponseBodySize)*1024*1024)
+	} else {
+		body = channelResp.Body
 	}
 
 	// Convert status code
 	rsp := invokev1.
-		NewInvokeMethodResponse(int32(resp.StatusCode), "", nil).
-		WithHTTPHeaders(resp.Header).
-		WithRawData(resp.Body, contentType)
+		NewInvokeMethodResponse(int32(channelResp.StatusCode), "", nil).
+		WithHTTPHeaders(channelResp.Header).
+		WithRawData(body, contentType)
 
 	return rsp
 }

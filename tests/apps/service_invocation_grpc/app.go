@@ -24,19 +24,16 @@ import (
 
 	"go.opencensus.io/trace"
 	"go.opencensus.io/trace/propagation"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	commonv1pb "github.com/dapr/dapr/pkg/proto/common/v1"
 	pb "github.com/dapr/dapr/pkg/proto/runtime/v1"
-
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
 )
 
-var (
-	appPort = 3000
-)
+var appPort = 3000
 
 func init() {
 	p := os.Getenv("PORT")

@@ -39,7 +39,7 @@ import (
 	"github.com/dapr/components-contrib/lock"
 	lock_loader "github.com/dapr/dapr/pkg/components/lock"
 	"github.com/dapr/dapr/pkg/version"
-	"github.com/dapr/dapr/utils/streams"
+	streamutils "github.com/dapr/dapr/utils/streams"
 
 	contrib_metadata "github.com/dapr/components-contrib/metadata"
 	"github.com/dapr/components-contrib/pubsub"
@@ -1397,15 +1397,16 @@ func (a *api) onDirectMessage(reqCtx *fasthttp.RequestCtx) {
 		return
 	}
 
-	var reqBody io.ReadCloser = io.NopCloser(reqCtx.RequestBodyStream())
 	// It's possible for the body stream to be nil if the request is being read in a non-streaming way
-	if reqBody == nil {
-		reqBody = io.NopCloser(bytes.NewReader(reqCtx.Request.Body()))
+	var bodyStream io.Reader = reqCtx.RequestBodyStream()
+	if bodyStream == nil {
+		bodyStream = bytes.NewReader(reqCtx.Request.Body())
 	}
+	reqBody := io.NopCloser(bodyStream)
 
 	// Limit the body size if needed
 	if a.maxRequestBodySize > 0 {
-		reqBody = streams.LimitReadCloser(reqBody, a.maxRequestBodySize)
+		reqBody = streamutils.LimitReadCloser(reqBody, a.maxRequestBodySize)
 	}
 
 	// Construct internal invoke method request
@@ -1771,15 +1772,16 @@ func (a *api) onDirectActorMessage(reqCtx *fasthttp.RequestCtx) {
 	verb := strings.ToUpper(string(reqCtx.Method()))
 	method := reqCtx.UserValue(methodParam).(string)
 
-	var reqBody io.ReadCloser = io.NopCloser(reqCtx.RequestBodyStream())
 	// It's possible for the body stream to be nil if the request is being read in a non-streaming way
-	if reqBody == nil {
-		reqBody = io.NopCloser(bytes.NewReader(reqCtx.Request.Body()))
+	var bodyStream io.Reader = reqCtx.RequestBodyStream()
+	if bodyStream == nil {
+		bodyStream = bytes.NewReader(reqCtx.Request.Body())
 	}
+	reqBody := io.NopCloser(bodyStream)
 
 	// Limit the body size if needed
 	if a.maxRequestBodySize > 0 {
-		reqBody = streams.LimitReadCloser(reqBody, a.maxRequestBodySize)
+		reqBody = streamutils.LimitReadCloser(reqBody, a.maxRequestBodySize)
 	}
 
 	req := invokev1.

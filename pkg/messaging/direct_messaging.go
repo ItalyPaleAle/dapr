@@ -357,7 +357,11 @@ func (d *directMessaging) invokeRemote(ctx context.Context, appID, namespace, ap
 	if err != nil {
 		return nil, err
 	}
-	res.WithRawData(pr, "")
+	var ct string
+	if chunk.Response.Message != nil {
+		ct = chunk.Response.Message.ContentType
+	}
+	res.WithRawData(pr, ct)
 
 	// Read the response into the stream in the background
 	go func() {

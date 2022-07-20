@@ -373,7 +373,7 @@ func (a *api) CallLocalStream(stream internalv1pb.ServiceInvocation_CallLocalStr
 	if err != nil {
 		return err
 	}
-	req.WithRawData(pr, "")
+	req.WithRawData(pr, chunk.Request.Message.ContentType)
 	defer req.Close()
 
 	err = a.callLocalACL(ctx, req)

@@ -64,6 +64,7 @@ require (
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/golang/mock v1.6.0
 	github.com/golang/protobuf v1.5.2
+	github.com/tidwall/transform v0.0.0-20201103190739-32f242e2dbde
 )
 
 require (

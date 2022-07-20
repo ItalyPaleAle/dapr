@@ -531,6 +531,7 @@ func main() {
 			http_middleware_loader.New("uppercase", func(metadata middleware.Metadata) (http_middleware.Middleware, error) {
 				return func(h fasthttp.RequestHandler) fasthttp.RequestHandler {
 					return func(ctx *fasthttp.RequestCtx) {
+						// Request is not streamed
 						body := string(ctx.PostBody())
 						ctx.Request.SetBody([]byte(strings.ToUpper(body)))
 						h(ctx)
