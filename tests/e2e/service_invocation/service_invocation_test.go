@@ -888,7 +888,7 @@ func verifyHTTPToHTTP(t *testing.T, hostIP string, hostname string, url string, 
 
 	require.NoError(t, err)
 	_ = assert.NotEmpty(t, requestHeaders["Content-Type"]) &&
-		assert.Equal(t, "application/json", requestHeaders["Content-Type"][0])
+		assert.Equal(t, "application/json; utf-8", requestHeaders["Content-Type"][0])
 	_ = assert.NotEmpty(t, requestHeaders["Daprtest-Request-1"]) &&
 		assert.Equal(t, "DaprValue1", requestHeaders["Daprtest-Request-1"][0])
 	_ = assert.NotEmpty(t, requestHeaders["Daprtest-Request-2"]) &&
@@ -905,7 +905,7 @@ func verifyHTTPToHTTP(t *testing.T, hostIP string, hostname string, url string, 
 		assert.Equal(t, expectedForwarded, requestHeaders["Forwarded"][0])
 
 	_ = assert.NotEmpty(t, responseHeaders["Content-Type"]) &&
-		assert.Equal(t, "application/json", responseHeaders["Content-Type"][0])
+		assert.Equal(t, "application/json; utf-8", responseHeaders["Content-Type"][0])
 	_ = assert.NotEmpty(t, responseHeaders["Daprtest-Response-1"]) &&
 		assert.Equal(t, "DaprTest-Response-Value-1", responseHeaders["Daprtest-Response-1"][0])
 	_ = assert.NotEmpty(t, responseHeaders["Daprtest-Response-2"]) &&
