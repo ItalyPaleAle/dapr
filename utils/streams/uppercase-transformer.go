@@ -15,7 +15,6 @@ package streams
 
 import (
 	"bufio"
-	"fmt"
 	"io"
 	"strings"
 
@@ -24,9 +23,6 @@ import (
 
 // UppercaseTransformer uppercases all characters in the stream, by calling strings.ToUpper() on them.
 func UppercaseTransformer(r io.Reader) io.Reader {
-	fmt.Println("R", r)
-	all, err := io.ReadAll(r)
-	fmt.Println(err, string(all))
 	br := bufio.NewReader(r)
 	return transform.NewTransformer(func() ([]byte, error) {
 		c, _, err := br.ReadRune()

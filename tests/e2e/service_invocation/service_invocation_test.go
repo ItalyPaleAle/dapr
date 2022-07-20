@@ -529,12 +529,18 @@ func TestHeaders(t *testing.T) {
 		t.Logf("unmarshalling..%s\n", string(resp))
 		err = json.Unmarshal(resp, &appResp)
 
-		actualHeaders := map[string]string{}
+		actualHeaders := struct {
+			Request  string `json:"request"`
+			Response string `json:"response"`
+		}{}
 		json.Unmarshal([]byte(appResp.Message), &actualHeaders)
 		requestHeaders := map[string][]string{}
 		responseHeaders := map[string][]string{}
-		json.Unmarshal([]byte(actualHeaders["request"]), &requestHeaders)
-		json.Unmarshal([]byte(actualHeaders["response"]), &responseHeaders)
+		json.Unmarshal([]byte(actualHeaders.Request), &requestHeaders)
+		json.Unmarshal([]byte(actualHeaders.Response), &responseHeaders)
+
+		fmt.Println("requestHeaders", requestHeaders)
+		fmt.Println("responseHeaders", responseHeaders)
 
 		require.NoError(t, err)
 		_ = assert.NotEmpty(t, requestHeaders["Content-Type"]) &&
