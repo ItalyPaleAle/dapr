@@ -565,7 +565,7 @@ func TestHeaders(t *testing.T) {
 		_ = assert.NotEmpty(t, responseHeaders["content-type"]) &&
 			assert.Equal(t, "application/grpc", responseHeaders["content-type"][0])
 		_ = assert.NotEmpty(t, responseHeaders["dapr-content-type"]) &&
-			assert.Equal(t, "application/json; utf-8", responseHeaders["dapr-content-type"][0])
+			assert.Equal(t, "application/json", responseHeaders["dapr-content-type"][0])
 		_ = assert.NotEmpty(t, responseHeaders["dapr-date"]) &&
 			assert.NotNil(t, responseHeaders["dapr-date"][0])
 		_ = assert.NotEmpty(t, responseHeaders["daprtest-response-1"]) &&
