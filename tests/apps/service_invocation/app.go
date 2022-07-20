@@ -413,7 +413,7 @@ func requestHTTPToHTTP(w http.ResponseWriter, r *http.Request, send func(remoteA
 
 	fmt.Printf("httpTohttpTest - target app: %s\n", commandBody.RemoteApp)
 
-	daprAddress := fmt.Sprintf("localhost:%s", strconv.Itoa(daprPort))
+	daprAddress := fmt.Sprintf("localhost:%d", daprPort)
 
 	fmt.Printf("dapr address is %s\n", daprAddress)
 	testMessage := guuid.New().String()
@@ -495,7 +495,7 @@ func testV1RequestHTTPToGRPC(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Printf("httpTogrpcTest - target app: %s\n", commandBody.RemoteApp)
 
-	daprAddress := fmt.Sprintf("localhost:%s", strconv.Itoa(daprPort))
+	daprAddress := fmt.Sprintf("localhost:%d", daprPort)
 
 	fmt.Printf("dapr address is %s\n", daprAddress)
 	testMessage := guuid.New().String()
@@ -569,15 +569,6 @@ func testV1RequestGRPCToGRPC(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Printf("gRPCTogRPCTest - target app: %s\n", commandBody.RemoteApp)
 
-	daprAddress := fmt.Sprintf("localhost:%s", "50001")
-
-	fmt.Printf("dapr address is %s\n", daprAddress)
-	conn, err := grpc.Dial(daprAddress, grpc.WithInsecure())
-	if err != nil {
-		fmt.Println(err)
-	}
-	defer conn.Close()
-
 	// Create the client
 	tracing, _ := strconv.ParseBool(commandBody.RemoteAppTracing)
 	var ctx context.Context
@@ -603,6 +594,7 @@ func testV1RequestGRPCToGRPC(w http.ResponseWriter, r *http.Request) {
 			ContentType: "text/plain; utf-8",
 		},
 	}
+
 	var header, trailer metadata.MD
 	resp, err := daprClient.InvokeService(
 		ctx,
@@ -810,7 +802,7 @@ func httpToGrpcTest(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Printf("httpToGrpcTest - target app: %s\n", commandBody.RemoteApp)
 
-	daprAddress := fmt.Sprintf("localhost:%s", strconv.Itoa(daprPort))
+	daprAddress := fmt.Sprintf("localhost:%d", daprPort)
 
 	fmt.Printf("dapr address is %s\n", daprAddress)
 	testMessage := guuid.New().String()
@@ -849,7 +841,7 @@ func httpTohttpTest(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Printf("httpTohttpTest - target app: %s\n", commandBody.RemoteApp)
 
-	daprAddress := fmt.Sprintf("localhost:%s", strconv.Itoa(daprPort))
+	daprAddress := fmt.Sprintf("localhost:%d", daprPort)
 
 	fmt.Printf("dapr address is %s\n", daprAddress)
 	testMessage := guuid.New().String()

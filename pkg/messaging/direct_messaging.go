@@ -33,7 +33,6 @@ import (
 	"github.com/dapr/kit/logger"
 
 	"github.com/dapr/dapr/pkg/channel"
-	"github.com/dapr/dapr/pkg/config"
 	diag "github.com/dapr/dapr/pkg/diagnostics"
 	diag_utils "github.com/dapr/dapr/pkg/diagnostics/utils"
 	"github.com/dapr/dapr/pkg/modes"
@@ -64,7 +63,6 @@ type directMessaging struct {
 	grpcPort            int
 	namespace           string
 	resolver            nr.Resolver
-	tracingSpec         config.TracingSpec
 	hostAddress         string
 	hostName            string
 	maxRequestBodySize  int
@@ -89,7 +87,6 @@ type NewDirectMessagingOpts struct {
 	AppChannel          channel.AppChannel
 	ClientConnFn        messageClientConnection
 	Resolver            nr.Resolver
-	TracingSpec         config.TracingSpec
 	MaxRequestBodySize  int
 	Proxy               Proxy
 	ReadBufferSize      int
@@ -110,7 +107,6 @@ func NewDirectMessaging(opts NewDirectMessagingOpts) DirectMessaging {
 		appChannel:          opts.AppChannel,
 		connectionCreatorFn: opts.ClientConnFn,
 		resolver:            opts.Resolver,
-		tracingSpec:         opts.TracingSpec,
 		maxRequestBodySize:  opts.MaxRequestBodySize,
 		proxy:               opts.Proxy,
 		readBufferSize:      opts.ReadBufferSize,

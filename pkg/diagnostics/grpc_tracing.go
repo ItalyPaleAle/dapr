@@ -34,9 +34,11 @@ import (
 )
 
 const (
-	grpcTraceContextKey = "grpc-trace-bin"
-	GRPCProxyAppIDKey   = "dapr-app-id"
-	daprPackagePrefix   = "/dapr.proto"
+	grpcTraceContextKey     = "grpc-trace-bin"
+	GRPCProxyAppIDKey       = "dapr-app-id"
+	daprInternalPrefix      = "/dapr.proto.internals."
+	daprRuntimePrefix       = "/dapr.proto.runtime."
+	daprInvokeServiceMethod = "/dapr.proto.runtime.v1.Dapr/InvokeService"
 )
 
 // GRPCTraceUnaryServerInterceptor sets the trace context or starts the trace client span based on request.
@@ -50,20 +52,19 @@ func GRPCTraceUnaryServerInterceptor(appID string, spec config.TracingSpec) grpc
 			reqSpanAttr      map[string]string
 		)
 		sc, _ := SpanContextFromIncomingGRPCMetadata(ctx)
-		// This middleware is shared by internal gRPC for service invocation and api
+		// This middleware is shared by internal gRPC for service invocation and API
 		// so that it needs to handle separately.
-		if isInternalCalls(info.FullMethod) {
-			// For dapr.proto.internals package, this generates ServerSpan.
+		if strings.HasPrefix(info.FullMethod, daprInternalPrefix) {
+			// For gRPC server invocation, this generates ServerSpan.
 			spanKind = trace.WithSpanKind(trace.SpanKindServer)
 		} else {
-			// For dapr.proto.runtime package, this generates ClientSpan.
+			// For gRPC API, this generates ClientSpan.
 			spanKind = trace.WithSpanKind(trace.SpanKindClient)
 		}
 
 		ctx, span = trace.StartSpanWithRemoteParent(ctx, info.FullMethod, sc, sampler, spanKind)
 
 		isSampled := span.SpanContext().IsSampled()
-
 		if isSampled {
 			// users can add dapr- prefix if they want to see the header values in span attributes.
 			prefixedMetadata = userDefinedMetadata(ctx)
@@ -86,7 +87,7 @@ func GRPCTraceUnaryServerInterceptor(appID string, spec config.TracingSpec) grpc
 		}
 
 		// Add grpc-trace-bin header for all non-invocation api's
-		if info.FullMethod != "/dapr.proto.runtime.v1.Dapr/InvokeService" {
+		if info.FullMethod != daprInvokeServiceMethod {
 			traceContextBinary := propagation.Binary(span.SpanContext())
 			grpc.SetHeader(ctx, metadata.Pairs(grpcTraceContextKey, string(traceContextBinary)))
 		}
@@ -99,41 +100,56 @@ func GRPCTraceUnaryServerInterceptor(appID string, spec config.TracingSpec) grpc
 }
 
 // GRPCTraceStreamServerInterceptor sets the trace context or starts the trace client span based on request.
+// This is used by proxy requests too.
 func GRPCTraceStreamServerInterceptor(appID string, spec config.TracingSpec) grpc.StreamServerInterceptor {
+	sampler := diag_utils.TraceSampler(spec.SamplingRate)
 	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		if strings.Index(info.FullMethod, daprPackagePrefix) == 0 {
-			return handler(srv, ss)
-		}
-
-		var span *trace.Span
-		spanName := info.FullMethod
+		var (
+			span     *trace.Span
+			spanKind trace.StartOption
+		)
 
 		ctx := ss.Context()
-		md, _ := metadata.FromIncomingContext(ctx)
-
-		vals := md.Get(GRPCProxyAppIDKey)
-		if len(vals) == 0 {
-			return errors.Errorf("cannot proxy request: missing %s metadata", GRPCProxyAppIDKey)
-		}
-
-		targetID := vals[0]
-		wrapped := grpc_middleware.WrapServerStream(ss)
 		sc, _ := SpanContextFromIncomingGRPCMetadata(ctx)
-		sampler := diag_utils.TraceSampler(spec.SamplingRate)
+		isProxied := false
 
-		var spanKind trace.StartOption
-
-		if appID == targetID {
+		// This middleware is shared by multiple services and proxied requests, which need to be handled separately
+		if strings.HasPrefix(info.FullMethod, daprInternalPrefix) {
+			// For gRPC server invocation, this generates ServerSpan
 			spanKind = trace.WithSpanKind(trace.SpanKindServer)
-		} else {
+		} else if strings.HasPrefix(info.FullMethod, daprRuntimePrefix) {
+			// For gRPC API, this generates ClientSpan
 			spanKind = trace.WithSpanKind(trace.SpanKindClient)
+		} else {
+			// For proxied requests, this generates a span depending on whether this is the server (target) or client
+			isProxied = true
+			md, _ := metadata.FromIncomingContext(ctx)
+			vals := md.Get(GRPCProxyAppIDKey)
+			if len(vals) == 0 {
+				return errors.Errorf("cannot proxy request: missing %s metadata", GRPCProxyAppIDKey)
+			}
+
+			if appID == vals[0] {
+				spanKind = trace.WithSpanKind(trace.SpanKindServer)
+			} else {
+				spanKind = trace.WithSpanKind(trace.SpanKindClient)
+			}
 		}
 
-		ctx, span = trace.StartSpanWithRemoteParent(ctx, spanName, sc, sampler, spanKind)
+		// Overwrite context
+		ctx, span = trace.StartSpanWithRemoteParent(ctx, info.FullMethod, sc, sampler, spanKind)
+		wrapped := grpc_middleware.WrapServerStream(ss)
 		wrapped.WrappedContext = ctx
+
 		err := handler(srv, wrapped)
 
 		addSpanMetadataAndUpdateStatus(ctx, span, info.FullMethod, appID, nil, true)
+
+		// Add grpc-trace-bin header for all non-invocation api's
+		if !isProxied && info.FullMethod != daprInvokeServiceMethod {
+			traceContextBinary := propagation.Binary(span.SpanContext())
+			grpc.SetHeader(ctx, metadata.Pairs(grpcTraceContextKey, string(traceContextBinary)))
+		}
 
 		UpdateSpanStatusFromGRPCError(span, err)
 		span.End()
@@ -147,9 +163,7 @@ func addSpanMetadataAndUpdateStatus(ctx context.Context, span *trace.Span, fullM
 	if span.SpanContext().TraceOptions.IsSampled() {
 		// users can add dapr- prefix if they want to see the header values in span attributes.
 		prefixedMetadata = userDefinedMetadata(ctx)
-	}
 
-	if span.SpanContext().TraceOptions.IsSampled() {
 		// Populates dapr- prefixed header first
 		AddAttributesToSpan(span, prefixedMetadata)
 
@@ -238,10 +252,6 @@ func SpanContextToGRPCMetadata(ctx context.Context, spanContext trace.SpanContex
 	}
 
 	return metadata.AppendToOutgoingContext(ctx, grpcTraceContextKey, string(traceContextBinary))
-}
-
-func isInternalCalls(method string) bool {
-	return strings.HasPrefix(method, "/dapr.proto.internals.")
 }
 
 // spanAttributesMapFromGRPC builds the span trace attributes map for gRPC calls based on given parameters as per open-telemetry specs.

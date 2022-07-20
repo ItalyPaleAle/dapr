@@ -749,7 +749,6 @@ func (a *DaprRuntime) initDirectMessaging(resolver nr.Resolver) {
 		AppChannel:          a.appChannel,
 		ClientConnFn:        a.grpc.GetGRPCConnection,
 		Resolver:            resolver,
-		TracingSpec:         a.globalConfig.Spec.TracingSpec,
 		MaxRequestBodySize:  a.runtimeConfig.MaxRequestBodySize,
 		Proxy:               a.proxy,
 		ReadBufferSize:      a.runtimeConfig.ReadBufferSize,

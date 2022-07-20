@@ -333,22 +333,9 @@ func (a *api) CallLocal(ctx context.Context, in *internalv1pb.InternalInvokeRequ
 	}
 	defer req.Close()
 
-	if a.accessControlList != nil {
-		// An access control policy has been specified for the app. Apply the policies.
-		operation := req.Message().Method
-		var httpVerb commonv1pb.HTTPExtension_Verb
-		// Get the http verb in case the application protocol is http
-		if a.appProtocol == config.HTTPProtocol && req.Metadata() != nil && len(req.Metadata()) > 0 {
-			httpExt := req.Message().GetHttpExtension()
-			if httpExt != nil {
-				httpVerb = httpExt.GetVerb()
-			}
-		}
-		callAllowed, errMsg := acl.ApplyAccessControlPolicies(ctx, operation, httpVerb, a.appProtocol, a.accessControlList)
-
-		if !callAllowed {
-			return nil, status.Errorf(codes.PermissionDenied, errMsg)
-		}
+	err = a.callLocalACL(ctx, req)
+	if err != nil {
+		return nil, err
 	}
 
 	resp, err := a.appChannel.InvokeMethod(ctx, req)
@@ -389,6 +376,11 @@ func (a *api) CallLocalStream(stream internalv1pb.ServiceInvocation_CallLocalStr
 	req.WithRawData(pr, "")
 	defer req.Close()
 
+	err = a.callLocalACL(ctx, req)
+	if err != nil {
+		return err
+	}
+
 	// Read the rest of the data in background as we submit the request
 	go func() {
 		var (
@@ -427,25 +419,6 @@ func (a *api) CallLocalStream(stream internalv1pb.ServiceInvocation_CallLocalStr
 	}()
 
 	// Submit the request to the app
-	if a.accessControlList != nil {
-		// An access control policy has been specified for the app. Apply the policies.
-		operation := req.Message().Method
-		var httpVerb commonv1pb.HTTPExtension_Verb
-		// Get the http verb in case the application protocol is http
-		if a.appProtocol == config.HTTPProtocol && req.Metadata() != nil && len(req.Metadata()) > 0 {
-			httpExt := req.Message().GetHttpExtension()
-			if httpExt != nil {
-				httpVerb = httpExt.GetVerb()
-			}
-		}
-		callAllowed, errMsg := acl.ApplyAccessControlPolicies(ctx, operation, httpVerb, a.appProtocol, a.accessControlList)
-
-		if !callAllowed {
-			return status.Errorf(codes.PermissionDenied, errMsg)
-		}
-	}
-
-	// Invoke the method on the app
 	res, err := a.appChannel.InvokeMethod(ctx, req)
 	if err != nil {
 		return status.Errorf(codes.Internal, messages.ErrChannelInvoke, err)
@@ -499,6 +472,29 @@ func (a *api) CallLocalStream(stream internalv1pb.ServiceInvocation_CallLocalStr
 		// Stop with the last chunk
 		if proto.Payload.Complete {
 			break
+		}
+	}
+
+	return nil
+}
+
+// Used by CallLocal and CallLocalStream to check the request against the access control list
+func (a *api) callLocalACL(ctx context.Context, req *invokev1.InvokeMethodRequest) error {
+	if a.accessControlList != nil {
+		// An access control policy has been specified for the app. Apply the policies.
+		operation := req.Message().Method
+		var httpVerb commonv1pb.HTTPExtension_Verb
+		// Get the http verb in case the application protocol is http
+		if a.appProtocol == config.HTTPProtocol && req.Metadata() != nil && len(req.Metadata()) > 0 {
+			httpExt := req.Message().GetHttpExtension()
+			if httpExt != nil {
+				httpVerb = httpExt.GetVerb()
+			}
+		}
+		callAllowed, errMsg := acl.ApplyAccessControlPolicies(ctx, operation, httpVerb, a.appProtocol, a.accessControlList)
+
+		if !callAllowed {
+			return status.Errorf(codes.PermissionDenied, errMsg)
 		}
 	}
 
