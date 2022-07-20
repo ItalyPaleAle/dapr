@@ -287,7 +287,7 @@ func invokeServiceWithBodyHeader(remoteApp, method string, data []byte, headers 
 		req.Header.Add(k, v)
 	}
 
-	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("Content-Type", jsonContentType)
 	return httpClient.Do(req)
 }
 
@@ -307,7 +307,7 @@ func invokeServiceWithDaprAppIDHeader(remoteApp, method string, data []byte, hea
 		req.Header.Add(k, v)
 	}
 
-	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("Content-Type", jsonContentType)
 	return httpClient.Do(req)
 }
 
@@ -391,7 +391,7 @@ func retrieveRequestObject(w http.ResponseWriter, r *http.Request) {
 
 	serializedHeaders, _ := json.Marshal(headers)
 
-	w.Header().Set("Content-Type", "application/json; utf-8")
+	w.Header().Set("Content-Type", jsonContentType)
 	w.Header().Set("DaprTest-Response-1", "DaprTest-Response-Value-1")
 	w.Header().Set("DaprTest-Response-2", "DaprTest-Response-Value-2")
 
