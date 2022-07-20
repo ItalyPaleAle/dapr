@@ -1126,6 +1126,7 @@ func (a *DaprRuntime) startHTTPServer(port int, publicPort *int, profilePort int
 		TracingSpec:                 a.globalConfig.Spec.TracingSpec,
 		Shutdown:                    a.ShutdownWithWait,
 		GetComponentsCapabilitiesFn: a.getComponentsCapabilitesMap,
+		MaxRequestBodySize:          int64(a.runtimeConfig.MaxRequestBodySize) << 20, // Convert from MB to bytes
 	})
 
 	serverConf := http.ServerConfig{

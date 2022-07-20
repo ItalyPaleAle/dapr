@@ -39,6 +39,7 @@ import (
 	"github.com/dapr/components-contrib/lock"
 	lock_loader "github.com/dapr/dapr/pkg/components/lock"
 	"github.com/dapr/dapr/pkg/version"
+	"github.com/dapr/dapr/utils/streams"
 
 	contrib_metadata "github.com/dapr/components-contrib/metadata"
 	"github.com/dapr/components-contrib/pubsub"
@@ -98,6 +99,7 @@ type api struct {
 	shutdown                   func()
 	getComponentsCapabilitesFn func() map[string][]string
 	daprRunTimeVersion         string
+	maxRequestBodySize         int64 // In bytes
 }
 
 type registeredComponent struct {
@@ -156,6 +158,7 @@ type NewAPIOpts struct {
 	TracingSpec                 config.TracingSpec
 	Shutdown                    func()
 	GetComponentsCapabilitiesFn func() map[string][]string
+	MaxRequestBodySize          int64 // In bytes
 }
 
 // NewAPI returns a new API.
@@ -183,6 +186,7 @@ func NewAPI(opts NewAPIOpts) API {
 		tracingSpec:                opts.TracingSpec,
 		shutdown:                   opts.Shutdown,
 		getComponentsCapabilitesFn: opts.GetComponentsCapabilitiesFn,
+		maxRequestBodySize:         opts.MaxRequestBodySize,
 		transactionalStateStores:   transactionalStateStores,
 		configurationSubscribe:     make(map[string]chan struct{}),
 		daprRunTimeVersion:         version.Version(),
@@ -1393,17 +1397,22 @@ func (a *api) onDirectMessage(reqCtx *fasthttp.RequestCtx) {
 		return
 	}
 
-	var reqBody io.Reader = reqCtx.RequestBodyStream()
+	var reqBody io.ReadCloser = io.NopCloser(reqCtx.RequestBodyStream())
 	// It's possible for the body stream to be nil if the request is being read in a non-streaming way
 	if reqBody == nil {
-		reqBody = bytes.NewReader(reqCtx.Request.Body())
+		reqBody = io.NopCloser(bytes.NewReader(reqCtx.Request.Body()))
+	}
+
+	// Limit the body size if needed
+	if a.maxRequestBodySize > 0 {
+		reqBody = streams.LimitReadCloser(reqBody, a.maxRequestBodySize)
 	}
 
 	// Construct internal invoke method request
 	req := invokev1.
 		NewInvokeMethodRequest(invokeMethodName).WithHTTPExtension(verb, reqCtx.QueryArgs().String()).
 		// Set the stream
-		WithRawData(io.NopCloser(reqBody), string(reqCtx.Request.Header.ContentType())).
+		WithRawData(reqBody, string(reqCtx.Request.Header.ContentType())).
 		// Save headers to internal metadata
 		WithFastHTTPHeaders(&reqCtx.Request.Header)
 	defer req.Close()
@@ -1762,17 +1771,22 @@ func (a *api) onDirectActorMessage(reqCtx *fasthttp.RequestCtx) {
 	verb := strings.ToUpper(string(reqCtx.Method()))
 	method := reqCtx.UserValue(methodParam).(string)
 
-	var reqBody io.Reader = reqCtx.RequestBodyStream()
+	var reqBody io.ReadCloser = io.NopCloser(reqCtx.RequestBodyStream())
 	// It's possible for the body stream to be nil if the request is being read in a non-streaming way
 	if reqBody == nil {
-		reqBody = bytes.NewReader(reqCtx.Request.Body())
+		reqBody = io.NopCloser(bytes.NewReader(reqCtx.Request.Body()))
+	}
+
+	// Limit the body size if needed
+	if a.maxRequestBodySize > 0 {
+		reqBody = streams.LimitReadCloser(reqBody, a.maxRequestBodySize)
 	}
 
 	req := invokev1.
 		NewInvokeMethodRequest(method).
 		WithActor(actorType, actorID).
 		WithHTTPExtension(verb, reqCtx.QueryArgs().String()).
-		WithRawData(io.NopCloser(reqBody), string(reqCtx.Request.Header.ContentType()))
+		WithRawData(reqBody, string(reqCtx.Request.Header.ContentType()))
 	defer req.Close()
 
 	// Save headers to metadata.

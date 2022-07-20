@@ -574,14 +574,14 @@ func testV1RequestGRPCToGRPC(w http.ResponseWriter, r *http.Request) {
 	var ctx context.Context
 	if tracing {
 		ctx = metadata.AppendToOutgoingContext(
-			context.Background(),
+			r.Context(),
 			"DaprTest-Request-1", "DaprValue1",
 			"DaprTest-Request-2", "DaprValue2",
 			"Daprtest-Traceid", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
 		)
 	} else {
 		ctx = metadata.AppendToOutgoingContext(
-			context.Background(),
+			r.Context(),
 			"DaprTest-Request-1", "DaprValue1",
 			"DaprTest-Request-2", "DaprValue2",
 		)
@@ -665,14 +665,14 @@ func testV1RequestGRPCToHTTP(w http.ResponseWriter, r *http.Request) {
 	var ctx context.Context
 	if tracing {
 		ctx = metadata.AppendToOutgoingContext(
-			context.Background(),
+			r.Context(),
 			"DaprTest-Request-1", "DaprValue1",
 			"DaprTest-Request-2", "DaprValue2",
 			"Daprtest-Traceid", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
 		)
 	} else {
 		ctx = metadata.AppendToOutgoingContext(
-			context.Background(),
+			r.Context(),
 			"DaprTest-Request-1", "DaprValue1",
 			"DaprTest-Request-2", "DaprValue2",
 		)
@@ -758,7 +758,7 @@ func grpcToGrpcTest(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("%s calling with message %s\n", commandBody.Method, string(b))
 
 	req := constructRequest(commandBody.RemoteApp, commandBody.Method, "", b)
-	resp, err := daprClient.InvokeService(context.Background(), req)
+	resp, err := daprClient.InvokeService(r.Context(), req)
 	if err != nil {
 		logAndSetResponse(w, http.StatusInternalServerError, "grpc call failed with "+err.Error())
 		return
@@ -984,7 +984,7 @@ func grpcToHTTPTest(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		resp, err = daprClient.InvokeService(context.Background(), req)
+		resp, err = daprClient.InvokeService(r.Context(), req)
 		if err != nil {
 			logAndSetResponse(w, http.StatusInternalServerError, "error returned from grpc client")
 			return
@@ -1103,7 +1103,7 @@ func badServiceCallTestGrpc(w http.ResponseWriter, r *http.Request) {
 	if commandBody.Method == "timeouterror" {
 		timeoutDuration = 5 * time.Second
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeoutDuration)
+	ctx, cancel := context.WithTimeout(r.Context(), timeoutDuration)
 	defer cancel()
 
 	var testMessage struct {
@@ -1213,7 +1213,7 @@ func largeDataErrorServiceCall(w http.ResponseWriter, r *http.Request, isHTTP bo
 		} else {
 			req := constructRequest("serviceinvocation-callee-0", "posthandler", "POST", jsonBody)
 
-			_, err := daprClient.InvokeService(context.Background(), req)
+			_, err := daprClient.InvokeService(r.Context(), req)
 
 			result.CallSuccessful = err == nil
 		}
