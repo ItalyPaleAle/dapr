@@ -472,10 +472,9 @@ func (a *api) constructDistributedLockEndpoints() []Endpoint {
 
 func (a *api) onOutputBindingMessage(reqCtx *fasthttp.RequestCtx) {
 	name := reqCtx.UserValue(nameParam).(string)
-	body := reqCtx.PostBody()
 
 	var req OutputBindingRequest
-	err := json.Unmarshal(body, &req)
+	err := a.parseJSONBody(reqCtx, &req)
 	if err != nil {
 		msg := NewErrorResponse("ERR_MALFORMED_REQUEST", fmt.Sprintf(messages.ErrMalformedRequest, err))
 		respond(reqCtx, withError(fasthttp.StatusBadRequest, msg))
@@ -538,7 +537,7 @@ func (a *api) onBulkGetState(reqCtx *fasthttp.RequestCtx) {
 	}
 
 	var req BulkGetRequest
-	err = json.Unmarshal(reqCtx.PostBody(), &req)
+	err = a.parseJSONBody(reqCtx, &req)
 	if err != nil {
 		msg := NewErrorResponse("ERR_MALFORMED_REQUEST", fmt.Sprintf(messages.ErrMalformedRequest, err))
 		respond(reqCtx, withError(fasthttp.StatusBadRequest, msg))
@@ -843,7 +842,7 @@ func (a *api) onLock(reqCtx *fasthttp.RequestCtx) {
 	}
 
 	req := lock.TryLockRequest{}
-	err = json.Unmarshal(reqCtx.PostBody(), &req)
+	err = a.parseJSONBody(reqCtx, &req)
 	if err != nil {
 		msg := NewErrorResponse("ERR_MALFORMED_REQUEST", err.Error())
 		respond(reqCtx, withError(fasthttp.StatusBadRequest, msg))
@@ -885,7 +884,7 @@ func (a *api) onUnlock(reqCtx *fasthttp.RequestCtx) {
 	}
 
 	req := lock.UnlockRequest{}
-	err = json.Unmarshal(reqCtx.PostBody(), &req)
+	err = a.parseJSONBody(reqCtx, &req)
 	if err != nil {
 		msg := NewErrorResponse("ERR_MALFORMED_REQUEST", err.Error())
 		respond(reqCtx, withError(fasthttp.StatusBadRequest, msg))
@@ -1270,7 +1269,7 @@ func (a *api) onPostState(reqCtx *fasthttp.RequestCtx) {
 	}
 
 	reqs := []state.SetRequest{}
-	err = json.Unmarshal(reqCtx.PostBody(), &reqs)
+	err = a.parseJSONBody(reqCtx, &reqs)
 	if err != nil {
 		msg := NewErrorResponse("ERR_MALFORMED_REQUEST", err.Error())
 		respond(reqCtx, withError(fasthttp.StatusBadRequest, msg))
@@ -1530,7 +1529,7 @@ func (a *api) onCreateActorReminder(reqCtx *fasthttp.RequestCtx) {
 	name := reqCtx.UserValue(nameParam).(string)
 
 	var req actors.CreateReminderRequest
-	err := json.Unmarshal(reqCtx.PostBody(), &req)
+	err := a.parseJSONBody(reqCtx, &req)
 	if err != nil {
 		msg := NewErrorResponse("ERR_MALFORMED_REQUEST", fmt.Sprintf(messages.ErrMalformedRequest, err))
 		respond(reqCtx, withError(fasthttp.StatusBadRequest, msg))
@@ -1564,7 +1563,7 @@ func (a *api) onRenameActorReminder(reqCtx *fasthttp.RequestCtx) {
 	name := reqCtx.UserValue(nameParam).(string)
 
 	var req actors.RenameReminderRequest
-	err := json.Unmarshal(reqCtx.PostBody(), &req)
+	err := a.parseJSONBody(reqCtx, &req)
 	if err != nil {
 		msg := NewErrorResponse("ERR_MALFORMED_REQUEST", fmt.Sprintf(messages.ErrMalformedRequest, err))
 		respond(reqCtx, withError(fasthttp.StatusBadRequest, msg))
@@ -1599,7 +1598,7 @@ func (a *api) onCreateActorTimer(reqCtx *fasthttp.RequestCtx) {
 	name := reqCtx.UserValue(nameParam).(string)
 
 	var req actors.CreateTimerRequest
-	err := json.Unmarshal(reqCtx.PostBody(), &req)
+	err := a.parseJSONBody(reqCtx, &req)
 	if err != nil {
 		msg := NewErrorResponse("ERR_MALFORMED_REQUEST", fmt.Sprintf(messages.ErrMalformedRequest, err))
 		respond(reqCtx, withError(fasthttp.StatusBadRequest, msg))
@@ -1659,10 +1658,9 @@ func (a *api) onActorStateTransaction(reqCtx *fasthttp.RequestCtx) {
 
 	actorType := reqCtx.UserValue(actorTypeParam).(string)
 	actorID := reqCtx.UserValue(actorIDParam).(string)
-	body := reqCtx.PostBody()
 
 	var ops []actors.TransactionalOperation
-	err := json.Unmarshal(body, &ops)
+	err := a.parseJSONBody(reqCtx, &ops)
 	if err != nil {
 		msg := NewErrorResponse("ERR_MALFORMED_REQUEST", err.Error())
 		respond(reqCtx, withError(fasthttp.StatusBadRequest, msg))
@@ -1893,7 +1891,6 @@ func (a *api) onGetMetadata(reqCtx *fasthttp.RequestCtx) {
 	// Copy synchronously so it can be serialized to JSON.
 	a.extendedMetadata.Range(func(key, value interface{}) bool {
 		temp[key.(string)] = value.(string)
-
 		return true
 	})
 	temp[daprRuntimeVersionKey] = a.daprRunTimeVersion
@@ -1926,9 +1923,11 @@ func (a *api) onGetMetadata(reqCtx *fasthttp.RequestCtx) {
 		msg := NewErrorResponse("ERR_METADATA_GET", fmt.Sprintf(messages.ErrMetadataGet, err))
 		respond(reqCtx, withError(fasthttp.StatusInternalServerError, msg))
 		log.Debug(msg)
-	} else {
-		respond(reqCtx, withJSON(fasthttp.StatusOK, mtdBytes))
+
+		return
 	}
+
+	respond(reqCtx, withJSON(fasthttp.StatusOK, mtdBytes))
 }
 
 func getOrDefaultCapabilites(dict map[string][]string, key string) []string {
@@ -1940,7 +1939,14 @@ func getOrDefaultCapabilites(dict map[string][]string, key string) []string {
 
 func (a *api) onPutMetadata(reqCtx *fasthttp.RequestCtx) {
 	key := fmt.Sprintf("%v", reqCtx.UserValue("key"))
-	body := reqCtx.PostBody()
+	body, err := a.readBody(reqCtx)
+	if err != nil {
+		msg := NewErrorResponse("ERR_MALFORMED_REQUEST", fmt.Sprintf(messages.ErrMalformedRequest, err.Error()))
+		respond(reqCtx, withError(fasthttp.StatusBadRequest, msg))
+		log.Debug(msg)
+
+		return
+	}
 	a.extendedMetadata.Store(key, string(body))
 	respond(reqCtx, withEmpty())
 }
@@ -1992,7 +1998,15 @@ func (a *api) onPublish(reqCtx *fasthttp.RequestCtx) {
 		return
 	}
 
-	body := reqCtx.PostBody()
+	body, err := a.readBody(reqCtx)
+	if err != nil {
+		msg := NewErrorResponse("ERR_MALFORMED_REQUEST", fmt.Sprintf(messages.ErrMalformedRequest, err.Error()))
+		respond(reqCtx, withError(fasthttp.StatusBadRequest, msg))
+		log.Debug(msg)
+
+		return
+	}
+
 	contentType := string(reqCtx.Request.Header.Peek("Content-Type"))
 	metadata := getMetadataFromRequest(reqCtx)
 	rawPayload, metaErr := contrib_metadata.IsRawPayload(metadata)
@@ -2015,7 +2029,8 @@ func (a *api) onPublish(reqCtx *fasthttp.RequestCtx) {
 	data := body
 
 	if !rawPayload {
-		envelope, err := runtime_pubsub.NewCloudEvent(&runtime_pubsub.CloudEvent{
+		var envelope map[string]interface{}
+		envelope, err = runtime_pubsub.NewCloudEvent(&runtime_pubsub.CloudEvent{
 			ID:              a.id,
 			Topic:           topic,
 			DataContentType: contentType,
@@ -2054,7 +2069,7 @@ func (a *api) onPublish(reqCtx *fasthttp.RequestCtx) {
 	}
 
 	start := time.Now()
-	err := a.pubsubAdapter.Publish(&req)
+	err = a.pubsubAdapter.Publish(&req)
 	elapsed := diag.ElapsedSince(start)
 
 	diag.DefaultComponentMonitoring.PubsubEgressEvent(context.Background(), pubsubName, topic, err == nil, elapsed)
@@ -2152,9 +2167,9 @@ func (a *api) onPostStateTransaction(reqCtx *fasthttp.RequestCtx) {
 		return
 	}
 
-	body := reqCtx.PostBody()
 	var req state.TransactionalStateRequest
-	if err := json.Unmarshal(body, &req); err != nil {
+	err := a.parseJSONBody(reqCtx, &req)
+	if err != nil {
 		msg := NewErrorResponse("ERR_MALFORMED_REQUEST", fmt.Sprintf(messages.ErrMalformedRequest, err.Error()))
 		respond(reqCtx, withError(fasthttp.StatusBadRequest, msg))
 		log.Debug(msg)
@@ -2180,7 +2195,7 @@ func (a *api) onPostStateTransaction(reqCtx *fasthttp.RequestCtx) {
 		switch o.Operation {
 		case state.Upsert:
 			var upsertReq state.SetRequest
-			err := mapstructure.Decode(o.Request, &upsertReq)
+			err = mapstructure.Decode(o.Request, &upsertReq)
 			if err != nil {
 				msg := NewErrorResponse("ERR_MALFORMED_REQUEST",
 					fmt.Sprintf(messages.ErrMalformedRequest, err.Error()))
@@ -2201,7 +2216,7 @@ func (a *api) onPostStateTransaction(reqCtx *fasthttp.RequestCtx) {
 			})
 		case state.Delete:
 			var delReq state.DeleteRequest
-			err := mapstructure.Decode(o.Request, &delReq)
+			err = mapstructure.Decode(o.Request, &delReq)
 			if err != nil {
 				msg := NewErrorResponse("ERR_MALFORMED_REQUEST",
 					fmt.Sprintf(messages.ErrMalformedRequest, err.Error()))
@@ -2235,7 +2250,8 @@ func (a *api) onPostStateTransaction(reqCtx *fasthttp.RequestCtx) {
 			if op.Operation == state.Upsert {
 				req := op.Request.(*state.SetRequest)
 				data := []byte(fmt.Sprintf("%v", req.Value))
-				val, err := encryption.TryEncryptValue(storeName, data)
+				var val []byte
+				val, err = encryption.TryEncryptValue(storeName, data)
 				if err != nil {
 					msg := NewErrorResponse(
 						"ERR_SAVE_STATE",
@@ -2253,7 +2269,7 @@ func (a *api) onPostStateTransaction(reqCtx *fasthttp.RequestCtx) {
 
 	start := time.Now()
 	policy := a.resiliency.ComponentOutboundPolicy(reqCtx, storeName)
-	err := policy(func(ctx context.Context) error {
+	err = policy(func(ctx context.Context) error {
 		return transactionalStore.Multi(&state.TransactionalStateRequest{
 			Operations: operations,
 			Metadata:   req.Metadata,
@@ -2295,7 +2311,8 @@ func (a *api) onQueryState(reqCtx *fasthttp.RequestCtx) {
 	}
 
 	var req state.QueryRequest
-	if err = json.Unmarshal(reqCtx.PostBody(), &req.Query); err != nil {
+	err = a.parseJSONBody(reqCtx, &req.Query)
+	if err != nil {
 		msg := NewErrorResponse("ERR_MALFORMED_REQUEST", fmt.Sprintf(messages.ErrMalformedRequest, err.Error()))
 		respond(reqCtx, withError(fasthttp.StatusBadRequest, msg))
 		log.Debug(msg)
@@ -2359,4 +2376,20 @@ func (a *api) SetDirectMessaging(directMessaging messaging.DirectMessaging) {
 
 func (a *api) SetActorRuntime(actor actors.Actors) {
 	a.actor = actor
+}
+
+// Reads the request body in full, supporting streams as well as in-memory bodies
+func (a *api) readBody(reqCtx *fasthttp.RequestCtx) ([]byte, error) {
+	if s := reqCtx.RequestBodyStream(); s != nil {
+		return io.ReadAll(io.LimitReader(s, a.maxRequestBodySize))
+	}
+	return reqCtx.PostBody(), nil
+}
+
+// Reads and parses the request body as JSON, supporting streams as well as in-memory bodies
+func (a *api) parseJSONBody(reqCtx *fasthttp.RequestCtx, v any) error {
+	if s := reqCtx.RequestBodyStream(); s != nil {
+		return json.NewDecoder(io.LimitReader(s, a.maxRequestBodySize)).Decode(v)
+	}
+	return json.Unmarshal(reqCtx.PostBody(), v)
 }

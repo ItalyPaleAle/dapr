@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
@@ -37,17 +38,31 @@ import (
 )
 
 const (
-	appPort = 3000
-
 	// statestore is the name of the store
-	stateURLTemplate            = "http://localhost:3500/v1.0/state/%s"
-	bulkStateURLTemplate        = "http://localhost:3500/v1.0/state/%s/bulk?metadata.partitionKey=e2etest"
-	stateTransactionURLTemplate = "http://localhost:3500/v1.0/state/%s/transaction"
-	queryURLTemplate            = "http://localhost:3500/v1.0-alpha1/state/%s/query"
+	stateURLTemplate            = "http://localhost:%d/v1.0/state/%s"
+	bulkStateURLTemplate        = "http://localhost:%d/v1.0/state/%s/bulk?metadata.partitionKey=e2etest"
+	stateTransactionURLTemplate = "http://localhost:%d/v1.0/state/%s/transaction"
+	queryURLTemplate            = "http://localhost:%d/v1.0-alpha1/state/%s/query"
 
 	metadataPartitionKey = "partitionKey"
 	partitionKey         = "e2etest"
 )
+
+var (
+	appPort  = 3000
+	daprPort = 3500
+)
+
+func init() {
+	p := os.Getenv("DAPR_HTTP_PORT")
+	if p != "" && p != "0" {
+		daprPort, _ = strconv.Atoi(p)
+	}
+	p = os.Getenv("PORT")
+	if p != "" && p != "0" {
+		appPort, _ = strconv.Atoi(p)
+	}
+}
 
 // appState represents a state in this app.
 type appState struct {
@@ -111,7 +126,7 @@ func save(states []daprState, statestore string, meta map[string]string) (int, e
 }
 
 func load(data []byte, statestore string, meta map[string]string) (int, error) {
-	stateURL := fmt.Sprintf(stateURLTemplate, statestore)
+	stateURL := fmt.Sprintf(stateURLTemplate, daprPort, statestore)
 	if len(meta) != 0 {
 		stateURL += "?" + metadata2RawQuery(meta)
 	}
@@ -304,7 +319,7 @@ func deleteAll(states []daprState, statestore string, meta map[string]string) er
 
 func executeTransaction(states []daprState, statestore string) error {
 	transactionalOperations := make([]map[string]interface{}, len(states))
-	stateTransactionURL := fmt.Sprintf(stateTransactionURLTemplate, statestore)
+	stateTransactionURL := fmt.Sprintf(stateTransactionURLTemplate, daprPort, statestore)
 	for i, s := range states {
 		transactionalOperations[i] = map[string]interface{}{
 			"operation": s.OperationType,
@@ -338,7 +353,7 @@ func executeTransaction(states []daprState, statestore string) error {
 func executeQuery(query []byte, statestore string, meta map[string]string) ([]daprState, error) {
 	log.Printf("Processing query request '%s'.", string(query))
 
-	queryURL := fmt.Sprintf(queryURLTemplate, statestore)
+	queryURL := fmt.Sprintf(queryURLTemplate, daprPort, statestore)
 	if len(meta) != 0 {
 		queryURL += "?" + metadata2RawQuery(meta)
 	}
@@ -738,7 +753,7 @@ func daprState2TransactionalStateRequest(daprStates []daprState) []*runtimev1pb.
 }
 
 func createStateURL(key, statestore string, meta map[string]string) (string, error) {
-	stateURL := fmt.Sprintf(stateURLTemplate, statestore)
+	stateURL := fmt.Sprintf(stateURLTemplate, daprPort, statestore)
 	url, err := url.Parse(stateURL)
 	if err != nil {
 		return "", fmt.Errorf("could not parse %s: %s", stateURL, err.Error())
@@ -756,7 +771,7 @@ func createStateURL(key, statestore string, meta map[string]string) (string, err
 }
 
 func createBulkStateURL(statestore string) (string, error) {
-	bulkStateURL := fmt.Sprintf(bulkStateURLTemplate, statestore)
+	bulkStateURL := fmt.Sprintf(bulkStateURLTemplate, daprPort, statestore)
 	url, err := url.Parse(bulkStateURL)
 	if err != nil {
 		return "", fmt.Errorf("could not parse %s: %s", bulkStateURL, err.Error())
@@ -812,6 +827,6 @@ func main() {
 	initGRPCClient()
 
 	log.Printf("State App - listening on http://localhost:%d", appPort)
-	log.Printf("State endpoint - to be saved at %s", fmt.Sprintf(stateURLTemplate, "statestore"))
+	log.Printf("State endpoint - to be saved at %s", fmt.Sprintf(stateURLTemplate, daprPort, "statestore"))
 	utils.StartServer(appPort, appRouter, true)
 }
