@@ -755,7 +755,8 @@ func (a *api) onGetState(reqCtx *fasthttp.RequestCtx) {
 	}
 
 	if encryption.EncryptedStateStore(storeName) {
-		val, err := encryption.TryDecryptValue(storeName, resp.Data)
+		var val []byte
+		val, err = encryption.TryDecryptValue(storeName, resp.Data)
 		if err != nil {
 			msg := NewErrorResponse("ERR_STATE_GET", fmt.Sprintf(messages.ErrStateGet, key, storeName, err.Error()))
 			respond(reqCtx, withError(fasthttp.StatusInternalServerError, msg))
@@ -2381,7 +2382,10 @@ func (a *api) SetActorRuntime(actor actors.Actors) {
 // Reads the request body in full, supporting streams as well as in-memory bodies
 func (a *api) readBody(reqCtx *fasthttp.RequestCtx) ([]byte, error) {
 	if s := reqCtx.RequestBodyStream(); s != nil {
-		return io.ReadAll(io.LimitReader(s, a.maxRequestBodySize))
+		if a.maxRequestBodySize > 0 {
+			s = io.LimitReader(s, a.maxRequestBodySize)
+		}
+		return io.ReadAll(s)
 	}
 	return reqCtx.PostBody(), nil
 }
@@ -2389,7 +2393,10 @@ func (a *api) readBody(reqCtx *fasthttp.RequestCtx) ([]byte, error) {
 // Reads and parses the request body as JSON, supporting streams as well as in-memory bodies
 func (a *api) parseJSONBody(reqCtx *fasthttp.RequestCtx, v any) error {
 	if s := reqCtx.RequestBodyStream(); s != nil {
-		return json.NewDecoder(io.LimitReader(s, a.maxRequestBodySize)).Decode(v)
+		if a.maxRequestBodySize > 0 {
+			s = io.LimitReader(s, a.maxRequestBodySize)
+		}
+		return json.NewDecoder(s).Decode(v)
 	}
 	return json.Unmarshal(reqCtx.PostBody(), v)
 }

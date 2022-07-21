@@ -21,6 +21,8 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
+	"strconv"
 	"time"
 
 	commonv1pb "github.com/dapr/dapr/pkg/proto/common/v1"
@@ -34,9 +36,26 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 )
 
-const (
-	appPort = 3000
+var (
+	appPort      = 3000
+	daprHttpPort = 3500
+	daprGrpcPort = 50001
 )
+
+func init() {
+	p := os.Getenv("DAPR_HTTP_PORT")
+	if p != "" && p != "0" {
+		daprHttpPort, _ = strconv.Atoi(p)
+	}
+	p = os.Getenv("DAPR_GRPC_PORT")
+	if p != "" && p != "0" {
+		daprGrpcPort, _ = strconv.Atoi(p)
+	}
+	p = os.Getenv("PORT")
+	if p != "" && p != "0" {
+		appPort, _ = strconv.Atoi(p)
+	}
+}
 
 type FailureMessage struct {
 	ID              string         `json:"id"`
@@ -259,7 +278,7 @@ func resiliencyActorMethodHandler(w http.ResponseWriter, r *http.Request) {
 
 // App startup/endpoint setup.
 func initGRPCClient() {
-	url := fmt.Sprintf("localhost:%d", 50001)
+	url := fmt.Sprintf("localhost:%d", daprGrpcPort)
 	log.Printf("Connecting to dapr using url %s", url)
 	var grpcConn *grpc.ClientConn
 	for retries := 10; retries > 0; retries-- {
@@ -420,7 +439,7 @@ func TestInvokeService(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Invoking resiliency service with %s", protocol)
 
 	if protocol == "http" {
-		url := "http://localhost:3500/v1.0/invoke/resiliencyapp/method/resiliencyInvocation"
+		url := fmt.Sprintf("http://localhost:%d/v1.0/invoke/resiliencyapp/method/resiliencyInvocation", daprHttpPort)
 
 		req, _ := http.NewRequest("POST", url, r.Body)
 		defer r.Body.Close()
@@ -475,7 +494,7 @@ func TestInvokeService(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Proxying message: %+v", message)
 		b, _ := json.Marshal(message)
 
-		conn, err := grpc.Dial("localhost:50001", grpc.WithInsecure(), grpc.WithBlock())
+		conn, err := grpc.Dial(fmt.Sprintf("localhost:%d", daprGrpcPort), grpc.WithInsecure(), grpc.WithBlock())
 		if err != nil {
 			log.Fatalf("did not connect: %v", err)
 		}
@@ -500,7 +519,7 @@ func TestInvokeActorMethod(w http.ResponseWriter, r *http.Request) {
 
 	if protocol == "http" {
 		httpClient.Timeout = time.Minute
-		url := "http://localhost:3500/v1.0/actors/resiliencyActor/1/method/resiliencyMethod"
+		url := fmt.Sprintf("http://localhost:%d/v1.0/actors/resiliencyActor/1/method/resiliencyMethod", daprHttpPort)
 
 		req, _ := http.NewRequest("PUT", url, r.Body)
 		defer r.Body.Close()
