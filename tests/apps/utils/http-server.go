@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -21,8 +20,10 @@ import (
 func StartServer(port int, appRouter func() *mux.Router, allowHTTP2 bool) {
 	// HTTP/2 is allowed only if the DAPR_TESTS_HTTP2 env var is set
 	if allowHTTP2 {
-		allowHTTP2, _ = strconv.ParseBool(os.Getenv("DAPR_TESTS_HTTP2"))
+		allowHTTP2 = IsTruthy(os.Getenv("DAPR_TESTS_HTTP2"))
 	}
+
+	logConnState := IsTruthy(os.Getenv("DAPR_TESTS_LOG_CONNSTATE"))
 
 	// Create a listener
 	addr := fmt.Sprintf(":%d", port)
@@ -40,8 +41,9 @@ func StartServer(port int, appRouter func() *mux.Router, allowHTTP2 bool) {
 			Addr:    addr,
 			Handler: h2c.NewHandler(appRouter(), h2s),
 			ConnState: func(c net.Conn, cs http.ConnState) {
-				// TODO: MAKE OPTIONAL
-				log.Printf("ConnState changed: %s -> %s state: %s", c.RemoteAddr(), c.LocalAddr(), cs)
+				if logConnState {
+					log.Printf("ConnState changed: %s -> %s state: %s (HTTP2)", c.RemoteAddr(), c.LocalAddr(), cs)
+				}
 			},
 		}
 	} else {
@@ -49,8 +51,9 @@ func StartServer(port int, appRouter func() *mux.Router, allowHTTP2 bool) {
 			Addr:    addr,
 			Handler: appRouter(),
 			ConnState: func(c net.Conn, cs http.ConnState) {
-				// TODO: MAKE OPTIONAL
-				log.Printf("ConnState changed: %s -> %s state: %s", c.RemoteAddr(), c.LocalAddr(), cs)
+				if logConnState {
+					log.Printf("ConnState changed: %s -> %s state: %s", c.RemoteAddr(), c.LocalAddr(), cs)
+				}
 			},
 		}
 	}

@@ -143,10 +143,11 @@ func resiliencyBindingHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	body, _ := io.ReadAll(r.Body)
 	var message FailureMessage
-	json.NewDecoder(r.Body).Decode(&message)
+	json.Unmarshal(body, &message)
 
-	log.Printf("Binding received message %+v\n", message)
+	log.Printf("Binding received message %s\n", string(body))
 
 	callCount := 0
 	if records, ok := callTracking[message.ID]; ok {
@@ -196,7 +197,7 @@ func resiliencyPubsubHandler(w http.ResponseWriter, r *http.Request) {
 	rawDataBytes, _ := json.Marshal(rawData)
 	var message FailureMessage
 	json.Unmarshal(rawDataBytes, &message)
-	log.Printf("Pubsub received message %+v\n", message)
+	log.Printf("Pubsub received message %s\n", string(rawDataBytes))
 
 	callCount := 0
 	if records, ok := callTracking[message.ID]; ok {
@@ -223,10 +224,11 @@ func resiliencyPubsubHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func resiliencyServiceInvocationHandler(w http.ResponseWriter, r *http.Request) {
+	body, _ := io.ReadAll(r.Body)
 	var message FailureMessage
-	json.NewDecoder(r.Body).Decode(&message)
+	json.Unmarshal(body, &message)
 
-	log.Printf("Http invocation received message %+v\n", message)
+	log.Printf("Http invocation received message %s\n", string(body))
 
 	callCount := 0
 	if records, ok := callTracking[message.ID]; ok {
@@ -249,10 +251,11 @@ func resiliencyServiceInvocationHandler(w http.ResponseWriter, r *http.Request) 
 }
 
 func resiliencyActorMethodHandler(w http.ResponseWriter, r *http.Request) {
+	body, _ := io.ReadAll(r.Body)
 	var message FailureMessage
-	json.NewDecoder(r.Body).Decode(&message)
+	json.Unmarshal(body, &message)
 
-	log.Printf("Actor received message %+v\n", message)
+	log.Printf("Actor received message %s\n", string(body))
 
 	callCount := 0
 	if records, ok := callTracking[message.ID]; ok {
