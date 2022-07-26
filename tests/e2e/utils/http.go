@@ -20,7 +20,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -36,14 +35,19 @@ const (
 
 var httpClient *http.Client
 
+// InitHTTPClient inits the shared httpClient object.
 func InitHTTPClient(allowHTTP2 bool) {
+	httpClient = NewHTTPClient(allowHTTP2)
+}
+
+// NewHTTPClient initializes a new *http.Client.
+// This should not be used except in rare circumstances. Developers should use the shared httpClient instead to re-use sockets as much as possible.
+func NewHTTPClient(allowHTTP2 bool) *http.Client {
 	// HTTP/2 is allowed only if the DAPR_TESTS_HTTP2 env var is set
-	if allowHTTP2 {
-		allowHTTP2, _ = strconv.ParseBool(os.Getenv("DAPR_TESTS_HTTP2"))
-	}
+	allowHTTP2 = allowHTTP2 && IsTruthy(os.Getenv("DAPR_TESTS_HTTP2"))
 
 	if allowHTTP2 {
-		httpClient = &http.Client{
+		return &http.Client{
 			Timeout: DefaultProbeTimeout,
 			// Configure for HTT/2 Cleartext (without TLS) and with prior knowledge
 			// (RFC7540 Section 3.2)
@@ -56,14 +60,13 @@ func InitHTTPClient(allowHTTP2 bool) {
 				},
 			},
 		}
-	} else {
-		httpClient = &http.Client{
-			Timeout: DefaultProbeTimeout,
-			Transport: &http.Transport{
-				MaxIdleConns:        2,
-				MaxIdleConnsPerHost: 1,
-			},
-		}
+	}
+	return &http.Client{
+		Timeout: DefaultProbeTimeout,
+		Transport: &http.Transport{
+			MaxIdleConns:        2,
+			MaxIdleConnsPerHost: 1,
+		},
 	}
 }
 

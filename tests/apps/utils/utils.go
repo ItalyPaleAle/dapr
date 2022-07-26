@@ -1,6 +1,8 @@
 package utils
 
-import "strings"
+import (
+	"strings"
+)
 
 // IsTruthy returns true if a string is a truthy value.
 // Truthy values are "y", "yes", "true", "t", "on", "1" (case-insensitive); everything else is false.
