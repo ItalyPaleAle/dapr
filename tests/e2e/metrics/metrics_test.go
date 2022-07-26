@@ -171,6 +171,10 @@ func invokeDaprHTTP(t *testing.T, app string, n, daprPort int) {
 		// We don't evaluate the response here as we're only testing the metrics
 		_, err = utils.HTTPPost(fmt.Sprintf("http://localhost:%d/v1.0/invoke/%s/method/tests/green", daprPort, app), body)
 		require.NoError(t, err)
+		// Because we're using port forwarding here, we need to sleep for > 4 seconds to allow for the TCP connection to the app to become idle
+		// Otherwise, subsequent calls will fail
+		// Not sure exaclty why, but I've seen this behavior with certain port forwarders before, where the connection closing isn't communicated to the other side clearly enough
+		time.Sleep(5 * time.Second)
 	}
 }
 

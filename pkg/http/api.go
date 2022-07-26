@@ -1531,9 +1531,7 @@ func (a *api) onDirectMessage(reqCtx *fasthttp.RequestCtx) {
 	}
 
 	// This will also close the response stream automatically; no need to invoke resp.Close()
-	respond(reqCtx, withStream(statusCode, r, func() {
-		cancel()
-	}))
+	respond(reqCtx, withStream(statusCode, r, cancel))
 }
 
 // findTargetID tries to find ID of the target service from the following three places:
@@ -1917,9 +1915,7 @@ func (a *api) onDirectActorMessage(reqCtx *fasthttp.RequestCtx) {
 	}
 
 	// This will also close the response stream automatically; no need to invoke resp.Close()
-	respond(reqCtx, withStream(statusCode, resp.RawData(), func() {
-		cancel()
-	}))
+	respond(reqCtx, withStream(statusCode, resp.RawData(), cancel))
 }
 
 func (a *api) onGetActorState(reqCtx *fasthttp.RequestCtx) {
