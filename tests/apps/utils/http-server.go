@@ -19,11 +19,10 @@ import (
 // StartServer starts a HTTP or HTTP2 server
 func StartServer(port int, appRouter func() *mux.Router, allowHTTP2 bool) {
 	// HTTP/2 is allowed only if the DAPR_TESTS_HTTP2 env var is set
-	if allowHTTP2 {
-		allowHTTP2 = IsTruthy(os.Getenv("DAPR_TESTS_HTTP2"))
-	}
+	allowHTTP2 = allowHTTP2 && IsTruthy(os.Getenv("DAPR_TESTS_HTTP2"))
 
-	logConnState := IsTruthy(os.Getenv("DAPR_TESTS_LOG_CONNSTATE"))
+	// logConnState := IsTruthy(os.Getenv("DAPR_TESTS_LOG_CONNSTATE"))
+	logConnState := true
 
 	// Create a listener
 	addr := fmt.Sprintf(":%d", port)
