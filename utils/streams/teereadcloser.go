@@ -34,8 +34,9 @@ func TeeReadCloser(r io.ReadCloser, w io.Writer) io.ReadCloser {
 
 // teeReadCloser is an io.TeeReader that also implements the io.Closer interface to close the readable stream.
 type teeReadCloser struct {
-	r io.ReadCloser
-	w io.Writer
+	r   io.ReadCloser
+	w   io.Writer
+	eof bool
 }
 
 // Close implements io.Closer.
@@ -46,6 +47,8 @@ func (t *teeReadCloser) Close() error {
 	if w, ok := t.w.(io.Closer); ok {
 		errW = w.Close()
 	}
+	t.r = nil
+	t.w = nil
 
 	if errR != nil && errW != nil {
 		return fmt.Errorf("failed to close r stream with error='%v' and failed to close w stream with error='%v'", errR, errW)
@@ -59,10 +62,17 @@ func (t *teeReadCloser) Close() error {
 
 // Read from the R stream and tee it into the w stream.
 func (t *teeReadCloser) Read(p []byte) (n int, err error) {
-	if t.r == nil {
+	if t.r == nil || t.w == nil {
 		return 0, io.ErrClosedPipe
 	}
+	if t.eof {
+		return 0, io.EOF
+	}
+
 	n, err = t.r.Read(p)
+	if err == io.EOF {
+		t.eof = true
+	}
 	if n > 0 {
 		//nolint:govet
 		if n, err := t.w.Write(p[:n]); err != nil {
