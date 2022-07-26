@@ -471,7 +471,8 @@ func (a *api) constructDistributedLockEndpoints() []Endpoint {
 }
 
 func (a *api) onOutputBindingMessage(reqCtx *fasthttp.RequestCtx) {
-	ctx, cancel := context.WithCancel(context.Background())
+	// Need a context specific to this request. See: https://github.com/valyala/fasthttp/issues/1350
+	ctx, cancel := context.WithCancel(reqCtx)
 	defer cancel()
 
 	name := reqCtx.UserValue(nameParam).(string)
@@ -923,7 +924,8 @@ func (a *api) onUnlock(reqCtx *fasthttp.RequestCtx) {
 }
 
 func (a *api) onSubscribeConfiguration(reqCtx *fasthttp.RequestCtx) {
-	ctx, cancel := context.WithCancel(context.Background())
+	// Need a context specific to this request. See: https://github.com/valyala/fasthttp/issues/1350
+	ctx, cancel := context.WithCancel(reqCtx)
 	defer cancel()
 
 	store, storeName, err := a.getConfigurationStoreWithRequestValidation(reqCtx)
@@ -1009,7 +1011,8 @@ func (a *api) onSubscribeConfiguration(reqCtx *fasthttp.RequestCtx) {
 }
 
 func (a *api) onUnsubscribeConfiguration(reqCtx *fasthttp.RequestCtx) {
-	ctx, cancel := context.WithCancel(context.Background())
+	// Need a context specific to this request. See: https://github.com/valyala/fasthttp/issues/1350
+	ctx, cancel := context.WithCancel(reqCtx)
 	defer cancel()
 
 	store, storeName, err := a.getConfigurationStoreWithRequestValidation(reqCtx)
@@ -1041,7 +1044,8 @@ func (a *api) onUnsubscribeConfiguration(reqCtx *fasthttp.RequestCtx) {
 }
 
 func (a *api) onGetConfiguration(reqCtx *fasthttp.RequestCtx) {
-	ctx, cancel := context.WithCancel(context.Background())
+	// Need a context specific to this request. See: https://github.com/valyala/fasthttp/issues/1350
+	ctx, cancel := context.WithCancel(reqCtx)
 	defer cancel()
 
 	store, storeName, err := a.getConfigurationStoreWithRequestValidation(reqCtx)
@@ -1104,7 +1108,8 @@ func extractEtag(reqCtx *fasthttp.RequestCtx) (bool, string) {
 }
 
 func (a *api) onDeleteState(reqCtx *fasthttp.RequestCtx) {
-	ctx, cancel := context.WithCancel(context.Background())
+	// Need a context specific to this request. See: https://github.com/valyala/fasthttp/issues/1350
+	ctx, cancel := context.WithCancel(reqCtx)
 	defer cancel()
 
 	store, storeName, err := a.getStateStoreWithRequestValidation(reqCtx)
@@ -1161,7 +1166,8 @@ func (a *api) onDeleteState(reqCtx *fasthttp.RequestCtx) {
 }
 
 func (a *api) onGetSecret(reqCtx *fasthttp.RequestCtx) {
-	ctx, cancel := context.WithCancel(context.Background())
+	// Need a context specific to this request. See: https://github.com/valyala/fasthttp/issues/1350
+	ctx, cancel := context.WithCancel(reqCtx)
 	defer cancel()
 
 	store, secretStoreName, err := a.getSecretStoreWithRequestValidation(reqCtx)
@@ -1214,7 +1220,8 @@ func (a *api) onGetSecret(reqCtx *fasthttp.RequestCtx) {
 }
 
 func (a *api) onBulkGetSecret(reqCtx *fasthttp.RequestCtx) {
-	ctx, cancel := context.WithCancel(context.Background())
+	// Need a context specific to this request. See: https://github.com/valyala/fasthttp/issues/1350
+	ctx, cancel := context.WithCancel(reqCtx)
 	defer cancel()
 
 	store, secretStoreName, err := a.getSecretStoreWithRequestValidation(reqCtx)
@@ -1284,7 +1291,8 @@ func (a *api) getSecretStoreWithRequestValidation(reqCtx *fasthttp.RequestCtx) (
 }
 
 func (a *api) onPostState(reqCtx *fasthttp.RequestCtx) {
-	ctx, cancel := context.WithCancel(context.Background())
+	// Need a context specific to this request. See: https://github.com/valyala/fasthttp/issues/1350
+	ctx, cancel := context.WithCancel(reqCtx)
 	defer cancel()
 
 	store, storeName, err := a.getStateStoreWithRequestValidation(reqCtx)
@@ -1405,7 +1413,8 @@ func (a *api) getStateStoreName(reqCtx *fasthttp.RequestCtx) string {
 }
 
 func (a *api) onDirectMessage(reqCtx *fasthttp.RequestCtx) {
-	ctx, cancel := context.WithCancel(context.Background())
+	// Need a context specific to this request. See: https://github.com/valyala/fasthttp/issues/1350
+	ctx, cancel := context.WithCancel(reqCtx)
 	defer cancel()
 	targetID := a.findTargetID(reqCtx)
 	if targetID == "" {
@@ -1550,7 +1559,8 @@ func (a *api) findTargetID(reqCtx *fasthttp.RequestCtx) string {
 }
 
 func (a *api) onCreateActorReminder(reqCtx *fasthttp.RequestCtx) {
-	ctx, cancel := context.WithCancel(context.Background())
+	// Need a context specific to this request. See: https://github.com/valyala/fasthttp/issues/1350
+	ctx, cancel := context.WithCancel(reqCtx)
 	defer cancel()
 
 	if a.actor == nil {
@@ -1587,7 +1597,8 @@ func (a *api) onCreateActorReminder(reqCtx *fasthttp.RequestCtx) {
 }
 
 func (a *api) onRenameActorReminder(reqCtx *fasthttp.RequestCtx) {
-	ctx, cancel := context.WithCancel(context.Background())
+	// Need a context specific to this request. See: https://github.com/valyala/fasthttp/issues/1350
+	ctx, cancel := context.WithCancel(reqCtx)
 	defer cancel()
 
 	if a.actor == nil {
@@ -1624,7 +1635,8 @@ func (a *api) onRenameActorReminder(reqCtx *fasthttp.RequestCtx) {
 }
 
 func (a *api) onCreateActorTimer(reqCtx *fasthttp.RequestCtx) {
-	ctx, cancel := context.WithCancel(context.Background())
+	// Need a context specific to this request. See: https://github.com/valyala/fasthttp/issues/1350
+	ctx, cancel := context.WithCancel(reqCtx)
 	defer cancel()
 
 	if a.actor == nil {
@@ -1662,7 +1674,8 @@ func (a *api) onCreateActorTimer(reqCtx *fasthttp.RequestCtx) {
 }
 
 func (a *api) onDeleteActorReminder(reqCtx *fasthttp.RequestCtx) {
-	ctx, cancel := context.WithCancel(context.Background())
+	// Need a context specific to this request. See: https://github.com/valyala/fasthttp/issues/1350
+	ctx, cancel := context.WithCancel(reqCtx)
 	defer cancel()
 
 	if a.actor == nil {
@@ -1693,7 +1706,8 @@ func (a *api) onDeleteActorReminder(reqCtx *fasthttp.RequestCtx) {
 }
 
 func (a *api) onActorStateTransaction(reqCtx *fasthttp.RequestCtx) {
-	ctx, cancel := context.WithCancel(context.Background())
+	// Need a context specific to this request. See: https://github.com/valyala/fasthttp/issues/1350
+	ctx, cancel := context.WithCancel(reqCtx)
 	defer cancel()
 
 	if a.actor == nil {
@@ -1744,7 +1758,8 @@ func (a *api) onActorStateTransaction(reqCtx *fasthttp.RequestCtx) {
 }
 
 func (a *api) onGetActorReminder(reqCtx *fasthttp.RequestCtx) {
-	ctx, cancel := context.WithCancel(context.Background())
+	// Need a context specific to this request. See: https://github.com/valyala/fasthttp/issues/1350
+	ctx, cancel := context.WithCancel(reqCtx)
 	defer cancel()
 
 	if a.actor == nil {
@@ -1781,7 +1796,8 @@ func (a *api) onGetActorReminder(reqCtx *fasthttp.RequestCtx) {
 }
 
 func (a *api) onDeleteActorTimer(reqCtx *fasthttp.RequestCtx) {
-	ctx, cancel := context.WithCancel(context.Background())
+	// Need a context specific to this request. See: https://github.com/valyala/fasthttp/issues/1350
+	ctx, cancel := context.WithCancel(reqCtx)
 	defer cancel()
 
 	if a.actor == nil {
@@ -1811,7 +1827,8 @@ func (a *api) onDeleteActorTimer(reqCtx *fasthttp.RequestCtx) {
 }
 
 func (a *api) onDirectActorMessage(reqCtx *fasthttp.RequestCtx) {
-	ctx, cancel := context.WithCancel(context.Background())
+	// Need a context specific to this request. See: https://github.com/valyala/fasthttp/issues/1350
+	ctx, cancel := context.WithCancel(reqCtx)
 	defer cancel()
 
 	if a.actor == nil {
@@ -1898,7 +1915,8 @@ func (a *api) onDirectActorMessage(reqCtx *fasthttp.RequestCtx) {
 }
 
 func (a *api) onGetActorState(reqCtx *fasthttp.RequestCtx) {
-	ctx, cancel := context.WithCancel(context.Background())
+	// Need a context specific to this request. See: https://github.com/valyala/fasthttp/issues/1350
+	ctx, cancel := context.WithCancel(reqCtx)
 	defer cancel()
 
 	if a.actor == nil {
@@ -1945,7 +1963,8 @@ func (a *api) onGetActorState(reqCtx *fasthttp.RequestCtx) {
 }
 
 func (a *api) onGetMetadata(reqCtx *fasthttp.RequestCtx) {
-	ctx, cancel := context.WithCancel(context.Background())
+	// Need a context specific to this request. See: https://github.com/valyala/fasthttp/issues/1350
+	ctx, cancel := context.WithCancel(reqCtx)
 	defer cancel()
 
 	temp := make(map[string]string)
@@ -2025,7 +2044,8 @@ func (a *api) onShutdown(reqCtx *fasthttp.RequestCtx) {
 }
 
 func (a *api) onPublish(reqCtx *fasthttp.RequestCtx) {
-	ctx, cancel := context.WithCancel(context.Background())
+	// Need a context specific to this request. See: https://github.com/valyala/fasthttp/issues/1350
+	ctx, cancel := context.WithCancel(reqCtx)
 	defer cancel()
 
 	if a.pubsubAdapter == nil {
@@ -2208,7 +2228,8 @@ func getMetadataFromRequest(reqCtx *fasthttp.RequestCtx) map[string]string {
 }
 
 func (a *api) onPostStateTransaction(reqCtx *fasthttp.RequestCtx) {
-	ctx, cancel := context.WithCancel(context.Background())
+	// Need a context specific to this request. See: https://github.com/valyala/fasthttp/issues/1350
+	ctx, cancel := context.WithCancel(reqCtx)
 	defer cancel()
 
 	if a.stateStores == nil || len(a.stateStores) == 0 {
@@ -2357,7 +2378,8 @@ func (a *api) onPostStateTransaction(reqCtx *fasthttp.RequestCtx) {
 }
 
 func (a *api) onQueryState(reqCtx *fasthttp.RequestCtx) {
-	ctx, cancel := context.WithCancel(context.Background())
+	// Need a context specific to this request. See: https://github.com/valyala/fasthttp/issues/1350
+	ctx, cancel := context.WithCancel(reqCtx)
 	defer cancel()
 
 	store, storeName, err := a.getStateStoreWithRequestValidation(reqCtx)
