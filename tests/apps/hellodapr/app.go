@@ -27,9 +27,7 @@ import (
 	"github.com/dapr/dapr/tests/apps/utils"
 )
 
-var (
-	appPort = 3000
-)
+var appPort = 3000
 
 func init() {
 	p := os.Getenv("PORT")
