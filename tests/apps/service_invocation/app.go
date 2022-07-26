@@ -40,11 +40,15 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 )
 
-var httpMethods []string
-
 var (
-	appPort  = 3000
-	daprPort = 3500
+	appPort      = 3000
+	daprHTTPPort = 3500
+	daprGRPCPort = 50001
+
+	httpClient = utils.NewHTTPClient()
+	daprClient runtimev1pb.DaprClient
+
+	httpMethods []string
 )
 
 const (
@@ -54,7 +58,11 @@ const (
 func init() {
 	p := os.Getenv("DAPR_HTTP_PORT")
 	if p != "" && p != "0" {
-		daprPort, _ = strconv.Atoi(p)
+		daprHTTPPort, _ = strconv.Atoi(p)
+	}
+	p = os.Getenv("DAPR_GRPC_PORT")
+	if p != "" && p != "0" {
+		daprGRPCPort, _ = strconv.Atoi(p)
 	}
 	p = os.Getenv("PORT")
 	if p != "" && p != "0" {
@@ -149,17 +157,9 @@ var testMethods = []httpTestMethods{
 	},
 }
 
-var httpClient = utils.NewHTTPClient()
-
-var (
-	grpcConn   *grpc.ClientConn
-	daprClient runtimev1pb.DaprClient
-)
-
 // indexHandler is the handler for root path
 func indexHandler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("indexHandler is called\n")
-	fmt.Print("indexHalder is called 2\n")
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(appResponse{Message: "OK"})
@@ -273,7 +273,7 @@ func invokeServiceWithBody(remoteApp, method string, data []byte) (appResponse, 
 }
 
 func invokeServiceWithBodyHeader(remoteApp, method string, data []byte, headers map[string]string) (*http.Response, error) {
-	url := fmt.Sprintf("http://localhost:%s/v1.0/invoke/%s/method/%s", strconv.Itoa(daprPort), remoteApp, method)
+	url := fmt.Sprintf("http://localhost:%s/v1.0/invoke/%s/method/%s", strconv.Itoa(daprHTTPPort), remoteApp, method)
 	fmt.Printf("invoke url is %s\n", url)
 
 	var t io.Reader
@@ -292,7 +292,7 @@ func invokeServiceWithBodyHeader(remoteApp, method string, data []byte, headers 
 }
 
 func invokeServiceWithDaprAppIDHeader(remoteApp, method string, data []byte, headers map[string]string) (*http.Response, error) {
-	url := fmt.Sprintf("http://localhost:%s/%s", strconv.Itoa(daprPort), method)
+	url := fmt.Sprintf("http://localhost:%s/%s", strconv.Itoa(daprHTTPPort), method)
 	fmt.Printf("invoke url is %s\n", url)
 
 	var t io.Reader
@@ -411,20 +411,20 @@ func requestHTTPToHTTP(w http.ResponseWriter, r *http.Request, send func(remoteA
 		return
 	}
 
-	fmt.Printf("httpTohttpTest - target app: %s\n", commandBody.RemoteApp)
+	log.Printf("httpTohttpTest - target app: %s\n", commandBody.RemoteApp)
 
-	daprAddress := fmt.Sprintf("localhost:%d", daprPort)
+	daprAddress := fmt.Sprintf("localhost:%d", daprHTTPPort)
 
-	fmt.Printf("dapr address is %s\n", daprAddress)
+	log.Printf("dapr address is %s\n", daprAddress)
 	testMessage := guuid.New().String()
 	b, err := json.Marshal(testMessage)
 	if err != nil {
-		fmt.Printf("marshal had error %s\n", err)
+		log.Printf("marshal had error %s\n", err)
 		onSerializationFailed(w, err)
 		return
 	}
 
-	fmt.Printf("httpTohttpTest calling with message %s\n", string(b))
+	log.Printf("httpTohttpTest calling with message %s\n", string(b))
 	headers := map[string]string{
 		"DaprTest-Request-1": "DaprValue1",
 		"DaprTest-Request-2": "DaprValue2",
@@ -437,7 +437,7 @@ func requestHTTPToHTTP(w http.ResponseWriter, r *http.Request, send func(remoteA
 
 	resp, err := send(commandBody.RemoteApp, "retrieve_request_object", b, headers)
 	if err != nil {
-		fmt.Printf("response had error %s\n", err)
+		log.Printf("response had error %s\n", err)
 		onHTTPCallFailed(w, 0, err)
 		return
 	}
@@ -466,26 +466,26 @@ func requestHTTPToHTTP(w http.ResponseWriter, r *http.Request, send func(remoteA
 		return
 	}
 
-	fmt.Printf("response was %s\n", respBody)
+	log.Printf("response was %s\n", respBody)
 
 	logAndSetResponse(w, http.StatusOK, string(respBody))
 }
 
 // testDaprIDRequestHTTPToHTTP calls from http caller to http callee without requiring the caller to use Dapr style URL.
 func testDaprIDRequestHTTPToHTTP(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("Enter service invocation with dapr-app-id header and shorter URL - http -> http")
+	log.Println("Enter service invocation with dapr-app-id header and shorter URL - http -> http")
 	requestHTTPToHTTP(w, r, invokeServiceWithDaprAppIDHeader)
 }
 
 // testV1RequestHTTPToHTTP calls from http caller to http callee
 func testV1RequestHTTPToHTTP(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("Enter service invocation v1 - http -> http")
+	log.Println("Enter service invocation v1 - http -> http")
 	requestHTTPToHTTP(w, r, invokeServiceWithBodyHeader)
 }
 
 // testV1RequestHTTPToGRPC calls from http caller to grpc callee
 func testV1RequestHTTPToGRPC(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("Enter service invocation v1 - http -> grpc")
+	log.Println("Enter service invocation v1 - http -> grpc")
 	var commandBody testCommandRequest
 	err := json.NewDecoder(r.Body).Decode(&commandBody)
 	if err != nil {
@@ -493,20 +493,20 @@ func testV1RequestHTTPToGRPC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("httpTogrpcTest - target app: %s\n", commandBody.RemoteApp)
+	log.Printf("httpTogrpcTest - target app: %s\n", commandBody.RemoteApp)
 
-	daprAddress := fmt.Sprintf("localhost:%d", daprPort)
+	daprAddress := fmt.Sprintf("localhost:%d", daprHTTPPort)
 
-	fmt.Printf("dapr address is %s\n", daprAddress)
+	log.Printf("dapr address is %s\n", daprAddress)
 	testMessage := guuid.New().String()
 	b, err := json.Marshal(testMessage)
 	if err != nil {
-		fmt.Printf("marshal had error %s\n", err)
+		log.Printf("marshal had error %s\n", err)
 		onSerializationFailed(w, err)
 		return
 	}
 
-	fmt.Printf("httpTogrpcTest calling with message %s\n", string(b))
+	log.Printf("httpTogrpcTest calling with message %s\n", string(b))
 	headers := map[string]string{
 		"DaprTest-Request-1": "DaprValue1",
 		"DaprTest-Request-2": "DaprValue2",
@@ -523,7 +523,7 @@ func testV1RequestHTTPToGRPC(w http.ResponseWriter, r *http.Request) {
 		headers,
 	)
 	if err != nil {
-		fmt.Printf("response had error %s\n", err)
+		log.Printf("response had error %s\n", err)
 		onHTTPCallFailed(w, 0, err)
 		return
 	}
@@ -552,14 +552,14 @@ func testV1RequestHTTPToGRPC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("response was %s\n", respBody)
+	log.Printf("response was %s\n", respBody)
 
 	logAndSetResponse(w, http.StatusOK, string(respBody))
 }
 
 // testV1RequestGRPCToGRPC calls from http caller to grpc callee
 func testV1RequestGRPCToGRPC(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("Enter service invocation v1 - grpc -> grpc")
+	log.Println("Enter service invocation v1 - grpc -> grpc")
 	var commandBody testCommandRequest
 	err := json.NewDecoder(r.Body).Decode(&commandBody)
 	if err != nil {
@@ -567,7 +567,7 @@ func testV1RequestGRPCToGRPC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("gRPCTogRPCTest - target app: %s\n", commandBody.RemoteApp)
+	log.Printf("gRPCTogRPCTest - target app: %s\n", commandBody.RemoteApp)
 
 	// Create the client
 	tracing, _ := strconv.ParseBool(commandBody.RemoteAppTracing)
@@ -603,7 +603,7 @@ func testV1RequestGRPCToGRPC(w http.ResponseWriter, r *http.Request) {
 		grpc.Trailer(&trailer), // will retrieve trailer
 	)
 	if err != nil {
-		fmt.Printf("response had error %s\n", err)
+		log.Printf("response had error %s\n", err)
 		onHTTPCallFailed(w, 0, err)
 		return
 	}
@@ -644,14 +644,14 @@ func testV1RequestGRPCToGRPC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("response was %s\n", respBody)
+	log.Printf("response was %s\n", respBody)
 
 	logAndSetResponse(w, http.StatusOK, string(respBody))
 }
 
 // testV1RequestGRPCToHTTP calls from grpc caller to http callee
 func testV1RequestGRPCToHTTP(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("Enter service invocation v1 - grpc -> http")
+	log.Println("Enter service invocation v1 - grpc -> http")
 	var commandBody testCommandRequest
 	err := json.NewDecoder(r.Body).Decode(&commandBody)
 	if err != nil {
@@ -659,7 +659,7 @@ func testV1RequestGRPCToHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("grpcToHTTPTest - target app: %s\n", commandBody.RemoteApp)
+	log.Printf("grpcToHTTPTest - target app: %s\n", commandBody.RemoteApp)
 
 	tracing, _ := strconv.ParseBool(commandBody.RemoteAppTracing)
 	var ctx context.Context
@@ -696,7 +696,7 @@ func testV1RequestGRPCToHTTP(w http.ResponseWriter, r *http.Request) {
 		grpc.Header(&header), // will retrieve header
 	)
 	if err != nil {
-		fmt.Printf("response had error %s\n", err)
+		log.Printf("response had error %s\n", err)
 		onHTTPCallFailed(w, 0, err)
 		return
 	}
@@ -729,7 +729,7 @@ func testV1RequestGRPCToHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("response was %s\n", respBody)
+	log.Printf("response was %s\n", respBody)
 
 	logAndSetResponse(w, http.StatusOK, string(respBody))
 }
@@ -737,7 +737,7 @@ func testV1RequestGRPCToHTTP(w http.ResponseWriter, r *http.Request) {
 // Performs calls from grpc client to grpc server.  It sends a random string to the other app
 // and expects the response to contain the same string inside an appResponse.
 func grpcToGrpcTest(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("Enter grpcToGrpcTest")
+	log.Println("Enter grpcToGrpcTest")
 	var commandBody testCommandRequest
 	err := json.NewDecoder(r.Body).Decode(&commandBody)
 	if err != nil {
@@ -745,17 +745,17 @@ func grpcToGrpcTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("%s - target app: %s\n", commandBody.Method, commandBody.RemoteApp)
+	log.Printf("%s - target app: %s\n", commandBody.Method, commandBody.RemoteApp)
 
 	testMessage := guuid.New().String()
 	b, err := json.Marshal(testMessage)
 	if err != nil {
-		fmt.Printf("marshal had error %s\n", err)
+		log.Printf("marshal had error %s\n", err)
 		onSerializationFailed(w, err)
 		return
 	}
 
-	fmt.Printf("%s calling with message %s\n", commandBody.Method, string(b))
+	log.Printf("%s calling with message %s\n", commandBody.Method, string(b))
 
 	req := constructRequest(commandBody.RemoteApp, commandBody.Method, "", b)
 	resp, err := daprClient.InvokeService(r.Context(), req)
@@ -765,7 +765,7 @@ func grpcToGrpcTest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	body := resp.Data.GetValue()
-	fmt.Printf("resp was %s\n", string(body))
+	log.Printf("resp was %s\n", string(body))
 
 	var responseMessage appResponse
 	err = json.Unmarshal(body, &responseMessage)
@@ -792,7 +792,7 @@ func grpcToGrpcTest(w http.ResponseWriter, r *http.Request) {
 // Performs calls from http client to grpc server.  It sends a random string to the other app
 // and expects the response to contain the same string inside an appResponse.
 func httpToGrpcTest(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("Enter httpToGrpcTest")
+	log.Println("Enter httpToGrpcTest")
 	var commandBody testCommandRequest
 	err := json.NewDecoder(r.Body).Decode(&commandBody)
 	if err != nil {
@@ -800,28 +800,28 @@ func httpToGrpcTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("httpToGrpcTest - target app: %s\n", commandBody.RemoteApp)
+	log.Printf("httpToGrpcTest - target app: %s\n", commandBody.RemoteApp)
 
-	daprAddress := fmt.Sprintf("localhost:%d", daprPort)
+	daprAddress := fmt.Sprintf("localhost:%d", daprHTTPPort)
 
-	fmt.Printf("dapr address is %s\n", daprAddress)
+	log.Printf("dapr address is %s\n", daprAddress)
 	testMessage := guuid.New().String()
 	b, err := json.Marshal(testMessage)
 	if err != nil {
-		fmt.Printf("marshal had error %s\n", err)
+		log.Printf("marshal had error %s\n", err)
 		onSerializationFailed(w, err)
 		return
 	}
 
-	fmt.Printf("httpToGrpcTest calling with message %s\n", string(b))
+	log.Printf("httpToGrpcTest calling with message %s\n", string(b))
 	resp, statusCode, err := invokeServiceWithBody(commandBody.RemoteApp, "httpToGrpcTest", b)
 	if err != nil {
-		fmt.Printf("response had error %s\n", err)
+		log.Printf("response had error %s\n", err)
 		onHTTPCallFailed(w, statusCode, err)
 		return
 	}
 
-	fmt.Printf("response was %s\n", resp.Message)
+	log.Printf("response was %s\n", resp.Message)
 
 	logAndSetResponse(w, http.StatusOK, "success")
 }
@@ -830,7 +830,7 @@ func httpToGrpcTest(w http.ResponseWriter, r *http.Request) {
 // and expects the response to contain the same string inside an appResponse.
 // It calls methods with all 4 http methods (verbs)
 func httpTohttpTest(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("Enter httpTohttpTest")
+	log.Println("Enter httpTohttpTest")
 	defer r.Body.Close()
 	var commandBody testCommandRequest
 	err := json.NewDecoder(r.Body).Decode(&commandBody)
@@ -839,14 +839,14 @@ func httpTohttpTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("httpTohttpTest - target app: %s\n", commandBody.RemoteApp)
+	log.Printf("httpTohttpTest - target app: %s\n", commandBody.RemoteApp)
 
-	daprAddress := fmt.Sprintf("localhost:%d", daprPort)
+	daprAddress := fmt.Sprintf("localhost:%d", daprHTTPPort)
 
-	fmt.Printf("dapr address is %s\n", daprAddress)
+	log.Printf("dapr address is %s\n", daprAddress)
 	testMessage := guuid.New().String()
 
-	fmt.Printf("httpTohttpTest calling with message %s\n", testMessage)
+	log.Printf("httpTohttpTest calling with message %s\n", testMessage)
 
 	for _, test := range testMethods {
 		testMessage := "ok"
@@ -855,16 +855,16 @@ func httpTohttpTest(w http.ResponseWriter, r *http.Request) {
 		}
 		url := fmt.Sprintf(
 			"http://localhost:%s/v1.0/invoke/%s/method/%s",
-			strconv.Itoa(daprPort), commandBody.RemoteApp,
+			strconv.Itoa(daprHTTPPort), commandBody.RemoteApp,
 			test.Callback)
-		fmt.Printf("%s invoke url is %s\n", test.Verb, url)
+		log.Printf("%s invoke url is %s\n", test.Verb, url)
 		var b []byte
 
 		if test.SendBody {
 			var err error
 			b, err = json.Marshal(testMessage)
 			if err != nil {
-				fmt.Printf("marshal had error %s\n", err)
+				log.Printf("marshal had error %s\n", err)
 				onSerializationFailed(w, err)
 				return
 			}
@@ -872,7 +872,7 @@ func httpTohttpTest(w http.ResponseWriter, r *http.Request) {
 
 		resp, err := httpWrapper(test.Verb, url, b)
 		if err != nil {
-			fmt.Printf("response had error %s\n", err)
+			log.Printf("response had error %s\n", err)
 			onHTTPCallFailed(w, 0, err)
 			return
 		}
@@ -887,7 +887,7 @@ func httpTohttpTest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		fmt.Printf("httpTohttpTest - %s test successful\n", test.Verb)
+		log.Printf("httpTohttpTest - %s test successful\n", test.Verb)
 	}
 
 	logAndSetResponse(w, http.StatusOK, "success")
@@ -1028,7 +1028,7 @@ func badServiceCallTestHTTP(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Printf("badServiceCallTestHTTP - target app: %s\n", commandBody.RemoteApp)
 
-	daprAddress := fmt.Sprintf("localhost:%s", strconv.Itoa(daprPort))
+	daprAddress := fmt.Sprintf("localhost:%s", strconv.Itoa(daprHTTPPort))
 
 	fmt.Printf("dapr address is %s\n", daprAddress)
 	var testMessage struct {
@@ -1041,8 +1041,10 @@ func badServiceCallTestHTTP(w http.ResponseWriter, r *http.Request) {
 	// post
 	url := fmt.Sprintf(
 		"http://localhost:%s/v1.0/invoke/%s/method/%s",
-		strconv.Itoa(daprPort), commandBody.RemoteApp,
-		commandBody.Method)
+		strconv.Itoa(daprHTTPPort),
+		commandBody.RemoteApp,
+		commandBody.Method,
+	)
 	fmt.Printf("%s invoke url is %s\n", commandBody.Method, url)
 	b, err := json.Marshal(testMessage)
 	if err != nil {
@@ -1173,7 +1175,7 @@ func largeDataErrorServiceCall(w http.ResponseWriter, r *http.Request, isHTTP bo
 	// post
 	url := fmt.Sprintf(
 		"http://localhost:%s/v1.0/invoke/serviceinvocation-callee-0/method/posthandler",
-		strconv.Itoa(daprPort))
+		strconv.Itoa(daprHTTPPort))
 
 	testSizes := []struct {
 		size int
@@ -1230,7 +1232,7 @@ func testPathHTTPCall(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	initGRPCClient()
+	daprClient = utils.GetGRPCClient(daprGRPCPort)
 
 	httpMethods = []string{"POST", "GET", "PUT", "DELETE"}
 
@@ -1263,11 +1265,11 @@ func onHTTPCallFailed(w http.ResponseWriter, statusCode int, err error) {
 }
 
 func logAndSetResponse(w http.ResponseWriter, statusCode int, message string) {
-	fmt.Println(message)
+	log.Println(message)
 
 	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(
-		appResponse{Message: message})
+	json.NewEncoder(w).
+		Encode(appResponse{Message: message})
 }
 
 //--- The functions below are copied from utils/helpers.go to workaround the package include in a container problem.
@@ -1278,27 +1280,4 @@ func sanitizeHTTPURL(url string) string {
 	}
 
 	return url
-}
-
-func initGRPCClient() {
-	daprPort, _ := os.LookupEnv("DAPR_GRPC_PORT")
-	url := fmt.Sprintf("localhost:%s", daprPort)
-	log.Printf("Connecting to dapr using url %s", url)
-	for retries := 10; retries > 0; retries-- {
-		var err error
-		grpcConn, err = grpc.Dial(url, grpc.WithInsecure())
-		if err == nil {
-			break
-		}
-
-		if retries == 0 {
-			log.Printf("Could not connect to dapr: %v", err)
-			log.Panic(err)
-		}
-
-		log.Printf("Could not connect to dapr: %v, retrying...", err)
-		time.Sleep(5 * time.Second)
-	}
-
-	daprClient = runtimev1pb.NewDaprClient(grpcConn)
 }

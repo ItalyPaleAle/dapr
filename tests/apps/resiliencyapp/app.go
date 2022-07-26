@@ -40,6 +40,10 @@ var (
 	appPort      = 3000
 	daprHttpPort = 3500
 	daprGrpcPort = 50001
+
+	daprClient   runtimev1pb.DaprClient
+	callTracking map[string][]CallRecord
+	httpClient   = utils.NewHTTPClient()
 )
 
 func init() {
@@ -73,13 +77,6 @@ type PubsubResponse struct {
 	Status  string `json:"status,omitempty"`
 	Message string `json:"message,omitempty"`
 }
-
-var (
-	daprClient   runtimev1pb.DaprClient
-	callTracking map[string][]CallRecord
-)
-
-var httpClient = utils.NewHTTPClient()
 
 // Endpoint handling.
 func indexHandler(w http.ResponseWriter, r *http.Request) {
@@ -279,30 +276,6 @@ func resiliencyActorMethodHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// App startup/endpoint setup.
-func initGRPCClient() {
-	url := fmt.Sprintf("localhost:%d", daprGrpcPort)
-	log.Printf("Connecting to dapr using url %s", url)
-	var grpcConn *grpc.ClientConn
-	for retries := 10; retries > 0; retries-- {
-		var err error
-		grpcConn, err = grpc.Dial(url, grpc.WithInsecure())
-		if err == nil {
-			break
-		}
-
-		if retries == 0 {
-			log.Printf("Could not connect to dapr: %v", err)
-			log.Panic(err)
-		}
-
-		log.Printf("Could not connect to dapr: %v, retrying...", err)
-		time.Sleep(5 * time.Second)
-	}
-
-	daprClient = runtimev1pb.NewDaprClient(grpcConn)
-}
-
 func appRouter() *mux.Router {
 	router := mux.NewRouter().StrictSlash(true)
 
@@ -339,7 +312,7 @@ func appRouter() *mux.Router {
 
 func main() {
 	callTracking = map[string][]CallRecord{}
-	initGRPCClient()
+	daprClient = utils.GetGRPCClient(daprGrpcPort)
 
 	log.Printf("Resiliency App - listening on http://localhost:%d", appPort)
 	utils.StartServer(appPort, appRouter, true)
