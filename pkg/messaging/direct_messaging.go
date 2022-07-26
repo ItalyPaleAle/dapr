@@ -41,6 +41,7 @@ import (
 	"github.com/dapr/dapr/utils"
 
 	invokev1 "github.com/dapr/dapr/pkg/messaging/v1"
+	commonv1pb "github.com/dapr/dapr/pkg/proto/common/v1"
 	internalv1pb "github.com/dapr/dapr/pkg/proto/internals/v1"
 )
 
@@ -308,7 +309,7 @@ func (d *directMessaging) invokeRemote(ctx context.Context, appID, namespace, ap
 		}
 
 		proto = &internalv1pb.InternalInvokeRequestStream{
-			Payload: &internalv1pb.StreamPayload{},
+			Payload: &commonv1pb.StreamPayload{},
 		}
 
 		// First message only
@@ -406,7 +407,7 @@ func (d *directMessaging) invokeRemote(ctx context.Context, appID, namespace, ap
 
 // Interface for *internalv1pb.InternalInvokeResponseStream and *internalv1pb.InternalInvokeRequestStream
 type chunkWithPayload interface {
-	GetPayload() *internalv1pb.StreamPayload
+	GetPayload() *commonv1pb.StreamPayload
 }
 
 // ReadChunk reads a chunk of data from an InternalInvokeResponseStream or InternalInvokeRequestStream object

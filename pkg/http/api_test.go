@@ -512,14 +512,16 @@ func TestV1DirectMessagingEndpoints(t *testing.T) {
 
 		fdmr := fakeDirectMessageResponse()
 		defer fdmr.Close()
-		mockDirectMessaging.On("Invoke",
+		mockDirectMessaging.On(
+			"Invoke",
 			mock.MatchedBy(func(a context.Context) bool {
 				return true
 			}), mock.MatchedBy(func(b string) bool {
 				return b == "fakeAppID"
 			}), mock.MatchedBy(func(c *invokev1.InvokeMethodRequest) bool {
 				return true
-			})).Return(fdmr, nil).Once()
+			}),
+		).Return(fdmr, nil).Once()
 
 		// act
 		resp := fakeServer.DoRequest("POST", apiPath, fakeData, nil)
@@ -538,14 +540,16 @@ func TestV1DirectMessagingEndpoints(t *testing.T) {
 
 		fdmr := fakeDirectMessageResponse()
 		defer fdmr.Close()
-		mockDirectMessaging.On("Invoke",
+		mockDirectMessaging.On(
+			"Invoke",
 			mock.MatchedBy(func(a context.Context) bool {
 				return true
 			}), mock.MatchedBy(func(b string) bool {
 				return b == "fakeAppID"
 			}), mock.MatchedBy(func(c *invokev1.InvokeMethodRequest) bool {
 				return true
-			})).Return(fdmr, nil).Once()
+			}),
+		).Return(fdmr, nil).Once()
 
 		// act
 		resp := fakeServer.DoRequest("POST", apiPath, fakeData, nil, "dapr-app-id", "fakeAppID")
@@ -564,14 +568,16 @@ func TestV1DirectMessagingEndpoints(t *testing.T) {
 
 		fdmr := fakeDirectMessageResponse()
 		defer fdmr.Close()
-		mockDirectMessaging.On("Invoke",
+		mockDirectMessaging.On(
+			"Invoke",
 			mock.MatchedBy(func(a context.Context) bool {
 				return true
 			}), mock.MatchedBy(func(b string) bool {
 				return b == "fakeAppID"
 			}), mock.MatchedBy(func(c *invokev1.InvokeMethodRequest) bool {
 				return true
-			})).Return(fdmr, nil).Once()
+			}),
+		).Return(fdmr, nil).Once()
 
 		// act
 		resp := fakeServer.doRequest("dapr-app-id:fakeAppID", "POST", apiPath, fakeData, nil)
@@ -601,9 +607,14 @@ func TestV1DirectMessagingEndpoints(t *testing.T) {
 
 		mockDirectMessaging.On(
 			"Invoke",
-			mock.AnythingOfType("*fasthttp.RequestCtx"),
-			"fakeAppID",
-			mock.AnythingOfType("*v1.InvokeMethodRequest")).Return(fakeInternalErrorResponse, nil).Once()
+			mock.MatchedBy(func(a context.Context) bool {
+				return true
+			}), mock.MatchedBy(func(b string) bool {
+				return b == "fakeAppID"
+			}), mock.MatchedBy(func(c *invokev1.InvokeMethodRequest) bool {
+				return true
+			}),
+		).Return(fakeInternalErrorResponse, nil).Once()
 
 		// act
 		resp := fakeServer.DoRequest("POST", apiPath, fakeData, nil)
@@ -635,9 +646,14 @@ func TestV1DirectMessagingEndpoints(t *testing.T) {
 
 		mockDirectMessaging.On(
 			"Invoke",
-			mock.AnythingOfType("*fasthttp.RequestCtx"),
-			"fakeAppID",
-			mock.AnythingOfType("*v1.InvokeMethodRequest")).Return(fakeInternalErrorResponse, nil).Once()
+			mock.MatchedBy(func(a context.Context) bool {
+				return true
+			}), mock.MatchedBy(func(b string) bool {
+				return b == "fakeAppID"
+			}), mock.MatchedBy(func(c *invokev1.InvokeMethodRequest) bool {
+				return true
+			}),
+		).Return(fakeInternalErrorResponse, nil).Once()
 
 		// act
 		resp := fakeServer.DoRequest("POST", apiPath, fakeData, nil)
@@ -656,14 +672,16 @@ func TestV1DirectMessagingEndpoints(t *testing.T) {
 
 		fdmr := fakeDirectMessageResponse()
 		defer fdmr.Close()
-		mockDirectMessaging.On("Invoke",
+		mockDirectMessaging.On(
+			"Invoke",
 			mock.MatchedBy(func(a context.Context) bool {
 				return true
 			}), mock.MatchedBy(func(b string) bool {
 				return b == "fakeAppID"
 			}), mock.MatchedBy(func(c *invokev1.InvokeMethodRequest) bool {
 				return true
-			})).Return(fdmr, nil).Once()
+			}),
+		).Return(fdmr, nil).Once()
 
 		// act
 		resp := fakeServer.DoRequest("POST", apiPath, fakeData, nil)
@@ -681,14 +699,16 @@ func TestV1DirectMessagingEndpoints(t *testing.T) {
 
 		fdmr := fakeDirectMessageResponse()
 		defer fdmr.Close()
-		mockDirectMessaging.On("Invoke",
+		mockDirectMessaging.On(
+			"Invoke",
 			mock.MatchedBy(func(a context.Context) bool {
 				return true
 			}), mock.MatchedBy(func(b string) bool {
 				return b == "fakeAppID"
 			}), mock.MatchedBy(func(c *invokev1.InvokeMethodRequest) bool {
 				return true
-			})).Return(fdmr, nil).Once()
+			}),
+		).Return(fdmr, nil).Once()
 
 		// act
 		resp := fakeServer.DoRequest("HEAD", apiPath, nil, nil)
@@ -706,14 +726,16 @@ func TestV1DirectMessagingEndpoints(t *testing.T) {
 
 		fdmr := fakeDirectMessageResponse()
 		defer fdmr.Close()
-		mockDirectMessaging.On("Invoke",
+		mockDirectMessaging.On(
+			"Invoke",
 			mock.MatchedBy(func(a context.Context) bool {
 				return true
 			}), mock.MatchedBy(func(b string) bool {
 				return b == "fakeAppID"
 			}), mock.MatchedBy(func(c *invokev1.InvokeMethodRequest) bool {
 				return true
-			})).Return(fdmr, nil).Once()
+			}),
+		).Return(fdmr, nil).Once()
 
 		// act
 		resp := fakeServer.DoRequest("GET", apiPath, nil, nil)
@@ -730,14 +752,16 @@ func TestV1DirectMessagingEndpoints(t *testing.T) {
 
 		mockDirectMessaging.Calls = nil // reset call count
 
-		mockDirectMessaging.On("Invoke",
+		mockDirectMessaging.On(
+			"Invoke",
 			mock.MatchedBy(func(a context.Context) bool {
 				return true
 			}), mock.MatchedBy(func(b string) bool {
 				return b == "fakeAppID"
 			}), mock.MatchedBy(func(c *invokev1.InvokeMethodRequest) bool {
 				return true
-			})).Return(nil, errors.New("UPSTREAM_ERROR")).Once()
+			}),
+		).Return(nil, errors.New("UPSTREAM_ERROR")).Once()
 
 		// act
 		resp := fakeServer.DoRequest("POST", apiPath, fakeData, nil)

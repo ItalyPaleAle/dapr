@@ -439,7 +439,7 @@ func (a *api) CallLocalStream(stream internalv1pb.ServiceInvocation_CallLocalStr
 		}
 
 		proto = &internalv1pb.InternalInvokeResponseStream{
-			Payload: &internalv1pb.StreamPayload{},
+			Payload: &commonv1pb.StreamPayload{},
 		}
 
 		// First message only
