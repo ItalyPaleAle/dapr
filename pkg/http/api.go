@@ -1414,12 +1414,14 @@ func (a *api) getStateStoreName(reqCtx *fasthttp.RequestCtx) string {
 
 func (a *api) onDirectMessage(reqCtx *fasthttp.RequestCtx) {
 	// Need a context specific to this request. See: https://github.com/valyala/fasthttp/issues/1350
+	// Because this responds with `withStream()`, we can't defer a call to cancel() here
 	ctx, cancel := context.WithCancel(reqCtx)
-	defer cancel()
+
 	targetID := a.findTargetID(reqCtx)
 	if targetID == "" {
 		msg := NewErrorResponse("ERR_DIRECT_INVOKE", messages.ErrDirectInvokeNoAppID)
 		respond(reqCtx, withError(fasthttp.StatusNotFound, msg))
+		cancel()
 		return
 	}
 
@@ -1429,6 +1431,7 @@ func (a *api) onDirectMessage(reqCtx *fasthttp.RequestCtx) {
 	if a.directMessaging == nil {
 		msg := NewErrorResponse("ERR_DIRECT_INVOKE", messages.ErrDirectInvokeNotReady)
 		respond(reqCtx, withError(fasthttp.StatusInternalServerError, msg))
+		cancel()
 		return
 	}
 
@@ -1517,19 +1520,20 @@ func (a *api) onDirectMessage(reqCtx *fasthttp.RequestCtx) {
 	// Special case for timeouts/circuit breakers since they won't go through the rest of the logic.
 	if errors.Is(err, context.DeadlineExceeded) || breaker.IsErrorPermanent(err) {
 		respond(reqCtx, withError(500, NewErrorResponse("ERR_DIRECT_INVOKE", err.Error())))
+		cancel()
 		return
 	}
 
 	if errorOccurred {
 		respond(reqCtx, withError(statusCode, msg))
+		cancel()
 		return
 	}
 
-	// This will also close the response stream automatically
-	respond(reqCtx, withStream(statusCode, r))
-	if resp != nil {
-		resp.Close()
-	}
+	// This will also close the response stream automatically; no need to invoke resp.Close()
+	respond(reqCtx, withStream(statusCode, r, func() {
+		cancel()
+	}))
 }
 
 // findTargetID tries to find ID of the target service from the following three places:
@@ -1828,13 +1832,14 @@ func (a *api) onDeleteActorTimer(reqCtx *fasthttp.RequestCtx) {
 
 func (a *api) onDirectActorMessage(reqCtx *fasthttp.RequestCtx) {
 	// Need a context specific to this request. See: https://github.com/valyala/fasthttp/issues/1350
+	// Because this responds with `withStream()`, we can't defer a call to cancel() here
 	ctx, cancel := context.WithCancel(reqCtx)
-	defer cancel()
 
 	if a.actor == nil {
 		msg := NewErrorResponse("ERR_ACTOR_RUNTIME_NOT_FOUND", messages.ErrActorRuntimeNotFound)
 		respond(reqCtx, withError(fasthttp.StatusInternalServerError, msg))
 		log.Debug(msg)
+		cancel()
 		return
 	}
 
@@ -1898,6 +1903,7 @@ func (a *api) onDirectActorMessage(reqCtx *fasthttp.RequestCtx) {
 		if resp != nil {
 			resp.Close()
 		}
+		cancel()
 		return
 	}
 
@@ -1911,7 +1917,9 @@ func (a *api) onDirectActorMessage(reqCtx *fasthttp.RequestCtx) {
 	}
 
 	// This will also close the response stream automatically; no need to invoke resp.Close()
-	respond(reqCtx, withStream(statusCode, resp.RawData()))
+	respond(reqCtx, withStream(statusCode, resp.RawData(), func() {
+		cancel()
+	}))
 }
 
 func (a *api) onGetActorState(reqCtx *fasthttp.RequestCtx) {
