@@ -44,6 +44,7 @@ import (
 	"github.com/dapr/dapr/pkg/actors"
 	components_v1alpha "github.com/dapr/dapr/pkg/apis/components/v1alpha1"
 	"github.com/dapr/dapr/pkg/channel"
+	secretstores_loader "github.com/dapr/dapr/pkg/components/secretstores"
 	state_loader "github.com/dapr/dapr/pkg/components/state"
 	"github.com/dapr/dapr/pkg/concurrency"
 	"github.com/dapr/dapr/pkg/config"
@@ -1447,6 +1448,9 @@ func (a *api) InvokeActor(ctx context.Context, in *runtimev1pb.InvokeActorReques
 }
 
 func (a *api) isSecretAllowed(storeName, key string) bool {
+	if secretstores_loader.IsSecretStorePrivate(storeName) {
+		return false
+	}
 	if config, ok := a.secretsConfiguration[storeName]; ok {
 		return config.IsSecretAllowed(key)
 	}
