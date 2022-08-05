@@ -44,6 +44,9 @@ service AppCallback {
   // User application can save the states or send the events to the output
   // bindings optionally by returning BindingEventResponse.
   rpc OnBindingEvent(BindingEventRequest) returns (BindingEventResponse) {}
+
+  // Health check.
+  rpc HealthCheck(google.protobuf.Empty) returns (HealthCheckResponse) {}
 }
 
 // TopicEventRequest message is compatible with CloudEvent spec v1.0
@@ -151,3 +154,7 @@ message ListInputBindingsResponse {
   // The list of input bindings.
   repeated string bindings = 1;
 }
+
+// HealthCheckResponse is the message with the response to the health check.
+// This message is currently empty as used as placeholder.
+message HealthCheckResponse {}

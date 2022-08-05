@@ -104,16 +104,16 @@ const (
 type ComponentCategory string
 
 const (
-	bindingsComponent               ComponentCategory = "bindings"
-	pubsubComponent                 ComponentCategory = "pubsub"
-	secretStoreComponent            ComponentCategory = "secretstores"
-	stateComponent                  ComponentCategory = "state"
-	middlewareComponent             ComponentCategory = "middleware"
-	configurationComponent          ComponentCategory = "configuration"
-	lockComponent                   ComponentCategory = "lock"
-	defaultComponentInitTimeout                       = time.Second * 5
-	defaultGracefulShutdownDuration                   = time.Second * 5
-	kubernetesSecretStore                             = "kubernetes"
+	bindingsComponent      ComponentCategory = "bindings"
+	pubsubComponent        ComponentCategory = "pubsub"
+	secretStoreComponent   ComponentCategory = "secretstores"
+	stateComponent         ComponentCategory = "state"
+	middlewareComponent    ComponentCategory = "middleware"
+	configurationComponent ComponentCategory = "configuration"
+	lockComponent          ComponentCategory = "lock"
+
+	defaultComponentInitTimeout = time.Second * 5
+	kubernetesSecretStore       = "kubernetes"
 )
 
 var componentCategoriesNeedProcess = []ComponentCategory{
