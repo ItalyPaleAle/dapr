@@ -11,14 +11,15 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package health
+package apphealth
 
 import (
 	"context"
 	"time"
 
-	"github.com/dapr/kit/logger"
 	"go.uber.org/atomic"
+
+	"github.com/dapr/kit/logger"
 )
 
 const (
@@ -30,22 +31,22 @@ var log = logger.NewLogger("dapr.apphealth")
 
 // AppHealth manages the health checks for the app.
 type AppHealth struct {
-	config       *AppHealthConfig
-	probeFn      AppHealthProbeFunction
-	changeCb     AppHealthChangeCallback
+	config       *ProbeConfig
+	probeFn      ProbeFunction
+	changeCb     ChangeCallback
 	report       chan uint8
 	failureCount *atomic.Int32
 	lastReport   *atomic.Int64
 }
 
-// AppHealthProbeFunction is the signature of the function that performs health probes.
-type AppHealthProbeFunction func(context.Context) (bool, error)
+// ProbeFunction is the signature of the function that performs health probes.
+type ProbeFunction func(context.Context) (bool, error)
 
-// AppHealthChangeCallback is the signature of the callback that is invoked when the app's health status changes.
-type AppHealthChangeCallback func(status uint8)
+// ChangeCallback is the signature of the callback that is invoked when the app's health status changes.
+type ChangeCallback func(status uint8)
 
 // NewAppHealth creates a new AppHealth object.
-func NewAppHealth(config *AppHealthConfig, probeFn AppHealthProbeFunction) *AppHealth {
+func NewAppHealth(config *ProbeConfig, probeFn ProbeFunction) *AppHealth {
 	return &AppHealth{
 		config:       config,
 		probeFn:      probeFn,
@@ -56,7 +57,7 @@ func NewAppHealth(config *AppHealthConfig, probeFn AppHealthProbeFunction) *AppH
 }
 
 // OnHealthChange sets the callback that is invoked when the health of the app changes (app becomes either healthy or unhealthy).
-func (h *AppHealth) OnHealthChange(cb AppHealthChangeCallback) {
+func (h *AppHealth) OnHealthChange(cb ChangeCallback) {
 	h.changeCb = cb
 }
 
@@ -139,7 +140,7 @@ func (h *AppHealth) setFailure(failed bool) {
 		// Reset the failure count
 		// If the previous value was >= threshold, we need to report a health change
 		prev := h.failureCount.Swap(0)
-		if prev >= int32(h.config.Threshold) && h.changeCb != nil {
+		if prev >= h.config.Threshold && h.changeCb != nil {
 			go h.changeCb(AppStatusHealthy)
 		}
 		return

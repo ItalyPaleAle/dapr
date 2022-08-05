@@ -27,6 +27,7 @@ import (
 
 	"github.com/dapr/dapr/pkg/acl"
 	resiliency_v1alpha "github.com/dapr/dapr/pkg/apis/resiliency/v1alpha1"
+	"github.com/dapr/dapr/pkg/apphealth"
 	global_config "github.com/dapr/dapr/pkg/config"
 	env "github.com/dapr/dapr/pkg/config/env"
 	"github.com/dapr/dapr/pkg/cors"
@@ -36,7 +37,6 @@ import (
 	"github.com/dapr/dapr/pkg/operator/client"
 	operator_v1 "github.com/dapr/dapr/pkg/proto/operator/v1"
 	resiliency_config "github.com/dapr/dapr/pkg/resiliency"
-	"github.com/dapr/dapr/pkg/runtime/health"
 	"github.com/dapr/dapr/pkg/runtime/security"
 	"github.com/dapr/dapr/pkg/version"
 	"github.com/dapr/dapr/utils"
@@ -75,10 +75,10 @@ func FromFlags() (*DaprRuntime, error) {
 	enableAPILogging := flag.Bool("enable-api-logging", false, "Enable API logging for API calls")
 	disableBuiltinK8sSecretStore := flag.Bool("disable-builtin-k8s-secret-store", false, "Disable the built-in Kubernetes Secret Store")
 	enableAppHealthCheck := flag.Bool("enable-app-health-check", false, "Enable health checks for the application using the protocol defined with app-protocol")
-	appHealthCheckPath := flag.String("app-health-check-path", health.DefaultAppCheckPath, "Path used for health checks; HTTP only")
-	appHealthProbeInterval := flag.Int("app-health-probe-interval", int(health.DefaultAppHealthProbeInterval/time.Second), "Interval to probe for the health of the app in seconds")
+	appHealthCheckPath := flag.String("app-health-check-path", apphealth.DefaultAppCheckPath, "Path used for health checks; HTTP only")
+	appHealthProbeInterval := flag.Int("app-health-probe-interval", int(apphealth.DefaultAppHealthProbeInterval/time.Second), "Interval to probe for the health of the app in seconds")
 	appHealthProbeOnly := flag.Bool("app-health-probe-only", false, "When false (default), successful responses to incoming messages (e.g. service invocation, topics, input bindings) count as passed health probes")
-	appHealthThreshold := flag.Int("app-health-threshold", int(health.DefaultAppHealthThreshold), "Number of consecutive failures for the app to be considered unhealthy")
+	appHealthThreshold := flag.Int("app-health-threshold", int(apphealth.DefaultAppHealthThreshold), "Number of consecutive failures for the app to be considered unhealthy")
 
 	loggerOptions := logger.DefaultOptions()
 	loggerOptions.AttachCmdFlags(flag.StringVar, flag.BoolVar)
@@ -218,7 +218,7 @@ func FromFlags() (*DaprRuntime, error) {
 
 	var healthProbeInterval time.Duration
 	if *appHealthProbeInterval < 0 {
-		healthProbeInterval = health.DefaultAppHealthProbeInterval
+		healthProbeInterval = apphealth.DefaultAppHealthProbeInterval
 	} else {
 		healthProbeInterval = time.Duration(*appHealthProbeInterval)
 	}
@@ -226,7 +226,7 @@ func FromFlags() (*DaprRuntime, error) {
 	// Also check to ensure no overflow
 	var healthThreshold int32
 	if *appHealthThreshold < 1 || int32(*appHealthThreshold+1) < 0 {
-		healthThreshold = health.DefaultAppHealthThreshold
+		healthThreshold = apphealth.DefaultAppHealthThreshold
 	} else {
 		healthThreshold = int32(*appHealthThreshold)
 	}

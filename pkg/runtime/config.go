@@ -16,10 +16,10 @@ package runtime
 import (
 	"time"
 
+	"github.com/dapr/dapr/pkg/apphealth"
 	config "github.com/dapr/dapr/pkg/config/modes"
 	"github.com/dapr/dapr/pkg/credentials"
 	"github.com/dapr/dapr/pkg/modes"
-	"github.com/dapr/dapr/pkg/runtime/health"
 )
 
 // Protocol is a communications protocol.
@@ -80,7 +80,7 @@ type Config struct {
 	GracefulShutdownDuration     time.Duration
 	EnableAPILogging             bool
 	DisableBuiltinK8sSecretStore bool
-	AppHealthCheck               *health.AppHealthConfig
+	AppHealthCheck               *apphealth.ProbeConfig
 }
 
 // NewRuntimeConfigOpts contains options for NewRuntimeConfig.
@@ -121,9 +121,9 @@ type NewRuntimeConfigOpts struct {
 
 // NewRuntimeConfig returns a new runtime config.
 func NewRuntimeConfig(opts NewRuntimeConfigOpts) *Config {
-	var appHealthCheck *health.AppHealthConfig
+	var appHealthCheck *apphealth.ProbeConfig
 	if opts.EnableAppHealthCheck {
-		appHealthCheck = &health.AppHealthConfig{
+		appHealthCheck = &apphealth.ProbeConfig{
 			HTTPPath:      opts.AppHealthCheckPath,
 			ProbeInterval: opts.AppHealthProbeInterval,
 			ProbeOnly:     opts.AppHealthProbeOnly,

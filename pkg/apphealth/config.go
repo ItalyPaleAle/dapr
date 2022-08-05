@@ -11,7 +11,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package health
+package apphealth
 
 import (
 	"time"
@@ -26,8 +26,8 @@ const (
 	DefaultAppHealthThreshold = int32(3)
 )
 
-// AppHealthConfig is the configuration object for the app health checks.
-type AppHealthConfig struct {
+// ProbeConfig is the configuration object for the app health probes.
+type ProbeConfig struct {
 	HTTPPath      string
 	ProbeInterval time.Duration
 	ProbeOnly     bool
