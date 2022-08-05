@@ -116,7 +116,7 @@ type NewRuntimeConfigOpts struct {
 	AppHealthCheckPath           string
 	AppHealthProbeInterval       time.Duration
 	AppHealthProbeOnly           bool
-	AppHealthThreshold           int
+	AppHealthThreshold           int32
 }
 
 // NewRuntimeConfig returns a new runtime config.

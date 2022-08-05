@@ -78,7 +78,7 @@ func FromFlags() (*DaprRuntime, error) {
 	appHealthCheckPath := flag.String("app-health-check-path", health.DefaultAppCheckPath, "Path used for health checks; HTTP only")
 	appHealthProbeInterval := flag.Int("app-health-probe-interval", int(health.DefaultAppHealthProbeInterval/time.Second), "Interval to probe for the health of the app in seconds")
 	appHealthProbeOnly := flag.Bool("app-health-probe-only", false, "When false (default), successful responses to incoming messages (e.g. service invocation, topics, input bindings) count as passed health probes")
-	appHealthThreshold := flag.Int("app-health-threshold", health.DefaultAppHealthThreshold, "Number of consecutive failures for the app to be considered unhealthy")
+	appHealthThreshold := flag.Int("app-health-threshold", int(health.DefaultAppHealthThreshold), "Number of consecutive failures for the app to be considered unhealthy")
 
 	loggerOptions := logger.DefaultOptions()
 	loggerOptions.AttachCmdFlags(flag.StringVar, flag.BoolVar)
@@ -223,6 +223,14 @@ func FromFlags() (*DaprRuntime, error) {
 		healthProbeInterval = time.Duration(*appHealthProbeInterval)
 	}
 
+	// Also check to ensure no overflow
+	var healthThreshold int32
+	if *appHealthThreshold < 1 || int32(*appHealthThreshold+1) < 0 {
+		healthThreshold = health.DefaultAppHealthThreshold
+	} else {
+		healthThreshold = int32(*appHealthThreshold)
+	}
+
 	runtimeConfig := NewRuntimeConfig(NewRuntimeConfigOpts{
 		ID:                           *appID,
 		PlacementAddresses:           placementAddresses,
@@ -255,7 +263,7 @@ func FromFlags() (*DaprRuntime, error) {
 		AppHealthCheckPath:           *appHealthCheckPath,
 		AppHealthProbeInterval:       healthProbeInterval,
 		AppHealthProbeOnly:           *appHealthProbeOnly,
-		AppHealthThreshold:           *appHealthThreshold,
+		AppHealthThreshold:           healthThreshold,
 	})
 
 	// set environment variables
