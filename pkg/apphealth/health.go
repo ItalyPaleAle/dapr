@@ -37,6 +37,10 @@ type AppHealth struct {
 	report       chan uint8
 	failureCount *atomic.Int32
 	lastReport   *atomic.Int64
+
+	// Minimum interval between reports, in microseconds.
+	// Used by ratelimitReports (as a variable so it can be changed in tests).
+	reportMinInterval int64
 }
 
 // ProbeFunction is the signature of the function that performs health probes.
@@ -50,11 +54,12 @@ type ChangeCallback func(status uint8)
 // NewAppHealth creates a new AppHealth object.
 func NewAppHealth(config *Config, probeFn ProbeFunction) *AppHealth {
 	return &AppHealth{
-		config:       config,
-		probeFn:      probeFn,
-		report:       make(chan uint8, 1),
-		failureCount: atomic.NewInt32(0),
-		lastReport:   atomic.NewInt64(0),
+		config:            config,
+		probeFn:           probeFn,
+		report:            make(chan uint8, 1),
+		failureCount:      atomic.NewInt32(0),
+		lastReport:        atomic.NewInt64(0),
+		reportMinInterval: 1e6,
 	}
 }
 
@@ -147,7 +152,7 @@ func (h *AppHealth) ratelimitReports() bool {
 
 		// If the last report was less than 1 second ago, nothing to do here
 		prev := h.lastReport.Load()
-		if prev > now-10e6 {
+		if prev > now-h.reportMinInterval {
 			return false
 		}
 
