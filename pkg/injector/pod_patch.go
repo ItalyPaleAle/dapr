@@ -82,6 +82,7 @@ const (
 	daprEnableAppHealthCheck          = "dapr.io/enable-app-health-check"
 	daprAppHealthCheckPath            = "dapr.io/app-health-check-path"
 	daprAppHealthProbeInterval        = "dapr.io/app-health-probe-interval"
+	daprAppHealthProbeTimeout         = "dapr.io/app-health-probe-timeout"
 	daprAppHealthProbeOnly            = "dapr.io/app-health-probe-only"
 	daprAppHealthThreshold            = "dapr.io/app-health-threshold"
 	unixDomainSocketVolume            = "dapr-unix-domain-socket"
@@ -125,7 +126,8 @@ const (
 	defaultAPILoggingEnabled          = false
 	defaultBuiltinSecretStoreDisabled = false
 	defaultAppCheckPath               = "/health"
-	defaultAppHealthProbeInterval     = 5
+	defaultAppHealthProbeInterval     = 5   // in seconds
+	defaultAppHealthProbeTimeout      = 500 // in ms
 	defaultAppHealthProbeOnly         = false
 	defaultAppHealthThreshold         = 3
 )
@@ -491,6 +493,10 @@ func getAppHealthProbeInterval(annotations map[string]string) int32 {
 	return getInt32AnnotationOrDefault(annotations, daprAppHealthProbeInterval, defaultAppHealthProbeInterval)
 }
 
+func getAppHealthProbeTimeout(annotations map[string]string) int32 {
+	return getInt32AnnotationOrDefault(annotations, daprAppHealthProbeTimeout, defaultAppHealthProbeTimeout)
+}
+
 func getAppHealthProbeOnly(annotations map[string]string) bool {
 	return getBoolAnnotationOrDefault(annotations, daprAppHealthProbeOnly, defaultAppHealthProbeOnly)
 }
@@ -739,6 +745,7 @@ func getSidecarContainer(annotations map[string]string, id, daprSidecarImage, im
 			"--enable-app-health-check=true",
 			"--app-health-check-path", getAppHealthCheckPath(annotations),
 			"--app-health-probe-interval", strconv.Itoa(int(getAppHealthProbeInterval(annotations))),
+			"--app-health-probe-timeout", strconv.Itoa(int(getAppHealthProbeTimeout(annotations))),
 			"--app-health-probe-only="+strconv.FormatBool(getAppHealthProbeOnly(annotations)),
 			"--app-health-threshold", strconv.Itoa(int(getAppHealthThreshold(annotations))),
 		)

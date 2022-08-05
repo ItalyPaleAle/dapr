@@ -31,7 +31,7 @@ var log = logger.NewLogger("dapr.apphealth")
 
 // AppHealth manages the health checks for the app.
 type AppHealth struct {
-	config       *ProbeConfig
+	config       *Config
 	probeFn      ProbeFunction
 	changeCb     ChangeCallback
 	report       chan uint8
@@ -40,13 +40,15 @@ type AppHealth struct {
 }
 
 // ProbeFunction is the signature of the function that performs health probes.
+// Health probe functions return errors only in case of internal errors.
+// Network errors are considered probe failures, and should return nil as errors.
 type ProbeFunction func(context.Context) (bool, error)
 
 // ChangeCallback is the signature of the callback that is invoked when the app's health status changes.
 type ChangeCallback func(status uint8)
 
 // NewAppHealth creates a new AppHealth object.
-func NewAppHealth(config *ProbeConfig, probeFn ProbeFunction) *AppHealth {
+func NewAppHealth(config *Config, probeFn ProbeFunction) *AppHealth {
 	return &AppHealth{
 		config:       config,
 		probeFn:      probeFn,
@@ -66,6 +68,10 @@ func (h *AppHealth) StartProbes(ctx context.Context) {
 	if h.probeFn == nil {
 		log.Fatal("Cannot start probes with nil probe function")
 	}
+	if h.config.ProbeTimeout > h.config.ProbeInterval {
+		log.Fatal("App health checks probe timeouts must be smaller than probe intervals")
+	}
+
 	log.Info("App health probes starting")
 
 	go func() {
@@ -79,10 +85,11 @@ func (h *AppHealth) StartProbes(ctx context.Context) {
 				return
 			case <-ticker.C:
 				log.Debug("Probing app health")
+				go h.doProbe(ctx)
 			case status := <-h.report:
 				log.Debug("Received health status report")
 				ticker.Reset(h.config.ProbeInterval)
-				h.setFailure(status == AppStatusUnhealthy)
+				h.setResult(status == AppStatusHealthy)
 			}
 		}
 	}()
@@ -109,6 +116,22 @@ func (h *AppHealth) ReportHealth(status uint8) {
 	}
 }
 
+// Performs a health probe.
+// Should be invoked in a background goroutine.
+func (h *AppHealth) doProbe(parentCtx context.Context) {
+	ctx, cancel := context.WithTimeout(parentCtx, h.config.ProbeTimeout)
+	successful, err := h.probeFn(ctx)
+	cancel()
+
+	// In case of errors, we do not record the failed probe because this is generally an internal error
+	if err != nil {
+		log.Errorf("App health probe could not complete with error: %v", err)
+		return
+	}
+
+	h.setResult(successful)
+}
+
 // Returns true if the health report can be saved. Only 1 report per second at most is allowed.
 func (h *AppHealth) ratelimitReports() bool {
 	var (
@@ -118,8 +141,8 @@ func (h *AppHealth) ratelimitReports() bool {
 
 	now := time.Now().UnixMicro()
 
-	// Attempts at most 10 times before giving up
-	for !swapped && attempts < 10 {
+	// Attempts at most 2 times before giving up, as the report may be stale at that point
+	for !swapped && attempts < 2 {
 		attempts++
 
 		// If the last report was less than 1 second ago, nothing to do here
@@ -131,12 +154,14 @@ func (h *AppHealth) ratelimitReports() bool {
 		swapped = h.lastReport.CAS(prev, now)
 	}
 
-	// If we couldn't do the swap after 10 attempts, just return false
+	// If we couldn't do the swap after 2 attempts, just return false
 	return swapped
 }
 
-func (h *AppHealth) setFailure(failed bool) {
-	if !failed {
+func (h *AppHealth) setResult(successful bool) {
+	h.lastReport.Store(time.Now().UnixMicro())
+
+	if successful {
 		// Reset the failure count
 		// If the previous value was >= threshold, we need to report a health change
 		prev := h.failureCount.Swap(0)

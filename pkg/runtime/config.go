@@ -80,7 +80,7 @@ type Config struct {
 	GracefulShutdownDuration     time.Duration
 	EnableAPILogging             bool
 	DisableBuiltinK8sSecretStore bool
-	AppHealthCheck               *apphealth.ProbeConfig
+	AppHealthCheck               *apphealth.Config
 }
 
 // NewRuntimeConfigOpts contains options for NewRuntimeConfig.
@@ -115,17 +115,19 @@ type NewRuntimeConfigOpts struct {
 	EnableAppHealthCheck         bool
 	AppHealthCheckPath           string
 	AppHealthProbeInterval       time.Duration
+	AppHealthProbeTimeout        time.Duration
 	AppHealthProbeOnly           bool
 	AppHealthThreshold           int32
 }
 
 // NewRuntimeConfig returns a new runtime config.
 func NewRuntimeConfig(opts NewRuntimeConfigOpts) *Config {
-	var appHealthCheck *apphealth.ProbeConfig
+	var appHealthCheck *apphealth.Config
 	if opts.EnableAppHealthCheck {
-		appHealthCheck = &apphealth.ProbeConfig{
+		appHealthCheck = &apphealth.Config{
 			HTTPPath:      opts.AppHealthCheckPath,
 			ProbeInterval: opts.AppHealthProbeInterval,
+			ProbeTimeout:  opts.AppHealthProbeTimeout,
 			ProbeOnly:     opts.AppHealthProbeOnly,
 			Threshold:     opts.AppHealthThreshold,
 		}
