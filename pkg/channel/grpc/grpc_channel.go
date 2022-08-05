@@ -127,3 +127,8 @@ func (g *Channel) invokeMethodV1(ctx context.Context, req *invokev1.InvokeMethod
 
 	return rsp.WithMessage(resp), nil
 }
+
+// HealthProbe performs a health probe.
+func (g *Channel) HealthProbe(ctx context.Context) (bool, error) {
+	return true, nil
+}

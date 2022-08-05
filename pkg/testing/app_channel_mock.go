@@ -43,3 +43,7 @@ func (f *FailingAppChannel) InvokeMethod(ctx context.Context, req *invokev1.Invo
 
 	return invokev1.NewInvokeMethodResponse(200, "Success", []*anypb.Any{}), nil
 }
+
+func (f *FailingAppChannel) HealthProbe(ctx context.Context) (bool, error) {
+	return true, nil
+}

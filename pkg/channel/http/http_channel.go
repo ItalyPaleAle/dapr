@@ -163,6 +163,11 @@ func (h *Channel) InvokeMethod(ctx context.Context, req *invokev1.InvokeMethodRe
 	return rsp, err
 }
 
+// HealthProbe performs a health probe.
+func (h *Channel) HealthProbe(ctx context.Context) (bool, error) {
+	return true, nil
+}
+
 func (h *Channel) invokeMethodV1(ctx context.Context, req *invokev1.InvokeMethodRequest) (*invokev1.InvokeMethodResponse, error) {
 	channelReq := h.constructRequest(ctx, req)
 
