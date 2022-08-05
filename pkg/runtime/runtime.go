@@ -118,7 +118,6 @@ const (
 
 	defaultComponentInitTimeout     = time.Second * 5
 	defaultGracefulShutdownDuration = time.Second * 5
-	kubernetesSecretStore           = "kubernetes"
 )
 
 var componentCategoriesNeedProcess = []ComponentCategory{

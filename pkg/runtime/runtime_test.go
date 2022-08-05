@@ -3633,7 +3633,7 @@ func NewTestDaprRuntimeConfig(mode modes.DaprMode, protocol string, appPort int)
 		ReadBufferSize:               4,
 		GracefulShutdownDuration:     time.Second,
 		EnableAPILogging:             true,
-		DisableBuiltinK8sSecretStore: true,
+		DisableBuiltinK8sSecretStore: false,
 	})
 }
 
