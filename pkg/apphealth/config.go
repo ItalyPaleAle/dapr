@@ -18,8 +18,6 @@ import (
 )
 
 const (
-	// DefaultHTTPPath is the default path for HTTP health checks.
-	DefaultHTTPPath = "/health"
 	// DefaultProbeInterval is the default interval for app health probes.
 	DefaultProbeInterval = 5 * time.Second
 	// DefaultProbeTimeout is the default value for probe timeouts.
@@ -30,7 +28,6 @@ const (
 
 // Config is the configuration object for the app health probes.
 type Config struct {
-	HTTPPath      string
 	ProbeInterval time.Duration
 	ProbeTimeout  time.Duration
 	ProbeOnly     bool

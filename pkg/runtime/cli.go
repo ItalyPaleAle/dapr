@@ -75,7 +75,7 @@ func FromFlags() (*DaprRuntime, error) {
 	enableAPILogging := flag.Bool("enable-api-logging", false, "Enable API logging for API calls")
 	disableBuiltinK8sSecretStore := flag.Bool("disable-builtin-k8s-secret-store", false, "Disable the built-in Kubernetes Secret Store")
 	enableAppHealthCheck := flag.Bool("enable-app-health-check", false, "Enable health checks for the application using the protocol defined with app-protocol")
-	appHealthCheckPath := flag.String("app-health-check-path", apphealth.DefaultHTTPPath, "Path used for health checks; HTTP only")
+	appHealthCheckPath := flag.String("app-health-check-path", DefaultAppHealthCheckPath, "Path used for health checks; HTTP only")
 	appHealthProbeInterval := flag.Int("app-health-probe-interval", int(apphealth.DefaultProbeInterval/time.Second), "Interval to probe for the health of the app in seconds")
 	appHealthProbeTimeout := flag.Int("app-health-probe-timeout", int(apphealth.DefaultProbeTimeout/time.Millisecond), "Timeout for app health probes in milliseconds")
 	appHealthProbeOnly := flag.Bool("app-health-probe-only", false, "When false (default), successful responses to incoming messages (e.g. service invocation, topics, input bindings) count as passed health probes")

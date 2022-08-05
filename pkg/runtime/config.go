@@ -48,6 +48,8 @@ const (
 	DefaultReadBufferSize = 4
 	// DefaultGracefulShutdownDuration is the default option for the duration of the graceful shutdown.
 	DefaultGracefulShutdownDuration = time.Second * 5
+	// DefaultAppHealthCheckPath is the default path for HTTP health checks.
+	DefaultAppHealthCheckPath = "/health"
 )
 
 // Config holds the Dapr Runtime configuration.
@@ -81,6 +83,7 @@ type Config struct {
 	EnableAPILogging             bool
 	DisableBuiltinK8sSecretStore bool
 	AppHealthCheck               *apphealth.Config
+	AppHealthCheckHTTPPath       string
 }
 
 // NewRuntimeConfigOpts contains options for NewRuntimeConfig.
@@ -125,7 +128,6 @@ func NewRuntimeConfig(opts NewRuntimeConfigOpts) *Config {
 	var appHealthCheck *apphealth.Config
 	if opts.EnableAppHealthCheck {
 		appHealthCheck = &apphealth.Config{
-			HTTPPath:      opts.AppHealthCheckPath,
 			ProbeInterval: opts.AppHealthProbeInterval,
 			ProbeTimeout:  opts.AppHealthProbeTimeout,
 			ProbeOnly:     opts.AppHealthProbeOnly,
@@ -166,5 +168,6 @@ func NewRuntimeConfig(opts NewRuntimeConfigOpts) *Config {
 		EnableAPILogging:             opts.EnableAPILogging,
 		DisableBuiltinK8sSecretStore: opts.DisableBuiltinK8sSecretStore,
 		AppHealthCheck:               appHealthCheck,
+		AppHealthCheckHTTPPath:       opts.AppHealthCheckPath,
 	}
 }

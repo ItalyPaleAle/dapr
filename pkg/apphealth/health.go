@@ -113,6 +113,7 @@ func (h *AppHealth) ReportHealth(status uint8) {
 	}
 
 	// Channel is buffered, so make sure that this doesn't block
+	// Just in case another report is being worked on!
 	select {
 	case h.report <- status:
 		// No action
@@ -150,7 +151,7 @@ func (h *AppHealth) ratelimitReports() bool {
 	for !swapped && attempts < 2 {
 		attempts++
 
-		// If the last report was less than 1 second ago, nothing to do here
+		// If the last report was less than `reportMinInterval` ago, nothing to do here
 		prev := h.lastReport.Load()
 		if prev > now-h.reportMinInterval {
 			return false

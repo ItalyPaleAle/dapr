@@ -14,6 +14,7 @@ limitations under the License.
 package apphealth
 
 import (
+	"math"
 	"sync"
 	"testing"
 	"time"
@@ -22,6 +23,95 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 )
+
+func TestAppHealth_setResult(t *testing.T) {
+	var threshold int32 = 3
+	h := NewAppHealth(&Config{
+		Threshold: threshold,
+	}, nil)
+
+	statusChange := make(chan uint8, 1)
+	unexpectedStatusChanges := atomic.NewUint32(0)
+	h.OnHealthChange(func(status uint8) {
+		select {
+		case statusChange <- status:
+			// Do nothing
+		default:
+			// If the channel is full, it means we were not expecting a status change
+			unexpectedStatusChanges.Inc()
+		}
+	})
+
+	simulateFailures := func(n int32) {
+		statusChange <- 255 // Fill the channel
+		for i := int32(0); i < n; i++ {
+			if i == threshold-1 {
+				<-statusChange // Allow the channel to be written into
+			}
+			h.setResult(false)
+			if i == threshold-1 {
+				select {
+				case v := <-statusChange:
+					assert.Equal(t, AppStatusUnhealthy, v)
+				case <-time.After(100 * time.Millisecond):
+					t.Error("did not get a status change before deadline")
+				}
+				statusChange <- 255 // Fill the channel again
+			} else {
+				time.Sleep(time.Millisecond)
+			}
+		}
+	}
+
+	// Trigger threshold+10 failures and detect the invocation after the threshold
+	simulateFailures(threshold + 10)
+	assert.Empty(t, unexpectedStatusChanges.Load())
+	assert.Equal(t, threshold+10, h.failureCount.Load())
+
+	// First success should bring the app back to healthy
+	<-statusChange // Allow the channel to be written into
+	h.setResult(true)
+	select {
+	case v := <-statusChange:
+		assert.Equal(t, AppStatusHealthy, v)
+	case <-time.After(100 * time.Millisecond):
+		t.Error("did not get a status change before deadline")
+	}
+	assert.Equal(t, int32(0), h.failureCount.Load())
+
+	// Multiple invocations in parallel
+	// Only one failure should be sent
+	wg := sync.WaitGroup{}
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			for i := int32(0); i < (threshold + 5); i++ {
+				h.setResult(false)
+			}
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+
+	select {
+	case v := <-statusChange:
+		assert.Equal(t, AppStatusUnhealthy, v)
+	case <-time.After(50 * time.Millisecond):
+		t.Error("did not get a status change before deadline")
+	}
+
+	assert.Empty(t, unexpectedStatusChanges.Load())
+	assert.Equal(t, (threshold+5)*5, h.failureCount.Load())
+
+	// Test overflows
+	h.failureCount.Store(int32(math.MaxInt32 - 2))
+	statusChange <- 255 // Fill the channel again
+	for i := int32(0); i < 5; i++ {
+		h.setResult(false)
+	}
+	assert.Empty(t, unexpectedStatusChanges.Load())
+	assert.Equal(t, threshold+3, h.failureCount.Load())
+}
 
 func TestAppHealth_ratelimitReports(t *testing.T) {
 	// Set to 0.1 seconds
@@ -32,7 +122,7 @@ func TestAppHealth_ratelimitReports(t *testing.T) {
 		reportMinInterval: minInterval,
 	}
 
-	// First run should always suceed
+	// First run should always succeed
 	require.True(t, h.ratelimitReports())
 
 	// Run again without waiting
@@ -77,8 +167,7 @@ func TestAppHealth_ratelimitReports(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		wg.Add(1)
 		go func() {
-			passed := firehose()
-			totalPassed.Add(passed)
+			totalPassed.Add(firehose())
 			wg.Done()
 		}()
 	}
