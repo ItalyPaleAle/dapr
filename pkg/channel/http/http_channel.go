@@ -55,6 +55,7 @@ type Channel struct {
 	tracingSpec         config.TracingSpec
 	appHeaderToken      string
 	maxResponseBodySize int
+	appHealthCheckPath  string
 }
 
 // CreateLocalChannel creates an HTTP AppChannel
@@ -162,9 +163,44 @@ func (h *Channel) InvokeMethod(ctx context.Context, req *invokev1.InvokeMethodRe
 	return rsp, err
 }
 
+// SetAppHealthCheckPath sets the path where to send requests for health probes.
+func (h *Channel) SetAppHealthCheckPath(path string) {
+	h.appHealthCheckPath = "/" + strings.TrimPrefix(path, "/")
+}
+
 // HealthProbe performs a health probe.
 func (h *Channel) HealthProbe(ctx context.Context) (bool, error) {
-	return true, nil
+	channelReq := fasthttp.AcquireRequest()
+	channelResp := fasthttp.AcquireResponse()
+
+	defer func() {
+		fasthttp.ReleaseRequest(channelReq)
+		fasthttp.ReleaseResponse(channelResp)
+	}()
+
+	channelReq.URI().Update(h.baseAddress + h.appHealthCheckPath)
+	channelReq.URI().DisablePathNormalizing = true
+	channelReq.Header.SetMethod(fasthttp.MethodGet)
+
+	diag.DefaultHTTPMonitoring.AppHealthProbeStarted(ctx)
+	startRequest := time.Now()
+
+	err := h.client.Do(channelReq, channelResp)
+
+	elapsedMs := float64(time.Since(startRequest) / time.Millisecond)
+
+	if err != nil {
+		// Errors here are network-level errors, so we are not returning them as errors
+		// Instead, we just return a failed probe
+		diag.DefaultHTTPMonitoring.AppHealthProbeCompleted(ctx, strconv.Itoa(nethttp.StatusInternalServerError), elapsedMs)
+		return false, nil
+	}
+
+	code := channelResp.StatusCode()
+	status := code >= 200 && code < 300
+	diag.DefaultHTTPMonitoring.AppHealthProbeCompleted(ctx, strconv.Itoa(code), elapsedMs)
+
+	return status, nil
 }
 
 func (h *Channel) invokeMethodV1(ctx context.Context, req *invokev1.InvokeMethodRequest) (*invokev1.InvokeMethodResponse, error) {

@@ -44,7 +44,11 @@ service AppCallback {
   // User application can save the states or send the events to the output
   // bindings optionally by returning BindingEventResponse.
   rpc OnBindingEvent(BindingEventRequest) returns (BindingEventResponse) {}
+}
 
+// AppCallbackHealthCheck V1 is an optional extension to AppCallback V1 to implement
+// the HealthCheck method.
+service AppCallbackHealthCheck {
   // Health check.
   rpc HealthCheck(google.protobuf.Empty) returns (HealthCheckResponse) {}
 }
