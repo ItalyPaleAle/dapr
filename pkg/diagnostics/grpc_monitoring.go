@@ -15,6 +15,7 @@ package diagnostics
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"go.opencensus.io/stats"
@@ -121,8 +122,8 @@ func (g *grpcMetrics) Init(appID string) error {
 		diag_utils.NewMeasureView(g.clientReceivedBytes, []tag.Key{appIDKey, KeyClientMethod}, defaultSizeDistribution),
 		diag_utils.NewMeasureView(g.clientRoundtripLatency, []tag.Key{appIDKey, KeyClientMethod, KeyClientStatus}, defaultLatencyDistribution),
 		diag_utils.NewMeasureView(g.clientCompletedRpcs, []tag.Key{appIDKey, KeyClientMethod, KeyClientStatus}, view.Count()),
-		diag_utils.NewMeasureView(g.healthProbeRoundripLatency, []tag.Key{appIDKey, httpStatusCodeKey}, defaultLatencyDistribution),
-		diag_utils.NewMeasureView(g.healthProbeCompletedCount, []tag.Key{appIDKey, httpStatusCodeKey}, view.Count()),
+		diag_utils.NewMeasureView(g.healthProbeRoundripLatency, []tag.Key{appIDKey, KeyClientStatus}, defaultLatencyDistribution),
+		diag_utils.NewMeasureView(g.healthProbeCompletedCount, []tag.Key{appIDKey, KeyClientStatus}, view.Count()),
 	)
 }
 
@@ -249,6 +250,7 @@ func (g *grpcMetrics) UnaryClientInterceptor() func(ctx context.Context, method 
 		}
 
 		if method == appHealthCheckMethod {
+			fmt.Println("Res error", err, status.Code(err))
 			g.AppHealthProbeCompleted(ctx, status.Code(err).String(), start)
 		} else {
 			g.ClientRequestReceived(ctx, method, status.Code(err).String(), int64(size), start)

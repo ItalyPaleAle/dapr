@@ -15,6 +15,7 @@ package apphealth
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	"go.uber.org/atomic"
@@ -135,6 +136,7 @@ func (h *AppHealth) doProbe(parentCtx context.Context) {
 		return
 	}
 
+	log.Debug("App health probe successful: " + strconv.FormatBool(successful))
 	h.setResult(successful)
 }
 
@@ -171,8 +173,11 @@ func (h *AppHealth) setResult(successful bool) {
 		// Reset the failure count
 		// If the previous value was >= threshold, we need to report a health change
 		prev := h.failureCount.Swap(0)
-		if prev >= h.config.Threshold && h.changeCb != nil {
-			go h.changeCb(AppStatusHealthy)
+		if prev >= h.config.Threshold {
+			log.Info("App entered healthy status")
+			if h.changeCb != nil {
+				go h.changeCb(AppStatusHealthy)
+			}
 		}
 		return
 	}
@@ -184,8 +189,11 @@ func (h *AppHealth) setResult(successful bool) {
 	if failures < 0 {
 		// Reset to the threshold + 1
 		h.failureCount.Store(h.config.Threshold + 1)
-	} else if failures == h.config.Threshold && h.changeCb != nil {
+	} else if failures == h.config.Threshold {
 		// If we're here, we just passed the threshold right now
-		go h.changeCb(AppStatusUnhealthy)
+		log.Warnf("App entered un-healthy status")
+		if h.changeCb != nil {
+			go h.changeCb(AppStatusUnhealthy)
+		}
 	}
 }
