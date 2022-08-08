@@ -15,7 +15,6 @@ package diagnostics
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"go.opencensus.io/stats"
@@ -250,7 +249,6 @@ func (g *grpcMetrics) UnaryClientInterceptor() func(ctx context.Context, method 
 		}
 
 		if method == appHealthCheckMethod {
-			fmt.Println("Res error", err, status.Code(err))
 			g.AppHealthProbeCompleted(ctx, status.Code(err).String(), start)
 		} else {
 			g.ClientRequestReceived(ctx, method, status.Code(err).String(), int64(size), start)

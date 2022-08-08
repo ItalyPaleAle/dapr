@@ -560,18 +560,34 @@ func (a *DaprRuntime) initRuntime(opts *runtimeOpts) error {
 		}
 	}
 
-	a.startSubscriptions()
-	err = a.startReadingFromBindings()
-	if err != nil {
-		log.Warnf("failed to read from bindings: %s ", err)
-	}
+	// Mark the app as healthy to start the input components
+	a.appHealthChanged(apphealth.AppStatusHealthy)
 
 	if a.runtimeConfig.AppHealthCheck != nil && a.appChannel != nil {
 		a.appHealth = apphealth.NewAppHealth(a.runtimeConfig.AppHealthCheck, a.appChannel.HealthProbe)
+		a.appHealth.OnHealthChange(a.appHealthChanged)
 		a.appHealth.StartProbes(a.ctx)
 	}
 
 	return nil
+}
+
+// Sets the status of the app to healthy or un-healthy
+// Callback for apphealth when the detected status changed
+func (a *DaprRuntime) appHealthChanged(status uint8) {
+	switch status {
+	case apphealth.AppStatusHealthy:
+		// Start subscribing to topics and reading from input bindings
+		a.startSubscriptions()
+		err := a.startReadingFromBindings()
+		if err != nil {
+			log.Warnf("failed to read from bindings: %s ", err)
+		}
+	case apphealth.AppStatusUnhealthy:
+		// Stop topic subscriptions and input bindings
+		a.stopSubscriptions()
+		a.stopReadingFromBindings()
+	}
 }
 
 func (a *DaprRuntime) populateSecretsConfiguration() {
