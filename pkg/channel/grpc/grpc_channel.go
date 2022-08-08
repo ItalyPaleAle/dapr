@@ -25,7 +25,6 @@ import (
 
 	"github.com/dapr/dapr/pkg/channel"
 	"github.com/dapr/dapr/pkg/config"
-	diag "github.com/dapr/dapr/pkg/diagnostics"
 	invokev1 "github.com/dapr/dapr/pkg/messaging/v1"
 	internalv1pb "github.com/dapr/dapr/pkg/proto/internals/v1"
 	runtimev1pb "github.com/dapr/dapr/pkg/proto/runtime/v1"
@@ -133,16 +132,7 @@ func (g *Channel) invokeMethodV1(ctx context.Context, req *invokev1.InvokeMethod
 // HealthProbe performs a health probe.
 func (g *Channel) HealthProbe(ctx context.Context) (bool, error) {
 	clientV1 := runtimev1pb.NewAppCallbackHealthCheckClient(g.client)
-
-	start := diag.DefaultGRPCMonitoring.AppHealthProbeStarted(ctx)
-
 	_, err := clientV1.HealthCheck(ctx, &emptypb.Empty{})
-
-	respStatus := "OK"
-	if err != nil {
-		respStatus = status.Convert(err).Code().String()
-	}
-	diag.DefaultGRPCMonitoring.AppHealthProbeCompleted(ctx, respStatus, start)
 
 	// Errors here are network-level errors, so we are not returning them as errors
 	// Instead, we just return a failed probe
