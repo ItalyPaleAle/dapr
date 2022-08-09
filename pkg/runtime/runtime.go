@@ -560,13 +560,14 @@ func (a *DaprRuntime) initRuntime(opts *runtimeOpts) error {
 		}
 	}
 
-	// Mark the app as healthy to start the input components
-	a.appHealthChanged(apphealth.AppStatusHealthy)
-
 	if a.runtimeConfig.AppHealthCheck != nil && a.appChannel != nil {
 		a.appHealth = apphealth.NewAppHealth(a.runtimeConfig.AppHealthCheck, a.appChannel.HealthProbe)
 		a.appHealth.OnHealthChange(a.appHealthChanged)
 		a.appHealth.StartProbes(a.ctx)
+
+		// Enqueue a probe right away
+		// This will also start the input components
+		a.appHealth.Enqueue()
 	}
 
 	return nil

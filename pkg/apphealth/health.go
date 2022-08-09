@@ -38,6 +38,7 @@ type AppHealth struct {
 	report       chan uint8
 	failureCount *atomic.Int32
 	lastReport   *atomic.Int64
+	queue        chan struct{}
 
 	// Minimum interval between reports, in microseconds.
 	// Used by ratelimitReports (as a variable so it can be changed in tests).
@@ -58,9 +59,10 @@ func NewAppHealth(config *Config, probeFn ProbeFunction) *AppHealth {
 		config:            config,
 		probeFn:           probeFn,
 		report:            make(chan uint8, 1),
-		failureCount:      atomic.NewInt32(0),
+		failureCount:      atomic.NewInt32(config.Threshold), // Initial state is unhealthy until we validate it
 		lastReport:        atomic.NewInt64(0),
 		reportMinInterval: 1e6,
+		queue:             make(chan struct{}, 1),
 	}
 }
 
@@ -91,14 +93,28 @@ func (h *AppHealth) StartProbes(ctx context.Context) {
 				return
 			case <-ticker.C:
 				log.Debug("Probing app health")
-				go h.doProbe(ctx)
+				h.Enqueue()
 			case status := <-h.report:
 				log.Debug("Received health status report")
 				ticker.Reset(h.config.ProbeInterval)
 				h.setResult(status == AppStatusHealthy)
+			case <-h.queue:
+				// Run synchronously so the loop is blocked
+				h.doProbe(ctx)
 			}
 		}
 	}()
+}
+
+// Enqueue adds a new probe request to the queue
+func (h *AppHealth) Enqueue() {
+	// The queue has a capacity of 1, so no more than one iteration can be queued up
+	select {
+	case h.queue <- struct{}{}:
+		// Do nothing
+	default:
+		// Do nothing
+	}
 }
 
 // ReportHealth is used by the runtime to report a health signal from the app.
