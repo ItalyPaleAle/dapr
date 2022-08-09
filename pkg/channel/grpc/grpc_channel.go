@@ -37,7 +37,7 @@ import (
 type Channel struct {
 	client             *grpc.ClientConn
 	baseAddress        string
-	ch                 chan int
+	ch                 chan struct{}
 	tracingSpec        config.TracingSpec
 	appMetadataToken   string
 	maxRequestBodySize int
@@ -56,7 +56,7 @@ func CreateLocalChannel(port, maxConcurrency int, conn *grpc.ClientConn, spec co
 		readBufferSize:     readBufferSize,
 	}
 	if maxConcurrency > 0 {
-		c.ch = make(chan int, maxConcurrency)
+		c.ch = make(chan struct{}, maxConcurrency)
 	}
 	return c
 }
@@ -96,7 +96,7 @@ func (g *Channel) InvokeMethod(ctx context.Context, req *invokev1.InvokeMethodRe
 // invokeMethodV1 calls user applications using daprclient v1.
 func (g *Channel) invokeMethodV1(ctx context.Context, req *invokev1.InvokeMethodRequest) (*invokev1.InvokeMethodResponse, error) {
 	if g.ch != nil {
-		g.ch <- 1
+		g.ch <- struct{}{}
 	}
 
 	clientV1 := runtimev1pb.NewAppCallbackClient(g.client)
@@ -125,6 +125,7 @@ func (g *Channel) invokeMethodV1(ctx context.Context, req *invokev1.InvokeMethod
 	if err != nil {
 		// Convert status code
 		respStatus := status.Convert(err)
+
 		// Prepare response
 		rsp = invokev1.NewInvokeMethodResponse(int32(respStatus.Code()), respStatus.Message(), respStatus.Proto().Details)
 	} else {
