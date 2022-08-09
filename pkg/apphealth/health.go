@@ -139,6 +139,16 @@ func (h *AppHealth) ReportHealth(status uint8) {
 	}
 }
 
+// GetStatus returns the status of the app's health
+func (h *AppHealth) GetStatus() uint8 {
+	fc := h.failureCount.Load()
+	if fc >= h.config.Threshold {
+		return AppStatusUnhealthy
+	}
+
+	return AppStatusHealthy
+}
+
 // Performs a health probe.
 // Should be invoked in a background goroutine.
 func (h *AppHealth) doProbe(parentCtx context.Context) {

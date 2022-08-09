@@ -16,6 +16,7 @@ package channel
 import (
 	"context"
 
+	"github.com/dapr/dapr/pkg/apphealth"
 	"github.com/dapr/dapr/pkg/config"
 	invokev1 "github.com/dapr/dapr/pkg/messaging/v1"
 )
@@ -31,4 +32,5 @@ type AppChannel interface {
 	GetAppConfig() (*config.ApplicationConfig, error)
 	InvokeMethod(ctx context.Context, req *invokev1.InvokeMethodRequest) (*invokev1.InvokeMethodResponse, error)
 	HealthProbe(ctx context.Context) (bool, error)
+	SetAppHealth(ah *apphealth.AppHealth)
 }

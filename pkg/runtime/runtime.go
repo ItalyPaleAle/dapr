@@ -565,8 +565,11 @@ func (a *DaprRuntime) initRuntime(opts *runtimeOpts) error {
 		a.appHealth.OnHealthChange(a.appHealthChanged)
 		a.appHealth.StartProbes(a.ctx)
 
+		// Set the appHealth object in the channel so it's aware of the app's health status
+		a.appChannel.SetAppHealth(a.appHealth)
+
 		// Enqueue a probe right away
-		// This will also start the input components
+		// This will also start the input components once the app is healthy
 		a.appHealth.Enqueue()
 	}
 

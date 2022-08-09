@@ -7,6 +7,7 @@ import (
 
 	mock "github.com/stretchr/testify/mock"
 
+	"github.com/dapr/dapr/pkg/apphealth"
 	"github.com/dapr/dapr/pkg/config"
 	v1 "github.com/dapr/dapr/pkg/messaging/v1"
 )
@@ -95,6 +96,11 @@ func (_m *MockAppChannel) InvokeMethod(ctx context.Context, req *v1.InvokeMethod
 	}
 
 	return r0, r1
+}
+
+// SetAppHealth provides a mock function with given fields: ah
+func (_m *MockAppChannel) SetAppHealth(ah *apphealth.AppHealth) {
+	_m.Called(ah)
 }
 
 type mockConstructorTestingTNewMockAppChannel interface {
