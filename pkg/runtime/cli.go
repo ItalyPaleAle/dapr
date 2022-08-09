@@ -78,7 +78,6 @@ func FromFlags() (*DaprRuntime, error) {
 	appHealthCheckPath := flag.String("app-health-check-path", DefaultAppHealthCheckPath, "Path used for health checks; HTTP only")
 	appHealthProbeInterval := flag.Int("app-health-probe-interval", int(apphealth.DefaultProbeInterval/time.Second), "Interval to probe for the health of the app in seconds")
 	appHealthProbeTimeout := flag.Int("app-health-probe-timeout", int(apphealth.DefaultProbeTimeout/time.Millisecond), "Timeout for app health probes in milliseconds")
-	appHealthProbeOnly := flag.Bool("app-health-probe-only", false, "When false (default), successful responses to incoming messages (e.g. service invocation, topics, input bindings) count as passed health probes")
 	appHealthThreshold := flag.Int("app-health-threshold", int(apphealth.DefaultThreshold), "Number of consecutive failures for the app to be considered unhealthy")
 
 	loggerOptions := logger.DefaultOptions()
@@ -275,7 +274,6 @@ func FromFlags() (*DaprRuntime, error) {
 		AppHealthCheckPath:           *appHealthCheckPath,
 		AppHealthProbeInterval:       healthProbeInterval,
 		AppHealthProbeTimeout:        healthProbeTimeout,
-		AppHealthProbeOnly:           *appHealthProbeOnly,
 		AppHealthThreshold:           healthThreshold,
 	})
 

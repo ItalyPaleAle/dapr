@@ -119,7 +119,6 @@ type NewRuntimeConfigOpts struct {
 	AppHealthCheckPath           string
 	AppHealthProbeInterval       time.Duration
 	AppHealthProbeTimeout        time.Duration
-	AppHealthProbeOnly           bool
 	AppHealthThreshold           int32
 }
 
@@ -130,7 +129,7 @@ func NewRuntimeConfig(opts NewRuntimeConfigOpts) *Config {
 		appHealthCheck = &apphealth.Config{
 			ProbeInterval: opts.AppHealthProbeInterval,
 			ProbeTimeout:  opts.AppHealthProbeTimeout,
-			ProbeOnly:     opts.AppHealthProbeOnly,
+			ProbeOnly:     true,
 			Threshold:     opts.AppHealthThreshold,
 		}
 	}
