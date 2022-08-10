@@ -138,6 +138,16 @@ func testAppHealthCheckProtocol(t *testing.T, protocol string) {
 		return obj
 	}
 
+	invokeFoo := func(t *testing.T) (res []byte, status int) {
+		u := fmt.Sprintf("%s/invoke/%s/foo", appExternalURL, appName)
+		log.Println("Invoking method", "POST", u)
+
+		res, status, err := utils.HTTPPostWithStatus(u, []byte{})
+		require.NoError(t, err)
+
+		return res, status
+	}
+
 	t.Run("last health check within 3s", func(t *testing.T) {
 		obj := getCountAndLast(t, "last-health-check")
 		_ = assert.NotNil(t, obj.Last) &&
@@ -145,16 +155,19 @@ func testAppHealthCheckProtocol(t *testing.T, protocol string) {
 	})
 
 	t.Run("invoke method should work on healthy app", func(t *testing.T) {
-		u := fmt.Sprintf("%s/invoke/%s/foo", appExternalURL, appName)
-		log.Println("Invoking method", "POST", u)
-		res, status, err := utils.HTTPPostWithStatus(u, []byte{})
-		require.NoError(t, err)
+		res, status := invokeFoo(t)
 		require.Equal(t, http.StatusOK, status)
 		require.Equal(t, "🤗", string(res))
 	})
 
 	t.Run("last input binding within 1s", func(t *testing.T) {
 		obj := getCountAndLast(t, "last-input-binding")
+		_ = assert.NotNil(t, obj.Last) &&
+			assert.Less(t, *obj.Last, int64(1000))
+	})
+
+	t.Run("last topic message within 1s", func(t *testing.T) {
+		obj := getCountAndLast(t, "last-topic-message")
 		_ = assert.NotNil(t, obj.Last) &&
 			assert.Less(t, *obj.Last, int64(1000))
 	})
@@ -169,83 +182,138 @@ func testAppHealthCheckProtocol(t *testing.T, protocol string) {
 		// We will need to wait for 11 seconds (3 failed probes at 3 seconds interval + 2s buffer)
 		wait := time.After(11 * time.Second)
 
-		// Get the last input binding and health check
+		// Get the last counts
 		var (
 			lastInputBinding countAndLast
+			lastTopicMessage countAndLast
 			lastHealthCheck  countAndLast
 		)
 		wg := sync.WaitGroup{}
-		wg.Add(2)
-		go func() {
-			lastInputBinding = getCountAndLast(t, "last-input-binding")
-			wg.Done()
-		}()
-		go func() {
-			lastHealthCheck = getCountAndLast(t, "last-health-check")
-			wg.Done()
-		}()
-		wg.Wait()
 
-		// Wait for the remainder of the time
-		<-wait
+		t.Run("retrieve counts after failures", func(t *testing.T) {
+			wg.Add(3)
+			go func() {
+				lastInputBinding = getCountAndLast(t, "last-input-binding")
+				wg.Done()
+			}()
+			go func() {
+				lastTopicMessage = getCountAndLast(t, "last-topic-message")
+				wg.Done()
+			}()
+			go func() {
+				lastHealthCheck = getCountAndLast(t, "last-health-check")
+				wg.Done()
+			}()
+			wg.Wait()
 
-		// Ensure we have the result of last-input-binding and last-health-check
-		require.NotEmpty(t, lastInputBinding.Count)
-		require.NotEmpty(t, lastHealthCheck.Count)
+			// Ensure we have the result of last-input-binding and last-health-check
+			require.NotEmpty(t, lastInputBinding.Count)
+			require.NotEmpty(t, lastHealthCheck.Count)
+		})
 
-		// Get the last values
-		wg.Add(2)
-		go func() {
-			obj := getCountAndLast(t, "last-input-binding")
-			require.Greater(t, obj.Count, lastInputBinding.Count)
-			lastInputBinding = obj
-			wg.Done()
-		}()
-		go func() {
-			obj := getCountAndLast(t, "last-health-check")
-			require.Greater(t, obj.Count, lastHealthCheck.Count)
-			lastHealthCheck = obj
-			wg.Done()
-		}()
-		wg.Wait()
+		t.Run("after delay, get updated counters and service invocation fails", func(t *testing.T) {
+			// Wait for the remainder of the time
+			<-wait
 
-		// Wait 5 seconds then repeat, expecting the same results for input bindings
-		time.Sleep(5 * time.Second)
-		wg.Add(2)
-		go func() {
-			obj := getCountAndLast(t, "last-input-binding")
-			require.Equal(t, lastInputBinding.Count, obj.Count)
-			require.Greater(t, *obj.Last, int64(5000))
-			lastInputBinding = obj
-			wg.Done()
-		}()
-		go func() {
-			obj := getCountAndLast(t, "last-health-check")
-			require.Greater(t, obj.Count, lastHealthCheck.Count)
-			require.Less(t, *obj.Last, int64(3000))
-			lastHealthCheck = obj
-			wg.Done()
-		}()
-		wg.Wait()
+			// Get the last values
+			wg.Add(4)
+			go func() {
+				obj := getCountAndLast(t, "last-input-binding")
+				require.Greater(t, obj.Count, lastInputBinding.Count)
+				lastInputBinding = obj
+				wg.Done()
+			}()
+			go func() {
+				obj := getCountAndLast(t, "last-topic-message")
+				require.Greater(t, obj.Count, lastTopicMessage.Count)
+				lastTopicMessage = obj
+				wg.Done()
+			}()
+			go func() {
+				obj := getCountAndLast(t, "last-health-check")
+				require.Greater(t, obj.Count, lastHealthCheck.Count)
+				lastHealthCheck = obj
+				wg.Done()
+			}()
+			// Service invocation should fail
+			go func() {
+				res, status := invokeFoo(t)
+				require.Contains(t, string(res), "ERR_DIRECT_INVOKE")
+				require.Greater(t, status, 299)
+				wg.Done()
+			}()
+			wg.Wait()
+		})
 
-		// Wait another 12 seconds, when everything should have resumed
-		time.Sleep(12 * time.Second)
-		wg.Add(2)
-		go func() {
-			obj := getCountAndLast(t, "last-input-binding")
-			require.Greater(t, obj.Count, lastInputBinding.Count)
-			require.Less(t, *obj.Last, int64(1000))
-			lastInputBinding = obj
-			wg.Done()
-		}()
-		go func() {
-			obj := getCountAndLast(t, "last-health-check")
-			require.Greater(t, obj.Count, lastHealthCheck.Count)
-			require.Less(t, *obj.Last, int64(3000))
-			lastHealthCheck = obj
-			wg.Done()
-		}()
-		wg.Wait()
+		t.Run("after delay, counters aren't increasing", func(t *testing.T) {
+			// Wait 5 seconds then repeat, expecting the same results for counters
+			time.Sleep(5 * time.Second)
+			wg.Add(4)
+			go func() {
+				obj := getCountAndLast(t, "last-input-binding")
+				require.Equal(t, lastInputBinding.Count, obj.Count)
+				require.Greater(t, *obj.Last, int64(5000))
+				lastInputBinding = obj
+				wg.Done()
+			}()
+			go func() {
+				obj := getCountAndLast(t, "last-topic-message")
+				require.Equal(t, lastTopicMessage.Count, obj.Count)
+				require.Greater(t, *obj.Last, int64(5000))
+				lastTopicMessage = obj
+				wg.Done()
+			}()
+			go func() {
+				obj := getCountAndLast(t, "last-health-check")
+				require.Greater(t, obj.Count, lastHealthCheck.Count)
+				require.Less(t, *obj.Last, int64(3000))
+				lastHealthCheck = obj
+				wg.Done()
+			}()
+			// Service invocation should fail again
+			go func() {
+				res, status := invokeFoo(t)
+				require.Greater(t, status, 299)
+				require.Contains(t, string(res), "ERR_DIRECT_INVOKE")
+				wg.Done()
+			}()
+			wg.Wait()
+		})
+
+		t.Run("app resumes after health probes pass", func(t *testing.T) {
+			// Wait another 12 seconds, when everything should have resumed
+			time.Sleep(12 * time.Second)
+			wg.Add(4)
+			go func() {
+				obj := getCountAndLast(t, "last-input-binding")
+				require.Greater(t, obj.Count, lastInputBinding.Count)
+				require.Less(t, *obj.Last, int64(1000))
+				lastInputBinding = obj
+				wg.Done()
+			}()
+			go func() {
+				obj := getCountAndLast(t, "last-topic-message")
+				require.Greater(t, obj.Count, lastTopicMessage.Count)
+				require.Less(t, *obj.Last, int64(1000))
+				lastTopicMessage = obj
+				wg.Done()
+			}()
+			go func() {
+				obj := getCountAndLast(t, "last-health-check")
+				require.Greater(t, obj.Count, lastHealthCheck.Count)
+				require.Less(t, *obj.Last, int64(3000))
+				lastHealthCheck = obj
+				wg.Done()
+			}()
+			// Service invocation works
+			go func() {
+				res, status := invokeFoo(t)
+				require.Equal(t, 200, status)
+				require.Equal(t, "🤗", string(res))
+				wg.Done()
+			}()
+			wg.Wait()
+		})
 	})
 }
 

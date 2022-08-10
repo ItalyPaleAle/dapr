@@ -35,12 +35,16 @@ var (
 	daprPort         string
 	healthCheckPlan  *healthCheck
 	lastInputBinding = newCountAndLast()
+	lastTopicMessage = newCountAndLast()
 	lastHealthCheck  = newCountAndLast()
 	ready            chan struct{}
 	httpClient       = utils.NewHTTPClient()
 )
 
-const invokeUrl = "http://localhost:%s/v1.0/invoke/%s/method/%s"
+const (
+	invokeUrl  = "http://localhost:%s/v1.0/invoke/%s/method/%s"
+	publishUrl = "http://localhost:%s/v1.0/publish/inmemorypubsub/mytopic"
+)
 
 func main() {
 	ready = make(chan struct{})
@@ -63,6 +67,13 @@ func main() {
 	// Start the control server
 	go startControlServer()
 
+	// Publish messages in background
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-ready
+		startPublishing(ctx)
+	}()
+
 	if appProtocol == "grpc" {
 		// Blocking call
 		startGrpc()
@@ -70,6 +81,8 @@ func main() {
 		// Blocking call
 		startHttp()
 	}
+
+	cancel()
 }
 
 func startGrpc() {
@@ -162,6 +175,13 @@ func startControlServer() {
 			w.Write(j)
 		}).Methods("GET")
 
+		// Get last topic message
+		r.HandleFunc("/last-topic-message", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			j, _ := json.Marshal(lastTopicMessage)
+			w.Write(j)
+		}).Methods("GET")
+
 		// Get last health check
 		r.HandleFunc("/last-health-check", func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
@@ -212,6 +232,31 @@ func startControlServer() {
 	}, false)
 }
 
+func startPublishing(ctx context.Context) {
+	t := time.NewTicker(time.Second)
+	var i int
+	for {
+		select {
+		case <-ctx.Done():
+			log.Println("Context done; stop publishing")
+		case <-t.C:
+			i++
+			publishMessage(i)
+		}
+	}
+}
+
+func publishMessage(count int) {
+	u := fmt.Sprintf(publishUrl, daprPort)
+	log.Println("Invoking URL", u)
+	body := fmt.Sprintf(`{"orderId": "%d"}`, count)
+	_, err := httpClient.Post(u, "application/json", strings.NewReader(body))
+	if err != nil {
+		log.Printf("Failed to publish message. Error: %v", err)
+		return
+	}
+}
+
 func startHttp() {
 	port, _ := strconv.Atoi(appPort)
 	log.Printf("Health App HTTP server listening on http://:%d", port)
@@ -252,13 +297,39 @@ func httpRouter() *mux.Router {
 		w.WriteHeader(http.StatusOK)
 	}).Methods("POST")
 
+	r.HandleFunc("/mytopic", func(w http.ResponseWriter, r *http.Request) {
+		log.Println("Received message on /mytopic topic")
+		lastTopicMessage.Record()
+		w.WriteHeader(http.StatusOK)
+	}).Methods("POST")
+
 	r.HandleFunc("/foo", func(w http.ResponseWriter, r *http.Request) {
 		log.Println("Received foo request")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("🤗"))
 	}).Methods("POST")
 
+	r.HandleFunc("/dapr/subscribe", func(w http.ResponseWriter, r *http.Request) {
+		log.Println("Received /dapr/subscribe request")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode([]subscription{
+			{
+				PubsubName: "inmemorypubsub",
+				Topic:      "mytopic",
+				Route:      "/mytopic",
+				Metadata:   map[string]string{},
+			},
+		})
+	}).Methods("GET")
+
 	return r
+}
+
+type subscription struct {
+	PubsubName string            `json:"pubsubname"`
+	Topic      string            `json:"topic"`
+	Route      string            `json:"route"`
+	Metadata   map[string]string `json:"metadata"`
 }
 
 // Server for gRPC
@@ -295,12 +366,23 @@ func (s *grpcServer) OnInvoke(_ context.Context, in *commonv1pb.InvokeRequest) (
 
 func (s *grpcServer) ListTopicSubscriptions(_ context.Context, in *emptypb.Empty) (*runtimev1pb.ListTopicSubscriptionsResponse, error) {
 	return &runtimev1pb.ListTopicSubscriptionsResponse{
-		Subscriptions: nil,
+		Subscriptions: []*commonv1pb.TopicSubscription{
+			{
+				PubsubName: "inmemorypubsub",
+				Topic:      "mytopic",
+			},
+		},
 	}, nil
 }
 
 func (s *grpcServer) OnTopicEvent(_ context.Context, in *runtimev1pb.TopicEventRequest) (*runtimev1pb.TopicEventResponse, error) {
-	return &runtimev1pb.TopicEventResponse{}, nil
+	if in.Topic == "mytopic" {
+		log.Println("Received topic event: " + in.Topic)
+		lastTopicMessage.Record()
+		return &runtimev1pb.TopicEventResponse{}, nil
+	}
+
+	return nil, errors.New("unexpected topic event: " + in.Topic)
 }
 
 func (s *grpcServer) ListInputBindings(_ context.Context, in *emptypb.Empty) (*runtimev1pb.ListInputBindingsResponse, error) {
