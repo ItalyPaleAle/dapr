@@ -117,8 +117,7 @@ const (
 	configurationComponent ComponentCategory = "configuration"
 	lockComponent          ComponentCategory = "lock"
 
-	defaultComponentInitTimeout     = time.Second * 5
-	defaultGracefulShutdownDuration = time.Second * 5
+	defaultComponentInitTimeout = time.Second * 5
 )
 
 var componentCategoriesNeedProcess = []ComponentCategory{
@@ -571,6 +570,9 @@ func (a *DaprRuntime) initRuntime(opts *runtimeOpts) error {
 		// Enqueue a probe right away
 		// This will also start the input components once the app is healthy
 		a.appHealth.Enqueue()
+	} else {
+		// If there's no health check, mark the app as healthy right away so subscriptions can start
+		a.appHealthChanged(apphealth.AppStatusHealthy)
 	}
 
 	return nil

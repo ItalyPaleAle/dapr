@@ -42,8 +42,8 @@ var (
 )
 
 const (
-	invokeUrl  = "http://localhost:%s/v1.0/invoke/%s/method/%s"
-	publishUrl = "http://localhost:%s/v1.0/publish/inmemorypubsub/mytopic"
+	invokeURL  = "http://localhost:%s/v1.0/invoke/%s/method/%s"
+	publishURL = "http://localhost:%s/v1.0/publish/inmemorypubsub/mytopic"
 )
 
 func main() {
@@ -76,16 +76,16 @@ func main() {
 
 	if appProtocol == "grpc" {
 		// Blocking call
-		startGrpc()
+		startGRPC()
 	} else {
 		// Blocking call
-		startHttp()
+		startHTTP()
 	}
 
 	cancel()
 }
 
-func startGrpc() {
+func startGRPC() {
 	lis, err := net.Listen("tcp", "0.0.0.0:"+appPort)
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
@@ -192,7 +192,7 @@ func startControlServer() {
 		// Performs a service invocation
 		r.HandleFunc("/invoke/{name}/{method}", func(w http.ResponseWriter, r *http.Request) {
 			vars := mux.Vars(r)
-			u := fmt.Sprintf(invokeUrl, daprPort, vars["name"], vars["method"])
+			u := fmt.Sprintf(invokeURL, daprPort, vars["name"], vars["method"])
 			log.Println("Invoking URL", u)
 			res, err := httpClient.Post(u, r.Header.Get("content-type"), r.Body)
 			if err != nil {
@@ -247,7 +247,7 @@ func startPublishing(ctx context.Context) {
 }
 
 func publishMessage(count int) {
-	u := fmt.Sprintf(publishUrl, daprPort)
+	u := fmt.Sprintf(publishURL, daprPort)
 	log.Println("Invoking URL", u)
 	body := fmt.Sprintf(`{"orderId": "%d"}`, count)
 	_, err := httpClient.Post(u, "application/json", strings.NewReader(body))
@@ -257,7 +257,7 @@ func publishMessage(count int) {
 	}
 }
 
-func startHttp() {
+func startHTTP() {
 	port, _ := strconv.Atoi(appPort)
 	log.Printf("Health App HTTP server listening on http://:%d", port)
 	utils.StartServer(port, httpRouter, true)
@@ -333,8 +333,7 @@ type subscription struct {
 }
 
 // Server for gRPC
-type grpcServer struct {
-}
+type grpcServer struct{}
 
 func (s *grpcServer) HealthCheck(ctx context.Context, _ *emptypb.Empty) (*runtimev1pb.HealthCheckResponse, error) {
 	if ready != nil {
@@ -435,8 +434,7 @@ func (h *healthCheck) Do() error {
 	if success {
 		log.Println("Responding to health check request with success")
 		return nil
-	} else {
-		log.Println("Responding to health check request with failure")
-		return errors.New("simulated failure")
 	}
+	log.Println("Responding to health check request with failure")
+	return errors.New("simulated failure")
 }
