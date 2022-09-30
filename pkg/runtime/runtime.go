@@ -720,7 +720,8 @@ func (a *DaprRuntime) subscribeTopic(parentCtx context.Context, name string, top
 				return err
 			}
 		} else {
-			err = json.Unmarshal(msg.Data, &cloudEvent)
+			var ceRaw any
+			err = json.Unmarshal(msg.Data, &ceRaw)
 			if err != nil {
 				log.Errorf("error deserializing cloud event in pubsub %s and topic %s: %s", name, msg.Topic, err)
 				if route.deadLetterTopic != "" {
@@ -732,6 +733,36 @@ func (a *DaprRuntime) subscribeTopic(parentCtx context.Context, name string, top
 				}
 				diag.DefaultComponentMonitoring.PubsubIngressEvent(ctx, pubsubName, strings.ToLower(string(pubsub.Retry)), msg.Topic, 0)
 				return err
+			}
+
+			switch v := ceRaw.(type) {
+			case map[string]any:
+				cloudEvent = v
+			case []map[string]any:
+				if len(v) > 0 {
+					// Only grab the first element if it's a slice
+					cloudEvent = v[0]
+				}
+			case []any:
+				if len(v) > 0 {
+					// Only grab the first element if it's a slice
+					if vm, ok := v[0].(map[string]any); ok {
+						cloudEvent = vm
+					}
+				}
+			}
+
+			if cloudEvent == nil {
+				log.Errorf("invalid cloud event in pubsub %s and topic %s: message is not a cloud event or an array of cloud events", name, msg.Topic)
+				if route.deadLetterTopic != "" {
+					if dlqErr := a.sendToDeadLetter(name, msg, route.deadLetterTopic); dlqErr == nil {
+						// dlq has been configured and message is successfully sent to dlq.
+						diag.DefaultComponentMonitoring.PubsubIngressEvent(ctx, pubsubName, strings.ToLower(string(pubsub.Drop)), msg.Topic, 0)
+						return nil
+					}
+				}
+				diag.DefaultComponentMonitoring.PubsubIngressEvent(ctx, pubsubName, strings.ToLower(string(pubsub.Retry)), msg.Topic, 0)
+				return errors.New("message is not a cloud event or an array of cloud events")
 			}
 		}
 
