@@ -1819,6 +1819,7 @@ func (a *api) ConnectAppCallback(ctx context.Context, in *runtimev1pb.ConnectApp
 		if err != nil {
 			panic(err)
 		}
+		fmt.Println("STATE", grpcConn.GetState())
 		client := runtimev1pb.NewAppCallbackClient(grpcConn)
 		res, err := client.OnInvoke(context.TODO(), &commonv1pb.InvokeRequest{
 			Method: "foo",

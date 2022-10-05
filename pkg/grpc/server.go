@@ -301,7 +301,7 @@ type authInfoNone struct {
 }
 
 func (ai authInfoNone) AuthType() string {
-	return "none"
+	return "insecure"
 }
 
 func (ait authInfoNone) GetConn() net.Conn {
@@ -350,7 +350,8 @@ func (tc transportCredentials) ServerHandshake(conn net.Conn) (net.Conn, credent
 		}
 	} else {
 		authInfo = authInfoNone{
-			conn: conn,
+			CommonAuthInfo: credentials.CommonAuthInfo{SecurityLevel: credentials.NoSecurity},
+			conn:           conn,
 		}
 	}
 
@@ -360,7 +361,9 @@ func (tc transportCredentials) Info() credentials.ProtocolInfo {
 	if tc.Inner != nil {
 		return tc.Inner.Info()
 	}
-	return credentials.ProtocolInfo{}
+	return credentials.ProtocolInfo{
+		SecurityProtocol: "insecure",
+	}
 }
 func (tc transportCredentials) Clone() credentials.TransportCredentials {
 	var inner credentials.TransportCredentials
