@@ -272,8 +272,14 @@ func (s *server) getGRPCServer() (*grpcGo.Server, error) {
 		}
 		ta := credentials.NewTLS(&tlsConfig)
 
-		opts = append(opts, grpcGo.Creds(ta))
+		opts = append(opts, grpcGo.Creds(transportCredentials{
+			Inner: ta,
+		}))
 		go s.startWorkloadCertRotation()
+	} else {
+		opts = append(opts, grpcGo.Creds(transportCredentials{
+			Inner: nil,
+		}))
 	}
 
 	opts = append(opts, grpcGo.MaxRecvMsgSize(s.config.MaxRequestBodySize*1024*1024), grpcGo.MaxSendMsgSize(s.config.MaxRequestBodySize*1024*1024), grpcGo.MaxHeaderListSize(uint32(s.config.ReadBufferSize*1024)))
@@ -283,6 +289,93 @@ func (s *server) getGRPCServer() (*grpcGo.Server, error) {
 	}
 
 	return grpcGo.NewServer(opts...), nil
+}
+
+type authInfoWithConn interface {
+	GetConn() net.Conn
+}
+
+type authInfoNone struct {
+	credentials.CommonAuthInfo
+	conn net.Conn
+}
+
+func (ai authInfoNone) AuthType() string {
+	return "none"
+}
+
+func (ait authInfoNone) GetConn() net.Conn {
+	return ait.conn
+}
+
+type authInfoTLS struct {
+	credentials.TLSInfo
+	conn net.Conn
+}
+
+func (ait authInfoTLS) GetConn() net.Conn {
+	return ait.conn
+}
+
+type transportCredentials struct {
+	Inner credentials.TransportCredentials
+}
+
+func (tc transportCredentials) ClientHandshake(ctx context.Context, authority string, conn net.Conn) (net.Conn, credentials.AuthInfo, error) {
+	if tc.Inner != nil {
+		return tc.Inner.ClientHandshake(ctx, authority, conn)
+	}
+	return conn, authInfoNone{}, nil
+}
+
+func (tc transportCredentials) ServerHandshake(conn net.Conn) (net.Conn, credentials.AuthInfo, error) {
+	var (
+		authInfo        credentials.AuthInfo
+		authInfoTLSInfo credentials.TLSInfo
+		ok              bool
+		err             error
+	)
+	if tc.Inner != nil {
+		conn, authInfo, err = tc.Inner.ServerHandshake(conn)
+		if err != nil {
+			return nil, nil, err
+		}
+		authInfoTLSInfo, ok = authInfo.(credentials.TLSInfo)
+		if !ok {
+			return nil, nil, errors.New("cannot cast authInfo to credentials.TLSInfo")
+		}
+		authInfo = authInfoTLS{
+			TLSInfo: authInfoTLSInfo,
+			conn:    conn,
+		}
+	} else {
+		authInfo = authInfoNone{
+			conn: conn,
+		}
+	}
+
+	return conn, authInfo, nil
+}
+func (tc transportCredentials) Info() credentials.ProtocolInfo {
+	if tc.Inner != nil {
+		return tc.Inner.Info()
+	}
+	return credentials.ProtocolInfo{}
+}
+func (tc transportCredentials) Clone() credentials.TransportCredentials {
+	var inner credentials.TransportCredentials
+	if tc.Inner != nil {
+		inner = tc.Inner.Clone()
+	}
+	return transportCredentials{
+		Inner: inner,
+	}
+}
+func (tc transportCredentials) OverrideServerName(serverNameOverride string) error {
+	if tc.Inner != nil {
+		return tc.Inner.OverrideServerName(serverNameOverride)
+	}
+	return nil
 }
 
 func (s *server) startWorkloadCertRotation() {

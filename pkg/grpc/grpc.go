@@ -18,6 +18,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"strconv"
 	"sync"
 	"time"
 
@@ -72,7 +73,7 @@ func (g *Manager) SetAuthenticator(auth security.Authenticator) {
 
 // CreateLocalChannel creates a new gRPC AppChannel.
 func (g *Manager) CreateLocalChannel(port, maxConcurrency int, spec config.TracingSpec, sslEnabled bool, maxRequestBodySize int, readBufferSize int) (channel.AppChannel, error) {
-	conn, _, err := g.GetGRPCConnection(context.TODO(), fmt.Sprintf("127.0.0.1:%v", port), "", "", true, false, sslEnabled)
+	conn, _, err := g.GetGRPCConnection(context.TODO(), "127.0.0.1:"+strconv.Itoa(port), "", "", true, false, sslEnabled)
 	if err != nil {
 		return nil, errors.Errorf("error establishing connection to app grpc on port %v: %s", port, err)
 	}

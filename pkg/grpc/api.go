@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"sort"
 	"strconv"
 	"sync"
@@ -31,7 +32,9 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+	grpcPeer "google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 
@@ -110,7 +113,11 @@ type API interface {
 	SetMetadata(ctx context.Context, in *runtimev1pb.SetMetadataRequest) (*emptypb.Empty, error)
 	// Shutdown the sidecar
 	Shutdown(ctx context.Context, in *emptypb.Empty) (*emptypb.Empty, error)
+	// Request a new port to initiate a connection to the AppCallback
+	ConnectAppCallback(ctx context.Context, in *runtimev1pb.ConnectAppCallbackRequest) (*runtimev1pb.ConnectAppCallbackResponse, error)
 }
+
+var _ (runtimev1pb.DaprServer) = &api{}
 
 type api struct {
 	actor                      actors.Actors
@@ -267,53 +274,57 @@ func UnlockResponseToGrpcResponse(compResp *lock.UnlockResponse) *runtimev1pb.Un
 	return result
 }
 
+// NewAPIOpts contains options for NewAPI.
+type NewAPIOpts struct {
+	AppID                       string
+	AppChannel                  channel.AppChannel
+	Resiliency                  resiliency.Provider
+	StateStores                 map[string]state.Store
+	SecretStores                map[string]secretstores.SecretStore
+	SecretsConfiguration        map[string]config.SecretsScope
+	ConfigurationStores         map[string]configuration.Store
+	LockStores                  map[string]lock.Store
+	PubsubAdapter               runtimePubsub.Adapter
+	DirectMessaging             messaging.DirectMessaging
+	Actor                       actors.Actors
+	SendToOutputBindingFn       func(name string, req *bindings.InvokeRequest) (*bindings.InvokeResponse, error)
+	TracingSpec                 config.TracingSpec
+	AccessControlList           *config.AccessControlList
+	AppProtocol                 string
+	Shutdown                    func()
+	GetComponentsFn             func() []componentsV1alpha.Component
+	GetComponentsCapabilitiesFn func() map[string][]string
+}
+
 // NewAPI returns a new gRPC API.
-func NewAPI(
-	appID string, appChannel channel.AppChannel,
-	resiliency resiliency.Provider,
-	stateStores map[string]state.Store,
-	secretStores map[string]secretstores.SecretStore,
-	secretsConfiguration map[string]config.SecretsScope,
-	configurationStores map[string]configuration.Store,
-	lockStores map[string]lock.Store,
-	pubsubAdapter runtimePubsub.Adapter,
-	directMessaging messaging.DirectMessaging,
-	actor actors.Actors,
-	sendToOutputBindingFn func(name string, req *bindings.InvokeRequest) (*bindings.InvokeResponse, error),
-	tracingSpec config.TracingSpec,
-	accessControlList *config.AccessControlList,
-	appProtocol string,
-	getComponentsFn func() []componentsV1alpha.Component,
-	shutdown func(),
-	getComponentsCapabilitiesFn func() map[string][]string,
-) API {
+func NewAPI(opts NewAPIOpts) API {
 	transactionalStateStores := map[string]state.TransactionalStore{}
-	for key, store := range stateStores {
+	for key, store := range opts.StateStores {
 		if state.FeatureTransactional.IsPresent(store.Features()) {
 			transactionalStateStores[key] = store.(state.TransactionalStore)
 		}
 	}
 	return &api{
-		directMessaging:            directMessaging,
-		actor:                      actor,
-		id:                         appID,
-		resiliency:                 resiliency,
-		appChannel:                 appChannel,
-		pubsubAdapter:              pubsubAdapter,
-		stateStores:                stateStores,
+		directMessaging:            opts.DirectMessaging,
+		actor:                      opts.Actor,
+		id:                         opts.AppID,
+		resiliency:                 opts.Resiliency,
+		appChannel:                 opts.AppChannel,
+		pubsubAdapter:              opts.PubsubAdapter,
+		stateStores:                opts.StateStores,
 		transactionalStateStores:   transactionalStateStores,
-		secretStores:               secretStores,
-		configurationStores:        configurationStores,
+		secretStores:               opts.SecretStores,
+		configurationStores:        opts.ConfigurationStores,
 		configurationSubscribe:     make(map[string]chan struct{}),
-		lockStores:                 lockStores,
-		secretsConfiguration:       secretsConfiguration,
-		sendToOutputBindingFn:      sendToOutputBindingFn,
-		tracingSpec:                tracingSpec,
-		accessControlList:          accessControlList,
-		appProtocol:                appProtocol,
-		shutdown:                   shutdown,
-		getComponentsFn:            getComponentsFn,
-		getComponentsCapabilitesFn: getComponentsCapabilitiesFn,
+		lockStores:                 opts.LockStores,
+		secretsConfiguration:       opts.SecretsConfiguration,
+		sendToOutputBindingFn:      opts.SendToOutputBindingFn,
+		tracingSpec:                opts.TracingSpec,
+		accessControlList:          opts.AccessControlList,
+		appProtocol:                opts.AppProtocol,
+		shutdown:                   opts.Shutdown,
+		getComponentsFn:            opts.GetComponentsFn,
+		getComponentsCapabilitesFn: opts.GetComponentsCapabilitiesFn,
 		daprRunTimeVersion:         version.Version(),
 	}
 }
@@ -1770,4 +1781,53 @@ func (a *api) UnsubscribeConfigurationAlpha1(ctx context.Context, request *runti
 	return &runtimev1pb.UnsubscribeConfigurationResponse{
 		Ok: true,
 	}, nil
+}
+
+func (a *api) ConnectAppCallback(ctx context.Context, in *runtimev1pb.ConnectAppCallbackRequest) (*runtimev1pb.ConnectAppCallbackResponse, error) {
+	res := &runtimev1pb.ConnectAppCallbackResponse{}
+
+	peer, ok := grpcPeer.FromContext(ctx)
+	if !ok {
+		apiServerLogger.Debug(errors.New("could not get peer info"))
+		return res, errors.New("could not get connection")
+	}
+	authInfo, ok := peer.AuthInfo.(authInfoWithConn)
+	if !ok {
+		apiServerLogger.Debug(errors.New("authInfo object does not cotnain connection"))
+		return res, errors.New("could not get connection")
+	}
+	conn := authInfo.GetConn()
+	if conn == nil {
+		apiServerLogger.Debug(errors.New("connection in authInfo object is nil"))
+		return res, errors.New("could not get connection")
+	}
+
+	fmt.Println("CONN", conn)
+
+	go func() {
+		time.Sleep(1 * time.Second)
+
+		fmt.Println("peer.Addr", peer.Addr, "conn.LocalAddr()", conn.LocalAddr(), "conn.RemoteAddr()", conn.RemoteAddr())
+		grpcConn, err := grpc.Dial(
+			peer.Addr.String(),
+			grpc.WithDialer(func(_ string, _ time.Duration) (net.Conn, error) {
+				return conn, nil
+			}),
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		)
+		fmt.Println("CONNECTED")
+		if err != nil {
+			panic(err)
+		}
+		client := runtimev1pb.NewAppCallbackClient(grpcConn)
+		res, err := client.OnInvoke(context.TODO(), &commonv1pb.InvokeRequest{
+			Method: "foo",
+		})
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println("RES", res.String(), "ERR", err)
+	}()
+
+	return res, nil
 }

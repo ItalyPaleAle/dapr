@@ -1358,25 +1358,26 @@ func (a *DaprRuntime) getNewServerConfig(apiListenAddresses []string, port int) 
 }
 
 func (a *DaprRuntime) getGRPCAPI() grpc.API {
-	return grpc.NewAPI(a.runtimeConfig.ID,
-		a.appChannel,
-		a.resiliency,
-		a.stateStores,
-		a.secretStores,
-		a.secretsConfiguration,
-		a.configurationStores,
-		a.lockStores,
-		a.getPublishAdapter(),
-		a.directMessaging,
-		a.actor,
-		a.sendToOutputBinding,
-		a.globalConfig.Spec.TracingSpec,
-		a.accessControlList,
-		string(a.runtimeConfig.ApplicationProtocol),
-		a.getComponents,
-		a.ShutdownWithWait,
-		a.getComponentsCapabilitesMap,
-	)
+	return grpc.NewAPI(grpc.NewAPIOpts{
+		AppID:                       a.runtimeConfig.ID,
+		AppChannel:                  a.appChannel,
+		Resiliency:                  a.resiliency,
+		StateStores:                 a.stateStores,
+		SecretStores:                a.secretStores,
+		SecretsConfiguration:        a.secretsConfiguration,
+		ConfigurationStores:         a.configurationStores,
+		LockStores:                  a.lockStores,
+		PubsubAdapter:               a.getPublishAdapter(),
+		DirectMessaging:             a.directMessaging,
+		Actor:                       a.actor,
+		SendToOutputBindingFn:       a.sendToOutputBinding,
+		TracingSpec:                 a.globalConfig.Spec.TracingSpec,
+		AccessControlList:           a.accessControlList,
+		AppProtocol:                 string(a.runtimeConfig.ApplicationProtocol),
+		Shutdown:                    a.ShutdownWithWait,
+		GetComponentsFn:             a.getComponents,
+		GetComponentsCapabilitiesFn: a.getComponentsCapabilitesMap,
+	})
 }
 
 func (a *DaprRuntime) getPublishAdapter() runtimePubsub.Adapter {

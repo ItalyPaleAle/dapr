@@ -109,6 +109,9 @@ service Dapr {
 
   // Shutdown the sidecar
   rpc Shutdown (google.protobuf.Empty) returns (google.protobuf.Empty) {}
+
+  // Request a new port to initiate a connection to the AppCallback
+  rpc ConnectAppCallback (ConnectAppCallbackRequest) returns (ConnectAppCallbackResponse) {}
 }
 
 // InvokeServiceRequest represents the request message for Service invocation.
@@ -596,4 +599,14 @@ message UnlockResponse {
   }
 
   Status status = 1;
+}
+
+// ConnectAppCallbackRequest represents the request message for ConnectAppCallback.
+message ConnectAppCallbackRequest {
+  // empty
+}
+
+// ConnectAppCallbackResponse represents the response message for ConnectAppCallback.
+message ConnectAppCallbackResponse {
+  // empty
 }

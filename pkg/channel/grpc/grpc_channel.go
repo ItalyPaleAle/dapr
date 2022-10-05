@@ -16,6 +16,7 @@ package grpc
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -50,7 +51,7 @@ type Channel struct {
 func CreateLocalChannel(port, maxConcurrency int, conn *grpc.ClientConn, spec config.TracingSpec, maxRequestBodySize int, readBufferSize int) *Channel {
 	c := &Channel{
 		client:             conn,
-		baseAddress:        fmt.Sprintf("%s:%d", channel.DefaultChannelAddress, port),
+		baseAddress:        channel.DefaultChannelAddress + ":" + strconv.Itoa(port),
 		tracingSpec:        spec,
 		appMetadataToken:   auth.GetAppToken(),
 		maxRequestBodySize: maxRequestBodySize,

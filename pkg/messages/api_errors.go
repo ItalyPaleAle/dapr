@@ -79,7 +79,7 @@ const (
 	ErrConfigurationSubscribe           = "fail to subscribe %s from Configuration store %s: %s"
 	ErrConfigurationUnsubscribe         = "fail to unsubscribe to configuration request %s: %s"
 
-	//	Lock
+	//	Lock.
 	ErrLockStoresNotConfigured    = "lock store is not configured"
 	ErrResourceIDEmpty            = "ResourceId is empty in lock store %s"
 	ErrLockOwnerEmpty             = "LockOwner is empty in lock store %s"
