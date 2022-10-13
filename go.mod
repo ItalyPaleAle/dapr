@@ -7,6 +7,7 @@ require (
 	github.com/AdhityaRamadhanus/fasthttpcors v0.0.0-20170121111917-d4c07198763a
 	github.com/PuerkitoBio/purell v1.2.0
 	github.com/agrea/ptr v0.0.0-20180711073057-77a518d99b7b
+	github.com/benbjohnson/clock v1.3.0
 	github.com/cenkalti/backoff/v4 v4.1.3
 	github.com/dapr/components-contrib v1.9.0-rc.3.0.20221012190858-80adc9adfe81
 	github.com/dapr/kit v0.0.2
@@ -65,7 +66,6 @@ require (
 	k8s.io/klog v1.0.0
 	k8s.io/metrics v0.25.2
 	sigs.k8s.io/controller-runtime v0.13.0
-	github.com/benbjohnson/clock v1.3.0
 )
 
 require (
