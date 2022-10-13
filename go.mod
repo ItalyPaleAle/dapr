@@ -65,6 +65,7 @@ require (
 	k8s.io/klog v1.0.0
 	k8s.io/metrics v0.25.2
 	sigs.k8s.io/controller-runtime v0.13.0
+	github.com/benbjohnson/clock v1.3.0
 )
 
 require (
