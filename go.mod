@@ -11,7 +11,7 @@ require (
 	github.com/dapr/components-contrib v1.9.0-rc.3.0.20221014204259-8072bc8175b6
 	github.com/dapr/kit v0.0.3-0.20221009070203-ca4d40d89ed5
 	github.com/fasthttp/router v1.4.12
-	github.com/fsnotify/fsnotify v1.5.4
+	github.com/fsnotify/fsnotify v1.6.0
 	github.com/ghodss/yaml v1.0.0
 	github.com/go-logr/logr v1.2.3
 	github.com/gogo/protobuf v1.3.2
