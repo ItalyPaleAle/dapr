@@ -28,13 +28,20 @@ import (
 type (
 	// Operation represents a function to invoke with resiliency policies applied.
 	Operation[T any] func(ctx context.Context) (T, error)
+	OperationAny     func(ctx context.Context) (any, error)
 
 	// Runner represents a function to invoke `oper` with resiliency policies applied.
 	Runner[T any] func(oper Operation[T]) (T, error)
+	RunnerAny     func(oper OperationAny) (any, error)
 )
 
 type doneCh[T any] struct {
 	res T
+	err error
+}
+
+type doneChAny struct {
+	res any
 	err error
 }
 
@@ -45,6 +52,63 @@ type PolicyDefinition struct {
 	t    time.Duration
 	r    *retry.Config
 	cb   *breaker.CircuitBreaker
+}
+
+// Policy returns a policy runner that encapsulates the configured resiliency policies in a simple execution wrapper.
+func Policy(ctx context.Context, log logger.Logger, operationName string, t time.Duration, r *retry.Config, cb *breaker.CircuitBreaker) RunnerAny {
+	return func(oper OperationAny) (any, error) {
+		operation := oper
+		if t > 0 {
+			// Handle timeout
+			// TODO: This should ideally be handled by the underlying service/component. Revisit once those understand contexts
+			operCopy := operation
+			operation = func(ctx context.Context) (any, error) {
+				ctx, cancel := context.WithTimeout(ctx, t)
+				defer cancel()
+
+				done := make(chan doneChAny)
+				go func() {
+					rRes, rErr := operCopy(ctx)
+					done <- doneChAny{rRes, rErr}
+				}()
+
+				select {
+				case v := <-done:
+					return v.res, v.err
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+			}
+		}
+
+		if cb != nil {
+			operCopy := operation
+			operation = func(ctx context.Context) (any, error) {
+				res, err := cb.Execute(func() (any, error) {
+					return operCopy(ctx)
+				})
+				if r != nil && breaker.IsErrorPermanent(err) {
+					// Break out of retry
+					err = backoff.Permanent(err)
+				}
+				return res, err
+			}
+		}
+
+		if r == nil {
+			return operation(ctx)
+		}
+
+		// Use retry/back off
+		b := r.NewBackOffWithContext(ctx)
+		return retry.NotifyRecoverWithData(func() (any, error) {
+			return operation(ctx)
+		}, b, func(_ error, _ time.Duration) {
+			log.Infof("Error processing operation %s. Retrying…", operationName)
+		}, func() {
+			log.Infof("Recovered processing operation %s.", operationName)
+		})
+	}
 }
 
 // NewRunner returns a policy runner that encapsulates the configured resiliency policies in a simple execution wrapper.
