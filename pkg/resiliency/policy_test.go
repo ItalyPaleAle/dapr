@@ -225,3 +225,85 @@ func BenchmarkPolicyCasting(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkNewRunnerWithRetry(b *testing.B) {
+	ctx := context.Background()
+	log := logger.NewLogger("bench")
+	var (
+		runner Runner[int]
+		err    error
+	)
+	oper := func(ctx context.Context) (int, error) {
+		return 42, nil
+	}
+	def := &PolicyDefinition{
+		log:  log,
+		name: "testop",
+		r: &retry.Config{
+			Policy:     retry.PolicyConstant,
+			Duration:   time.Second,
+			MaxRetries: 0,
+		},
+	}
+	for n := 0; n < b.N; n++ {
+		runner = NewRunner[int](ctx, def)
+		_, err = runner(oper)
+		if err != nil {
+			b.Fatal("err is not nil")
+		}
+	}
+}
+
+func BenchmarkPolicyWithRetry(b *testing.B) {
+	ctx := context.Background()
+	log := logger.NewLogger("bench")
+	var (
+		runner RunnerAny
+		err    error
+	)
+	oper := func(ctx context.Context) (any, error) {
+		return 42, nil
+	}
+	r := &retry.Config{
+		Policy:     retry.PolicyConstant,
+		Duration:   time.Second,
+		MaxRetries: 0,
+	}
+	for n := 0; n < b.N; n++ {
+		runner = Policy(ctx, log, "testop", 0, r, nil)
+		_, err = runner(oper)
+		if err != nil {
+			b.Fatal("err is not nil")
+		}
+	}
+}
+
+func BenchmarkPolicyCastingWithRetry(b *testing.B) {
+	ctx := context.Background()
+	log := logger.NewLogger("bench")
+	var (
+		runner RunnerAny
+		resAny any
+		res    int
+		err    error
+	)
+	oper := func(ctx context.Context) (any, error) {
+		return 42, nil
+	}
+	r := &retry.Config{
+		Policy:     retry.PolicyConstant,
+		Duration:   time.Second,
+		MaxRetries: 0,
+	}
+	for n := 0; n < b.N; n++ {
+		runner = Policy(ctx, log, "testop", 0, r, nil)
+		resAny, err = runner(oper)
+		if err != nil {
+			b.Fatal("err is not nil")
+		}
+		res, _ = resAny.(int)
+		if res != 42 {
+			b.Fatal("res is not 42")
+		}
+	}
+}

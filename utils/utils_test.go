@@ -14,6 +14,7 @@ limitations under the License.
 package utils
 
 import (
+	"fmt"
 	"net"
 	"os"
 	"runtime"
@@ -237,4 +238,20 @@ func TestPopulateMetadataForBulkPublishEntry(t *testing.T) {
 		assert.Contains(t, resMeta, "ttl", "expected key to be present")
 		assert.Equal(t, "22s", resMeta["ttl"], "expected val to be equal")
 	})
+}
+
+func BenchmarkStringConcatFmt(b *testing.B) {
+	app := "hello"
+	endpoint := "world"
+	for i := 0; i < b.N; i++ {
+		_ = fmt.Sprintf("endpoint[%s, %s]", app, endpoint)
+	}
+}
+
+func BenchmarkStringConcat(b *testing.B) {
+	app := "hello"
+	endpoint := "world"
+	for i := 0; i < b.N; i++ {
+		_ = "endpoint[" + app + ", " + endpoint + "]"
+	}
 }
