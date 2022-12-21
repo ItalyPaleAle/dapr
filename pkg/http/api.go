@@ -57,6 +57,7 @@ import (
 	"github.com/dapr/dapr/pkg/messages"
 	"github.com/dapr/dapr/pkg/messaging"
 	invokev1 "github.com/dapr/dapr/pkg/messaging/v1"
+	runtimev1pb "github.com/dapr/dapr/pkg/proto/runtime/v1"
 	"github.com/dapr/dapr/pkg/resiliency"
 	"github.com/dapr/dapr/pkg/resiliency/breaker"
 	runtimePubsub "github.com/dapr/dapr/pkg/runtime/pubsub"
@@ -355,10 +356,41 @@ func (a *api) constructSecretEndpoints() []Endpoint {
 func (a *api) constructSubtleCryptoEndpoints() []Endpoint {
 	return []Endpoint{
 		{
-			Methods: []string{fasthttp.MethodPost},
-			Route:   "subtlecrypto/getkey",
+			Methods: []string{fasthttp.MethodGet},
+			Route:   "subtlecrypto/{component}/key/{key}",
 			Version: apiVersionV1alpha1,
-			Handler: FastHTTPHandler(a.universal.SubtleGetKeyAlpha1),
+			Handler: FastHTTPHandler(a.universal.SubtleGetKeyAlpha1, func(reqCtx *fasthttp.RequestCtx, in *runtimev1pb.SubtleGetKeyAlpha1Request) {
+				in.ComponentName = reqCtx.UserValue("component").(string)
+				in.Name = reqCtx.UserValue("key").(string)
+
+				format := string(reqCtx.QueryArgs().Peek("format"))
+				if format != "" {
+					// Check if the format is a number
+					// If not, check if it's a valid constant string
+					n64, err := strconv.ParseInt(format, 10, 32)
+					n := int32(n64)
+					var ok bool
+					if err == nil {
+						if _, ok = runtimev1pb.SubtleGetKeyAlpha1Request_KeyFormat_name[n]; ok {
+							in.Format = runtimev1pb.SubtleGetKeyAlpha1Request_KeyFormat(n)
+						}
+					} else if n, ok = runtimev1pb.SubtleGetKeyAlpha1Request_KeyFormat_value[strings.ToUpper(format)]; ok {
+						in.Format = runtimev1pb.SubtleGetKeyAlpha1Request_KeyFormat(n)
+					}
+				}
+			}),
+		},
+		{
+			Methods: []string{fasthttp.MethodPost},
+			Route:   "subtlecrypto/{component}/encrypt/{key}",
+			Version: apiVersionV1alpha1,
+			Handler: FastHTTPHandler(a.universal.SubtleEncryptAlpha1, func(reqCtx *fasthttp.RequestCtx, in *runtimev1pb.SubtleEncryptAlpha1Request) {
+				componentParam := reqCtx.UserValue("component").(string)
+				keyParam := reqCtx.UserValue("key").(string)
+
+				in.ComponentName = componentParam
+				in.Key = keyParam
+			}),
 		},
 	}
 }

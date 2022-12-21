@@ -27,23 +27,35 @@ import (
 )
 
 // FastHTTPHandler wraps a UniversalAPI method into a FastHTTP handler.
-func FastHTTPHandler[T proto.Message, U proto.Message](method func(ctx context.Context, in T) (U, error)) func(reqCtx *fasthttp.RequestCtx) {
+func FastHTTPHandler[T proto.Message, U proto.Message](
+	method func(ctx context.Context, in T) (U, error),
+	inModifier func(reqCtx *fasthttp.RequestCtx, in T),
+) fasthttp.RequestHandler {
 	var zero T
 	rt := reflect.ValueOf(zero).Type().Elem()
+	pjsonDec := protojson.UnmarshalOptions{
+		DiscardUnknown: true,
+		AllowPartial:   true,
+	}
 
 	return func(reqCtx *fasthttp.RequestCtx) {
 		// Read the response body and decode it as JSON using protojson
 		body := reqCtx.PostBody()
-		// Need to use some reflection magic to allocate a value to the pointer
+		// Need to use some reflection magic to allocate a value for the pointer of the generic type T
 		in := reflect.New(rt).Interface().(T)
-		err := protojson.UnmarshalOptions{
-			DiscardUnknown: true,
-		}.Unmarshal(body, in)
-		if err != nil {
-			msg := NewErrorResponse("ERR_MALFORMED_REQUEST", err.Error())
-			respond(reqCtx, withError(fasthttp.StatusBadRequest, msg))
-			log.Debug(msg)
-			return
+		if len(body) > 0 {
+			err := pjsonDec.Unmarshal(body, in)
+			if err != nil {
+				msg := NewErrorResponse("ERR_MALFORMED_REQUEST", err.Error())
+				respond(reqCtx, withError(fasthttp.StatusBadRequest, msg))
+				log.Debug(msg)
+				return
+			}
+		}
+
+		// If we have an inModifier function, invoke it now
+		if inModifier != nil {
+			inModifier(reqCtx, in)
 		}
 
 		// Invoke the gRPC handler
