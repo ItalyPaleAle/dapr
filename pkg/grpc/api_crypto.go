@@ -2,10 +2,6 @@ package grpc
 
 import (
 	"context"
-	"crypto"
-	"crypto/x509"
-	"encoding/json"
-	"encoding/pem"
 	"time"
 
 	"github.com/lestrrat-go/jwx/v2/jwk"
@@ -18,82 +14,6 @@ import (
 	runtimev1pb "github.com/dapr/dapr/pkg/proto/runtime/v1"
 	"github.com/dapr/dapr/pkg/resiliency"
 )
-
-// SubtleGetKeyAlpha1 returns the public part of an asymmetric key stored in the vault.
-func (a *api) SubtleGetKeyAlpha1(ctx context.Context, in *runtimev1pb.SubtleGetKeyAlpha1Request) (*runtimev1pb.SubtleGetKeyAlpha1Response, error) {
-	component, err := a.cryptoValidateRequest(in.ComponentName)
-	if err != nil {
-		return &runtimev1pb.SubtleGetKeyAlpha1Response{}, err
-	}
-
-	// Get the key
-	policyRunner := resiliency.NewRunner[jwk.Key](ctx,
-		a.resiliency.ComponentOutboundPolicy(in.ComponentName, resiliency.Crypto),
-	)
-	start := time.Now()
-	res, err := policyRunner(func(ctx context.Context) (jwk.Key, error) {
-		return component.GetKey(ctx, in.Name)
-	})
-	elapsed := diag.ElapsedSince(start)
-
-	diag.DefaultComponentMonitoring.CryptoInvoked(ctx, in.ComponentName, diag.Get, err == nil, elapsed)
-
-	if err != nil {
-		err = status.Errorf(codes.Internal, messages.ErrCryptoGetKey, in.Name, err.Error())
-		apiServerLogger.Debug(err)
-		return &runtimev1pb.SubtleGetKeyAlpha1Response{}, err
-	}
-
-	// Get the key ID if present
-	kid := in.Name
-	if dk, ok := res.(*contribCrypto.Key); ok {
-		kid = dk.KeyID()
-	}
-
-	// Format the response
-	var pk []byte
-	switch in.Format {
-	case runtimev1pb.SubtleGetKeyAlpha1Request_PEM: //nolint:nosnakecase
-		var (
-			v   crypto.PublicKey
-			der []byte
-		)
-		err = res.Raw(&v)
-		if err != nil {
-			err = status.Errorf(codes.Internal, "failed to marshal public key %s as PKIX: %s", in.Name, err.Error())
-			apiServerLogger.Debug(err)
-			return &runtimev1pb.SubtleGetKeyAlpha1Response{}, err
-		}
-		der, err = x509.MarshalPKIXPublicKey(v)
-		if err != nil {
-			err = status.Errorf(codes.Internal, "failed to marshal public key %s as PKIX: %s", in.Name, err.Error())
-			apiServerLogger.Debug(err)
-			return &runtimev1pb.SubtleGetKeyAlpha1Response{}, err
-		}
-		pk = pem.EncodeToMemory(&pem.Block{
-			Type:  "PUBLIC KEY",
-			Bytes: der,
-		})
-
-	case runtimev1pb.SubtleGetKeyAlpha1Request_JSON: //nolint:nosnakecase
-		pk, err = json.Marshal(res)
-		if err != nil {
-			err = status.Errorf(codes.Internal, "failed to marshal public key %s as JSON: %s", in.Name, err.Error())
-			apiServerLogger.Debug(err)
-			return &runtimev1pb.SubtleGetKeyAlpha1Response{}, err
-		}
-
-	default:
-		err = status.Errorf(codes.InvalidArgument, "invalid key format")
-		apiServerLogger.Debug(err)
-		return &runtimev1pb.SubtleGetKeyAlpha1Response{}, err
-	}
-
-	return &runtimev1pb.SubtleGetKeyAlpha1Response{
-		Name:      kid,
-		PublicKey: string(pk),
-	}, nil
-}
 
 type subtleEncryptRes struct {
 	ciphertext []byte

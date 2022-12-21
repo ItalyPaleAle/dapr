@@ -53,6 +53,7 @@ import (
 	diag "github.com/dapr/dapr/pkg/diagnostics"
 	diagUtils "github.com/dapr/dapr/pkg/diagnostics/utils"
 	"github.com/dapr/dapr/pkg/encryption"
+	"github.com/dapr/dapr/pkg/grpc/universalapi"
 	"github.com/dapr/dapr/pkg/messages"
 	"github.com/dapr/dapr/pkg/messaging"
 	invokev1 "github.com/dapr/dapr/pkg/messaging/v1"
@@ -75,6 +76,7 @@ type API interface {
 }
 
 type api struct {
+	universal                  *universalapi.UniversalAPI
 	endpoints                  []Endpoint
 	publicEndpoints            []Endpoint
 	directMessaging            messaging.DirectMessaging
@@ -216,6 +218,11 @@ func NewAPI(opts APIOpts) API {
 		transactionalStateStores:   transactionalStateStores,
 		configurationSubscribe:     make(map[string]chan struct{}),
 		daprRunTimeVersion:         version.Version(),
+		universal: &universalapi.UniversalAPI{
+			Logger:          log,
+			Resiliency:      opts.Resiliency,
+			CryptoProviders: opts.CryptoProviders,
+		},
 	}
 
 	metadataEndpoints := api.constructMetadataEndpoints()
@@ -223,6 +230,7 @@ func NewAPI(opts APIOpts) API {
 
 	api.endpoints = append(api.endpoints, api.constructStateEndpoints()...)
 	api.endpoints = append(api.endpoints, api.constructSecretEndpoints()...)
+	api.endpoints = append(api.endpoints, api.constructSubtleCryptoEndpoints()...)
 	api.endpoints = append(api.endpoints, api.constructPubSubEndpoints()...)
 	api.endpoints = append(api.endpoints, api.constructActorEndpoints()...)
 	api.endpoints = append(api.endpoints, api.constructDirectMessagingEndpoints()...)
@@ -340,6 +348,17 @@ func (a *api) constructSecretEndpoints() []Endpoint {
 			Route:   "secrets/{secretStoreName}/{key}",
 			Version: apiVersionV1,
 			Handler: a.onGetSecret,
+		},
+	}
+}
+
+func (a *api) constructSubtleCryptoEndpoints() []Endpoint {
+	return []Endpoint{
+		{
+			Methods: []string{fasthttp.MethodPost},
+			Route:   "subtlecrypto/getkey",
+			Version: apiVersionV1alpha1,
+			Handler: FastHTTPHandler(a.universal.SubtleGetKeyAlpha1),
 		},
 	}
 }

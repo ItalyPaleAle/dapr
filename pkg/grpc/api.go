@@ -50,6 +50,7 @@ import (
 	diagUtils "github.com/dapr/dapr/pkg/diagnostics/utils"
 	"github.com/dapr/dapr/pkg/encryption"
 	"github.com/dapr/dapr/pkg/grpc/metadata"
+	"github.com/dapr/dapr/pkg/grpc/universalapi"
 	"github.com/dapr/dapr/pkg/messages"
 	"github.com/dapr/dapr/pkg/messaging"
 	invokev1 "github.com/dapr/dapr/pkg/messaging/v1"
@@ -132,6 +133,7 @@ type API interface {
 }
 
 type api struct {
+	universalapi.UniversalAPI
 	actor                      actors.Actors
 	directMessaging            messaging.DirectMessaging
 	appChannel                 channel.AppChannel
@@ -323,6 +325,11 @@ func NewAPI(opts APIOpts) API {
 		}
 	}
 	return &api{
+		UniversalAPI: universalapi.UniversalAPI{
+			Logger:          apiServerLogger,
+			Resiliency:      opts.Resiliency,
+			CryptoProviders: opts.CryptoProviders,
+		},
 		directMessaging:            opts.DirectMessaging,
 		actor:                      opts.Actor,
 		id:                         opts.AppID,
