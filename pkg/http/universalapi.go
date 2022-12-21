@@ -16,6 +16,7 @@ package http
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	"github.com/valyala/fasthttp"
 	"google.golang.org/grpc/status"
@@ -27,10 +28,14 @@ import (
 
 // FastHTTPHandler wraps a UniversalAPI method into a FastHTTP handler.
 func FastHTTPHandler[T proto.Message, U proto.Message](method func(ctx context.Context, in T) (U, error)) func(reqCtx *fasthttp.RequestCtx) {
+	var zero T
+	rt := reflect.ValueOf(zero).Type().Elem()
+
 	return func(reqCtx *fasthttp.RequestCtx) {
 		// Read the response body and decode it as JSON using protojson
 		body := reqCtx.PostBody()
-		var in T
+		// Need to use some reflection magic to allocate a value to the pointer
+		in := reflect.New(rt).Interface().(T)
 		err := protojson.UnmarshalOptions{
 			DiscardUnknown: true,
 		}.Unmarshal(body, in)
