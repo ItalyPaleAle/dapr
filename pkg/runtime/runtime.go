@@ -56,6 +56,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	"github.com/dapr/dapr/pkg/actors"
+	"github.com/dapr/dapr/pkg/actorsv2"
 	componentsV1alpha1 "github.com/dapr/dapr/pkg/apis/components/v1alpha1"
 	"github.com/dapr/dapr/pkg/apphealth"
 	"github.com/dapr/dapr/pkg/channel"
@@ -104,7 +105,7 @@ import (
 	nr "github.com/dapr/components-contrib/nameresolution"
 	"github.com/dapr/components-contrib/pubsub"
 	"github.com/dapr/components-contrib/secretstores"
-	"github.com/dapr/components-contrib/state"
+	contribState "github.com/dapr/components-contrib/state"
 )
 
 const (
@@ -174,8 +175,9 @@ type DaprRuntime struct {
 	secretStoresRegistry      *secretstoresLoader.Registry
 	nameResolutionRegistry    *nrLoader.Registry
 	workflowComponentRegistry *workflowsLoader.Registry
-	stateStores               map[string]state.Store
+	stateStores               map[string]contribState.Store
 	actor                     actors.Actors
+	actorv2                   actorsv2.Actors
 	bindingsRegistry          *bindingsLoader.Registry
 	subscribeBindingList      []string
 	inputBindings             map[string]bindings.InputBinding
@@ -238,7 +240,7 @@ type ComponentsCallback func(components ComponentRegistry) error
 type ComponentRegistry struct {
 	Actors          actors.Actors
 	DirectMessaging messaging.DirectMessaging
-	StateStores     map[string]state.Store
+	StateStores     map[string]contribState.Store
 	InputBindings   map[string]bindings.InputBinding
 	OutputBindings  map[string]bindings.OutputBinding
 	SecretStores    map[string]secretstores.SecretStore
@@ -284,7 +286,7 @@ func NewDaprRuntime(runtimeConfig *Config, globalConfig *config.Configuration, a
 		inputBindings:              map[string]bindings.InputBinding{},
 		outputBindings:             map[string]bindings.OutputBinding{},
 		secretStores:               map[string]secretstores.SecretStore{},
-		stateStores:                map[string]state.Store{},
+		stateStores:                map[string]contribState.Store{},
 		pubSubs:                    map[string]pubsubItem{},
 		topicsLock:                 &sync.RWMutex{},
 		inputBindingRoutes:         map[string]string{},
@@ -591,6 +593,15 @@ func (a *DaprRuntime) appHealthReadyInit(opts *runtimeOpts) {
 			// Workflow engine depends on actor runtime being initialized
 			a.initWorkflowEngine()
 		}
+	}
+
+	err = a.initActorsV2()
+	if err != nil {
+		log.Warnf(err.Error())
+	} else {
+		a.daprGRPCAPI.SetActorV2Runtime(a.actorv2)
+		// TODO
+		//a.daprHTTPAPI.SetActorV2Runtime(a.actorv2)
 	}
 
 	if opts.componentsCallback != nil {
@@ -1177,7 +1188,7 @@ func (a *DaprRuntime) sendToOutputBinding(name string, req *bindings.InvokeReque
 
 func (a *DaprRuntime) onAppResponse(response *bindings.AppResponse) error {
 	if len(response.State) > 0 {
-		go func(reqs []state.SetRequest) {
+		go func(reqs []contribState.SetRequest) {
 			if a.stateStores != nil {
 				policyRunner := resiliency.NewRunner[any](a.ctx,
 					a.resiliency.ComponentOutboundPolicy(response.StoreName, resiliency.Statestore),
@@ -1521,6 +1532,7 @@ func (a *DaprRuntime) getGRPCAPI() grpc.API {
 		PubsubAdapter:               a.getPublishAdapter(),
 		DirectMessaging:             a.directMessaging,
 		Actor:                       a.actor,
+		ActorV2:                     a.actorv2,
 		SendToOutputBindingFn:       a.sendToOutputBinding,
 		TracingSpec:                 a.globalConfig.Spec.TracingSpec,
 		AccessControlList:           a.accessControlList,
@@ -1745,7 +1757,7 @@ func (a *DaprRuntime) initState(s componentsV1alpha1.Component) error {
 
 		baseMetadata := a.toBaseMetadata(s)
 		props := baseMetadata.Properties
-		err = store.Init(context.TODO(), state.Metadata{Base: baseMetadata})
+		err = store.Init(context.TODO(), contribState.Metadata{Base: baseMetadata})
 		if err != nil {
 			diag.DefaultMonitoring.ComponentInitFailed(s.Spec.Type, "init", s.ObjectMeta.Name)
 			return NewInitError(InitComponentFailure, fName, err)
@@ -2417,6 +2429,39 @@ func (a *DaprRuntime) initActors() error {
 	return NewInitError(InitFailure, "actors", err)
 }
 
+func (a *DaprRuntime) initActorsV2() error {
+	err := actors.ValidateHostEnvironment(a.runtimeConfig.mtlsEnabled, a.runtimeConfig.Mode, a.namespace)
+	if err != nil {
+		return NewInitError(InitFailure, "actors", err)
+	}
+	a.actorStateStoreLock.Lock()
+	defer a.actorStateStoreLock.Unlock()
+	if a.actorStateStoreName == "" || a.stateStores[a.actorStateStoreName] == nil {
+		log.Info("actors: state store is not configured - skipping initialization of actor host v2")
+		return nil
+	}
+	actorStateStore, ok := a.stateStores[a.actorStateStoreName].(actorsv2.ActorStateStore)
+	if !ok {
+		log.Error("actors: the configured actor state store does not meet the minimum requirements for being used as state store for the actors v2 host.")
+	}
+
+	act := actorsv2.NewActors(actorsv2.ActorsOpts{
+		AppID:          a.runtimeConfig.ID,
+		StateStore:     actorStateStore,
+		StateStoreName: a.actorStateStoreName,
+		AppChannel:     a.appChannel,
+		CertChain:      a.runtimeConfig.CertChain,
+		TracingSpec:    a.globalConfig.Spec.TracingSpec,
+		Resiliency:     a.resiliency,
+	})
+	err = act.Init()
+	if err == nil {
+		a.actorv2 = act
+		return nil
+	}
+	return NewInitError(InitFailure, "actorsv2", err)
+}
+
 func (a *DaprRuntime) getAuthorizedComponents(components []componentsV1alpha1.Component) []componentsV1alpha1.Component {
 	authorized := make([]componentsV1alpha1.Component, len(components))
 
@@ -3043,7 +3088,7 @@ func (a *DaprRuntime) getComponentsCapabilitesMap() map[string][]string {
 	for key, store := range a.stateStores {
 		features := store.Features()
 		stateStoreCapabilities := featureTypeToString(features)
-		if state.FeatureETag.IsPresent(features) && state.FeatureTransactional.IsPresent(features) {
+		if contribState.FeatureETag.IsPresent(features) && contribState.FeatureTransactional.IsPresent(features) {
 			stateStoreCapabilities = append(stateStoreCapabilities, "ACTOR")
 		}
 		capabilities[key] = stateStoreCapabilities

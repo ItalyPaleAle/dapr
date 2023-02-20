@@ -17,6 +17,7 @@ package universalapi
 
 import (
 	"github.com/dapr/components-contrib/secretstores"
+	"github.com/dapr/dapr/pkg/actorsv2"
 	"github.com/dapr/dapr/pkg/config"
 	"github.com/dapr/dapr/pkg/resiliency"
 	"github.com/dapr/kit/logger"
@@ -26,6 +27,7 @@ import (
 type UniversalAPI struct {
 	Logger               logger.Logger
 	Resiliency           resiliency.Provider
+	ActorV2              actorsv2.Actors
 	SecretStores         map[string]secretstores.SecretStore
 	SecretsConfiguration map[string]config.SecretsScope
 }

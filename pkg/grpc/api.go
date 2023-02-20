@@ -40,6 +40,7 @@ import (
 	"github.com/dapr/components-contrib/state"
 	"github.com/dapr/components-contrib/workflows"
 	"github.com/dapr/dapr/pkg/actors"
+	"github.com/dapr/dapr/pkg/actorsv2"
 	componentsV1alpha "github.com/dapr/dapr/pkg/apis/components/v1alpha1"
 	"github.com/dapr/dapr/pkg/buildinfo"
 	"github.com/dapr/dapr/pkg/channel"
@@ -81,6 +82,7 @@ type API interface {
 	SetAppChannel(appChannel channel.AppChannel)
 	SetDirectMessaging(directMessaging messaging.DirectMessaging)
 	SetActorRuntime(actor actors.Actors)
+	SetActorV2Runtime(actor actorsv2.Actors)
 }
 
 type api struct {
@@ -253,6 +255,7 @@ type APIOpts struct {
 	PubsubAdapter               runtimePubsub.Adapter
 	DirectMessaging             messaging.DirectMessaging
 	Actor                       actors.Actors
+	ActorV2                     actorsv2.Actors
 	SendToOutputBindingFn       func(name string, req *bindings.InvokeRequest) (*bindings.InvokeResponse, error)
 	TracingSpec                 config.TracingSpec
 	AccessControlList           *config.AccessControlList
@@ -275,6 +278,7 @@ func NewAPI(opts APIOpts) API {
 		UniversalAPI: &universalapi.UniversalAPI{
 			Logger:               apiServerLogger,
 			Resiliency:           opts.Resiliency,
+			ActorV2:              opts.ActorV2,
 			SecretStores:         opts.SecretStores,
 			SecretsConfiguration: opts.SecretsConfiguration,
 		},
@@ -1517,6 +1521,10 @@ func (a *api) SetDirectMessaging(directMessaging messaging.DirectMessaging) {
 
 func (a *api) SetActorRuntime(actor actors.Actors) {
 	a.actor = actor
+}
+
+func (a *api) SetActorV2Runtime(actor actorsv2.Actors) {
+	a.UniversalAPI.ActorV2 = actor
 }
 
 func (a *api) GetMetadata(ctx context.Context, in *emptypb.Empty) (*runtimev1pb.GetMetadataResponse, error) {
