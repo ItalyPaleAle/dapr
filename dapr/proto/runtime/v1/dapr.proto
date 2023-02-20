@@ -707,3 +707,45 @@ message TerminateWorkflowRequest {
 
 message TerminateWorkflowResponse {
 }
+
+service DaprActorsV2Alpha1 {
+  // Gets the state for a specific actor.
+  rpc GetState(DaprActorsV2Alpha1GetStateRequest) returns (DaprActorsV2Alpha1GetStateRequest) {}
+
+  // Sets the state
+  rpc SetState(DaprActorsV2Alpha1SetStateRequest) returns (DaprActorsV2Alpha1SetStateResponse) {}
+
+  // Deletes the state
+  rpc DeleteState(DaprActorsV2Alpha1DeleteStateRequest) returns (DaprActorsV2Alpha1DeleteStateResponse) {}
+
+  // Calls a method on an actor.
+  rpc Invoke(InvokeActorRequest) returns (InvokeActorResponse) {}
+}
+
+message DaprActorsV2Alpha1GetStateRequest {
+  string actor_type = 1 [json_name = "actorType"];
+  string actor_id = 2 [json_name = "actorId"];
+}
+
+message DaprActorsV2Alpha1GetStateResponse {
+  map<string,google.protobuf.Any> data = 1;
+}
+
+message DaprActorsV2Alpha1SetStateRequest {
+  string actor_type = 1 [json_name = "actorType"];
+  string actor_id = 2 [json_name = "actorId"];
+  map<string,google.protobuf.Any> data = 3;
+}
+
+message DaprActorsV2Alpha1SetStateResponse {
+  // Empty
+}
+
+message DaprActorsV2Alpha1DeleteStateRequest {
+  string actor_type = 1 [json_name = "actorType"];
+  string actor_id = 2 [json_name = "actorId"];
+}
+
+message DaprActorsV2Alpha1DeleteStateResponse {
+  // Empty
+}

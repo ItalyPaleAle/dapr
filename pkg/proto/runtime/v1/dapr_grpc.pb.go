@@ -1313,3 +1313,203 @@ var Dapr_ServiceDesc = grpc.ServiceDesc{
 	},
 	Metadata: "dapr/proto/runtime/v1/dapr.proto",
 }
+
+// DaprActorsV2Alpha1Client is the client API for DaprActorsV2Alpha1 service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type DaprActorsV2Alpha1Client interface {
+	// Gets the state for a specific actor.
+	GetState(ctx context.Context, in *DaprActorsV2Alpha1GetStateRequest, opts ...grpc.CallOption) (*DaprActorsV2Alpha1GetStateRequest, error)
+	// Sets the state
+	SetState(ctx context.Context, in *DaprActorsV2Alpha1SetStateRequest, opts ...grpc.CallOption) (*DaprActorsV2Alpha1SetStateResponse, error)
+	// Deletes the state
+	DeleteState(ctx context.Context, in *DaprActorsV2Alpha1DeleteStateRequest, opts ...grpc.CallOption) (*DaprActorsV2Alpha1DeleteStateResponse, error)
+	// Calls a method on an actor.
+	Invoke(ctx context.Context, in *InvokeActorRequest, opts ...grpc.CallOption) (*InvokeActorResponse, error)
+}
+
+type daprActorsV2Alpha1Client struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewDaprActorsV2Alpha1Client(cc grpc.ClientConnInterface) DaprActorsV2Alpha1Client {
+	return &daprActorsV2Alpha1Client{cc}
+}
+
+func (c *daprActorsV2Alpha1Client) GetState(ctx context.Context, in *DaprActorsV2Alpha1GetStateRequest, opts ...grpc.CallOption) (*DaprActorsV2Alpha1GetStateRequest, error) {
+	out := new(DaprActorsV2Alpha1GetStateRequest)
+	err := c.cc.Invoke(ctx, "/dapr.proto.runtime.v1.DaprActorsV2Alpha1/GetState", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daprActorsV2Alpha1Client) SetState(ctx context.Context, in *DaprActorsV2Alpha1SetStateRequest, opts ...grpc.CallOption) (*DaprActorsV2Alpha1SetStateResponse, error) {
+	out := new(DaprActorsV2Alpha1SetStateResponse)
+	err := c.cc.Invoke(ctx, "/dapr.proto.runtime.v1.DaprActorsV2Alpha1/SetState", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daprActorsV2Alpha1Client) DeleteState(ctx context.Context, in *DaprActorsV2Alpha1DeleteStateRequest, opts ...grpc.CallOption) (*DaprActorsV2Alpha1DeleteStateResponse, error) {
+	out := new(DaprActorsV2Alpha1DeleteStateResponse)
+	err := c.cc.Invoke(ctx, "/dapr.proto.runtime.v1.DaprActorsV2Alpha1/DeleteState", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daprActorsV2Alpha1Client) Invoke(ctx context.Context, in *InvokeActorRequest, opts ...grpc.CallOption) (*InvokeActorResponse, error) {
+	out := new(InvokeActorResponse)
+	err := c.cc.Invoke(ctx, "/dapr.proto.runtime.v1.DaprActorsV2Alpha1/Invoke", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// DaprActorsV2Alpha1Server is the server API for DaprActorsV2Alpha1 service.
+// All implementations should embed UnimplementedDaprActorsV2Alpha1Server
+// for forward compatibility
+type DaprActorsV2Alpha1Server interface {
+	// Gets the state for a specific actor.
+	GetState(context.Context, *DaprActorsV2Alpha1GetStateRequest) (*DaprActorsV2Alpha1GetStateRequest, error)
+	// Sets the state
+	SetState(context.Context, *DaprActorsV2Alpha1SetStateRequest) (*DaprActorsV2Alpha1SetStateResponse, error)
+	// Deletes the state
+	DeleteState(context.Context, *DaprActorsV2Alpha1DeleteStateRequest) (*DaprActorsV2Alpha1DeleteStateResponse, error)
+	// Calls a method on an actor.
+	Invoke(context.Context, *InvokeActorRequest) (*InvokeActorResponse, error)
+}
+
+// UnimplementedDaprActorsV2Alpha1Server should be embedded to have forward compatible implementations.
+type UnimplementedDaprActorsV2Alpha1Server struct {
+}
+
+func (UnimplementedDaprActorsV2Alpha1Server) GetState(context.Context, *DaprActorsV2Alpha1GetStateRequest) (*DaprActorsV2Alpha1GetStateRequest, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetState not implemented")
+}
+func (UnimplementedDaprActorsV2Alpha1Server) SetState(context.Context, *DaprActorsV2Alpha1SetStateRequest) (*DaprActorsV2Alpha1SetStateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetState not implemented")
+}
+func (UnimplementedDaprActorsV2Alpha1Server) DeleteState(context.Context, *DaprActorsV2Alpha1DeleteStateRequest) (*DaprActorsV2Alpha1DeleteStateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteState not implemented")
+}
+func (UnimplementedDaprActorsV2Alpha1Server) Invoke(context.Context, *InvokeActorRequest) (*InvokeActorResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Invoke not implemented")
+}
+
+// UnsafeDaprActorsV2Alpha1Server may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to DaprActorsV2Alpha1Server will
+// result in compilation errors.
+type UnsafeDaprActorsV2Alpha1Server interface {
+	mustEmbedUnimplementedDaprActorsV2Alpha1Server()
+}
+
+func RegisterDaprActorsV2Alpha1Server(s grpc.ServiceRegistrar, srv DaprActorsV2Alpha1Server) {
+	s.RegisterService(&DaprActorsV2Alpha1_ServiceDesc, srv)
+}
+
+func _DaprActorsV2Alpha1_GetState_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DaprActorsV2Alpha1GetStateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaprActorsV2Alpha1Server).GetState(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/dapr.proto.runtime.v1.DaprActorsV2Alpha1/GetState",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaprActorsV2Alpha1Server).GetState(ctx, req.(*DaprActorsV2Alpha1GetStateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaprActorsV2Alpha1_SetState_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DaprActorsV2Alpha1SetStateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaprActorsV2Alpha1Server).SetState(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/dapr.proto.runtime.v1.DaprActorsV2Alpha1/SetState",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaprActorsV2Alpha1Server).SetState(ctx, req.(*DaprActorsV2Alpha1SetStateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaprActorsV2Alpha1_DeleteState_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DaprActorsV2Alpha1DeleteStateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaprActorsV2Alpha1Server).DeleteState(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/dapr.proto.runtime.v1.DaprActorsV2Alpha1/DeleteState",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaprActorsV2Alpha1Server).DeleteState(ctx, req.(*DaprActorsV2Alpha1DeleteStateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaprActorsV2Alpha1_Invoke_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InvokeActorRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaprActorsV2Alpha1Server).Invoke(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/dapr.proto.runtime.v1.DaprActorsV2Alpha1/Invoke",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaprActorsV2Alpha1Server).Invoke(ctx, req.(*InvokeActorRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// DaprActorsV2Alpha1_ServiceDesc is the grpc.ServiceDesc for DaprActorsV2Alpha1 service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var DaprActorsV2Alpha1_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "dapr.proto.runtime.v1.DaprActorsV2Alpha1",
+	HandlerType: (*DaprActorsV2Alpha1Server)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "GetState",
+			Handler:    _DaprActorsV2Alpha1_GetState_Handler,
+		},
+		{
+			MethodName: "SetState",
+			Handler:    _DaprActorsV2Alpha1_SetState_Handler,
+		},
+		{
+			MethodName: "DeleteState",
+			Handler:    _DaprActorsV2Alpha1_DeleteState_Handler,
+		},
+		{
+			MethodName: "Invoke",
+			Handler:    _DaprActorsV2Alpha1_Invoke_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "dapr/proto/runtime/v1/dapr.proto",
+}
