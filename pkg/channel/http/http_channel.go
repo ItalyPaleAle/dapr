@@ -178,6 +178,10 @@ func (h *Channel) InvokeMethod(ctx context.Context, req *invokev1.InvokeMethodRe
 	return rsp, err
 }
 
+func (h *Channel) InvokeActor(ctx context.Context, req *invokev1.InvokeMethodRequest) (*invokev1.InvokeMethodResponse, error) {
+	panic("unimplemented")
+}
+
 // SetAppHealthCheckPath sets the path where to send requests for health probes.
 func (h *Channel) SetAppHealthCheckPath(path string) {
 	h.appHealthCheckPath = "/" + strings.TrimPrefix(path, "/")

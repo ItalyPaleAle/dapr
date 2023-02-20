@@ -31,15 +31,21 @@ import (
 	"github.com/dapr/dapr/pkg/config"
 	"github.com/dapr/dapr/pkg/messages"
 	invokev1 "github.com/dapr/dapr/pkg/messaging/v1"
+	commonv1 "github.com/dapr/dapr/pkg/proto/common/v1"
 	internalv1pb "github.com/dapr/dapr/pkg/proto/internals/v1"
 	runtimev1pb "github.com/dapr/dapr/pkg/proto/runtime/v1"
 	auth "github.com/dapr/dapr/pkg/runtime/security"
 	authConsts "github.com/dapr/dapr/pkg/runtime/security/consts"
 )
 
+type appCallbackClient struct {
+	runtimev1pb.AppCallbackClient
+	runtimev1pb.AppCallbackAlphaClient
+}
+
 // Channel is a concrete AppChannel implementation for interacting with gRPC based user code.
 type Channel struct {
-	appCallbackClient    runtimev1pb.AppCallbackClient
+	appCallbackClient    appCallbackClient
 	conn                 *grpc.ClientConn
 	baseAddress          string
 	ch                   chan struct{}
@@ -53,7 +59,10 @@ type Channel struct {
 func CreateLocalChannel(port, maxConcurrency int, conn *grpc.ClientConn, spec config.TracingSpec, maxRequestBodySize int, readBufferSize int) *Channel {
 	// readBufferSize is unused
 	c := &Channel{
-		appCallbackClient:    runtimev1pb.NewAppCallbackClient(conn),
+		appCallbackClient: appCallbackClient{
+			AppCallbackClient:      runtimev1pb.NewAppCallbackClient(conn),
+			AppCallbackAlphaClient: runtimev1pb.NewAppCallbackAlphaClient(conn),
+		},
 		conn:                 conn,
 		baseAddress:          net.JoinHostPort(channel.DefaultChannelAddress, strconv.Itoa(port)),
 		tracingSpec:          spec,
@@ -78,16 +87,33 @@ func (g *Channel) GetAppConfig() (*config.ApplicationConfig, error) {
 
 // InvokeMethod invokes user code via gRPC.
 func (g *Channel) InvokeMethod(ctx context.Context, req *invokev1.InvokeMethodRequest) (*invokev1.InvokeMethodResponse, error) {
+	return g.doInvoke(ctx, req, g.invokeMethodV1)
+}
+
+// invokeMethodV1 calls user applications using daprclient v1.
+func (g *Channel) invokeMethodV1(ctx context.Context, req *invokev1.InvokeMethodRequest) (*invokev1.InvokeMethodResponse, error) {
+	return g.performInvocationV1(ctx, req, func(pd *internalv1pb.InternalInvokeRequest, opts ...grpc.CallOption) (*commonv1.InvokeResponse, error) {
+		return g.appCallbackClient.OnInvoke(ctx, pd.Message, opts...)
+	})
+}
+
+// doInvoke invokes the correct method depending on API version.
+func (g *Channel) doInvoke(
+	ctx context.Context, req *invokev1.InvokeMethodRequest,
+	methodV1 func(context.Context, *invokev1.InvokeMethodRequest) (*invokev1.InvokeMethodResponse, error),
+) (*invokev1.InvokeMethodResponse, error) {
 	if g.appHealth != nil && g.appHealth.GetStatus() != apphealth.AppStatusHealthy {
 		return nil, status.Error(codes.Internal, messages.ErrAppUnhealthy)
 	}
 
-	var rsp *invokev1.InvokeMethodResponse
-	var err error
+	var (
+		rsp *invokev1.InvokeMethodResponse
+		err error
+	)
 
 	switch req.APIVersion() {
 	case internalv1pb.APIVersion_V1: //nolint:nosnakecase
-		rsp, err = g.invokeMethodV1(ctx, req)
+		rsp, err = methodV1(ctx, req)
 
 	default:
 		// Reject unsupported version
@@ -98,8 +124,41 @@ func (g *Channel) InvokeMethod(ctx context.Context, req *invokev1.InvokeMethodRe
 	return rsp, err
 }
 
-// invokeMethodV1 calls user applications using daprclient v1.
-func (g *Channel) invokeMethodV1(ctx context.Context, req *invokev1.InvokeMethodRequest) (*invokev1.InvokeMethodResponse, error) {
+func (g *Channel) InvokeActor(ctx context.Context, req *invokev1.InvokeMethodRequest) (*invokev1.InvokeMethodResponse, error) {
+	return g.doInvoke(ctx, req, g.invokeActorV1)
+}
+
+// invokeActorV1 calls user actors using daprclient v1.
+func (g *Channel) invokeActorV1(ctx context.Context, req *invokev1.InvokeMethodRequest) (*invokev1.InvokeMethodResponse, error) {
+	resp, err := g.performInvocationV1(ctx, req, func(pd *internalv1pb.InternalInvokeRequest, opts ...grpc.CallOption) (*commonv1.InvokeResponse, error) {
+		resp, err := g.appCallbackClient.OnActorInvokeV2(ctx, &runtimev1pb.ActorInvokeV2Request{
+			Method:      pd.Message.Method,
+			Data:        pd.Message.Data,
+			ContentType: pd.Message.ContentType,
+			State:       req.ActorState(),
+		}, opts...)
+
+		// Convert the response into an InvokeResponse
+		var ir *commonv1.InvokeResponse
+		if resp != nil {
+			ir = &commonv1.InvokeResponse{
+				Data:        resp.Data,
+				ContentType: resp.ContentType,
+			}
+		}
+		return ir, err
+	})
+
+	// TODO: HANDLE ACTOR STATE RESPONSE
+
+	return resp, err
+}
+
+// performInvocationV1 is used by invokeMethodV1 and invokeActorV1 to perform the invocation.
+func (g *Channel) performInvocationV1(
+	ctx context.Context, req *invokev1.InvokeMethodRequest,
+	cb func(*internalv1pb.InternalInvokeRequest, ...grpc.CallOption) (*commonv1.InvokeResponse, error),
+) (*invokev1.InvokeMethodResponse, error) {
 	if g.ch != nil {
 		g.ch <- struct{}{}
 	}
@@ -128,7 +187,7 @@ func (g *Channel) invokeMethodV1(ctx context.Context, req *invokev1.InvokeMethod
 		grpc.MaxCallRecvMsgSize(g.maxRequestBodySizeMB << 20),
 	}
 
-	resp, err := g.appCallbackClient.OnInvoke(ctx, pd.Message, opts...)
+	resp, err := cb(pd, opts...)
 
 	if g.ch != nil {
 		<-g.ch

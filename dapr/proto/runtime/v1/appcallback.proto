@@ -16,6 +16,7 @@ syntax = "proto3";
 package dapr.proto.runtime.v1;
 
 import "google/protobuf/empty.proto";
+import "google/protobuf/any.proto";
 import "dapr/proto/common/v1/common.proto";
 import "google/protobuf/struct.proto";
 
@@ -59,6 +60,48 @@ service AppCallbackHealthCheck {
 service AppCallbackAlpha {
     // Subscribes bulk events from Pubsub
   rpc OnBulkTopicEventAlpha1(TopicEventBulkRequest) returns (TopicEventBulkResponse) {}
+
+  // Invokes an actor using the Actors v2 APIs
+  rpc OnActorInvokeV2(ActorInvokeV2Request) returns (ActorInvokeV2Response) {}
+}
+
+message ActorInvokeV2Request {
+  // Method name which will be invoked by caller.
+  string method = 1;
+
+  // Bytes value or Protobuf message which caller sent.
+  // Dapr treats Any.value as bytes type if Any.type_url is unset.
+  google.protobuf.Any data = 2;
+
+  // The type of data content.
+  //
+  // This field is required if data delivers http request body
+  // Otherwise, this is optional.
+  string content_type = 3;
+
+  // State of the actor.
+  google.protobuf.Struct state = 4;
+}
+
+message ActorInvokeV2Response {
+  // The content body of InvokeService response.
+  google.protobuf.Any data = 1;
+
+  // The type of data content.
+  string content_type = 2;
+
+  message DeleteActorState {
+    bool delete_state = 1;
+  }
+
+  message SetActorState {
+    google.protobuf.Struct state = 1;
+  }
+
+  oneof state {
+    DeleteActorState delete = 10;
+    SetActorState set = 11;
+  }
 }
 
 // TopicEventRequest message is compatible with CloudEvent spec v1.0

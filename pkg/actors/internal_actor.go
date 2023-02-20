@@ -159,6 +159,12 @@ func (c *internalActorChannel) InvokeMethod(ctx context.Context, req *invokev1.I
 	return res, nil
 }
 
+// InvokeActor implements channel.AppChannel
+func (internalActorChannel) InvokeActor(ctx context.Context, req *invokev1.InvokeMethodRequest) (*invokev1.InvokeMethodResponse, error) {
+	// In actors v1, this is a nop
+	return nil, nil
+}
+
 // SetAppHealth implements channel.AppChannel
 func (internalActorChannel) SetAppHealth(ah *apphealth.AppHealth) {
 	// no-op

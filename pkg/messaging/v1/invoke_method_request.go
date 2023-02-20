@@ -22,6 +22,7 @@ import (
 	"github.com/valyala/fasthttp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	commonv1pb "github.com/dapr/dapr/pkg/proto/common/v1"
 	internalv1pb "github.com/dapr/dapr/pkg/proto/internals/v1"
@@ -37,7 +38,8 @@ const (
 type InvokeMethodRequest struct {
 	replayableRequest
 
-	r *internalv1pb.InternalInvokeRequest
+	r          *internalv1pb.InternalInvokeRequest
+	actorState *structpb.Struct
 }
 
 // NewInvokeMethodRequest creates InvokeMethodRequest object for method.
@@ -75,6 +77,12 @@ func InternalInvokeRequest(pb *internalv1pb.InternalInvokeRequest) (*InvokeMetho
 // WithActor sets actor type and id.
 func (imr *InvokeMethodRequest) WithActor(actorType, actorID string) *InvokeMethodRequest {
 	imr.r.Actor = &internalv1pb.Actor{ActorType: actorType, ActorId: actorID}
+	return imr
+}
+
+// WithActorState sets actor state.
+func (imr *InvokeMethodRequest) WithActorState(state *structpb.Struct) *InvokeMethodRequest {
+	imr.actorState = state
 	return imr
 }
 
@@ -222,6 +230,11 @@ func (imr *InvokeMethodRequest) ProtoWithData() (*internalv1pb.InternalInvokeReq
 // Actor returns actor type and id.
 func (imr *InvokeMethodRequest) Actor() *internalv1pb.Actor {
 	return imr.r.Actor
+}
+
+// ActorState returns actor state
+func (imr *InvokeMethodRequest) ActorState() *structpb.Struct {
+	return imr.actorState
 }
 
 // Message gets InvokeRequest Message object.
