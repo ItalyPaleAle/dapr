@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 
+	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 
@@ -138,18 +138,21 @@ func (a *actorsRuntime) Call(parentCtx context.Context, req *invokev1.InvokeMeth
 		return nil, errors.New("error from actor service: response object is nil")
 	}
 
-	if resp.Status().Code != http.StatusOK {
+	if resp.Status().Code != int32(codes.OK) {
 		respData, _ := resp.RawDataFull()
 		return nil, fmt.Errorf("error from actor service: %s", string(respData))
 	}
 
-	// TODO: HANDLE STATE FROM ACTOR
-
 	// Commit the transaction if everything is fine
-	err = commit(state.TransactionCommitRequest{
-		Key:   stateKey,
-		Value: nil,
-	})
+	cr := state.TransactionCommitRequest{
+		Key: stateKey,
+	}
+	if resp.ActorStateDelete() {
+		cr.DeleteValue = true
+	} else {
+		cr.UpdateValue = resp.ActorStateUpdate()
+	}
+	err = commit(cr)
 	if err != nil {
 		return nil, fmt.Errorf("error committing state: %w", err)
 	}

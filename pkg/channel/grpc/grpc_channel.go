@@ -25,6 +25,7 @@ import (
 	grpcMetadata "google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/dapr/dapr/pkg/apphealth"
 	"github.com/dapr/dapr/pkg/channel"
@@ -130,6 +131,8 @@ func (g *Channel) InvokeActor(ctx context.Context, req *invokev1.InvokeMethodReq
 
 // invokeActorV1 calls user actors using daprclient v1.
 func (g *Channel) invokeActorV1(ctx context.Context, req *invokev1.InvokeMethodRequest) (*invokev1.InvokeMethodResponse, error) {
+	var setUpdatedState func(imr *invokev1.InvokeMethodResponse)
+
 	resp, err := g.performInvocationV1(ctx, req, func(pd *internalv1pb.InternalInvokeRequest, opts ...grpc.CallOption) (*commonv1.InvokeResponse, error) {
 		resp, err := g.appCallbackClient.OnActorInvokeV2(ctx, &runtimev1pb.ActorInvokeV2Request{
 			Method:      pd.Message.Method,
@@ -145,11 +148,32 @@ func (g *Channel) invokeActorV1(ctx context.Context, req *invokev1.InvokeMethodR
 				Data:        resp.Data,
 				ContentType: resp.ContentType,
 			}
+
+			// Set the callback that will update the state
+			// This is a side effect of this method, but the method is not asynchronous so this is concurrency-safe
+			if resp.State != nil {
+				switch x := resp.State.(type) {
+				case *runtimev1pb.ActorInvokeV2Response_Delete:
+					setUpdatedState = func(imr *invokev1.InvokeMethodResponse) {
+						imr.WithActorStateDelete(x.Delete != nil && x.Delete.DeleteState)
+					}
+				case *runtimev1pb.ActorInvokeV2Response_Set:
+					var updated *structpb.Struct
+					if x.Set != nil && x.Set.State != nil {
+						updated = x.Set.State
+					}
+					setUpdatedState = func(imr *invokev1.InvokeMethodResponse) {
+						imr.WithActorStateUpdate(updated)
+					}
+				}
+			}
 		}
 		return ir, err
 	})
 
-	// TODO: HANDLE ACTOR STATE RESPONSE
+	if setUpdatedState != nil {
+		setUpdatedState(resp)
+	}
 
 	return resp, err
 }

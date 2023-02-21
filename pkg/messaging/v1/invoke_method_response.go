@@ -23,16 +23,24 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	commonv1pb "github.com/dapr/dapr/pkg/proto/common/v1"
 	internalv1pb "github.com/dapr/dapr/pkg/proto/internals/v1"
 )
 
+type actorStateUpdate struct {
+	Delete bool
+	Update *structpb.Struct
+}
+
 // InvokeMethodResponse holds InternalInvokeResponse protobuf message
 // and provides the helpers to manage it.
 type InvokeMethodResponse struct {
 	replayableRequest
-	r *internalv1pb.InternalInvokeResponse
+
+	r                *internalv1pb.InternalInvokeResponse
+	actorStateUpdate actorStateUpdate
 }
 
 // NewInvokeMethodResponse returns new InvokeMethodResponse object with status.
@@ -53,6 +61,18 @@ func InternalInvokeResponse(pb *internalv1pb.InternalInvokeResponse) (*InvokeMet
 	}
 
 	return rsp, nil
+}
+
+// WithActorStateUpdate sets updated actor state.
+func (imr *InvokeMethodResponse) WithActorStateUpdate(val *structpb.Struct) *InvokeMethodResponse {
+	imr.actorStateUpdate.Update = val
+	return imr
+}
+
+// WithActorStateDelete sets to delete actor state on update.
+func (imr *InvokeMethodResponse) WithActorStateDelete(delete bool) *InvokeMethodResponse {
+	imr.actorStateUpdate.Delete = delete
+	return imr
 }
 
 // WithMessage sets InvokeResponse pb object to Message field.
@@ -198,6 +218,16 @@ func (imr *InvokeMethodResponse) Trailers() DaprInternalMetadata {
 		return nil
 	}
 	return imr.r.Trailers
+}
+
+// ActorStateUpdate returns the updated actor state.
+func (imr *InvokeMethodResponse) ActorStateUpdate() *structpb.Struct {
+	return imr.actorStateUpdate.Update
+}
+
+// ActorStateDelete returns whether the actor state needs to be deleted.
+func (imr *InvokeMethodResponse) ActorStateDelete() bool {
+	return imr.actorStateUpdate.Delete
 }
 
 // Message returns message field in InvokeMethodResponse.
