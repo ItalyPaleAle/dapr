@@ -2,11 +2,11 @@ package actorsv2
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
 	"google.golang.org/grpc/codes"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/dapr/components-contrib/state"
@@ -182,13 +182,13 @@ func (a *actorsRuntime) constructActorStateKey(actorType, actorID, key string) s
 
 func (a *actorsRuntime) unserializeActorState(data []byte) (*structpb.Struct, error) {
 	v := &structpb.Struct{}
-	err := proto.Unmarshal(data, v)
+	err := json.Unmarshal(data, v)
 	if err != nil {
-		return nil, fmt.Errorf("failed to unserialize protobuf data: %w", err)
+		return nil, fmt.Errorf("failed to unserialize state: %w", err)
 	}
 	return v, nil
 }
 
 func (a *actorsRuntime) serializeActorState(v *structpb.Struct) ([]byte, error) {
-	return proto.Marshal(v)
+	return json.Marshal(v)
 }
