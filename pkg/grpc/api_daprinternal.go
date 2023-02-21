@@ -249,7 +249,15 @@ func (a *api) CallActor(ctx context.Context, in *internalv1pb.InternalInvokeRequ
 	defer req.Close()
 
 	// We don't do resiliency here as it is handled in the API layer. See InvokeActor().
-	resp, err := a.actor.Call(ctx, req)
+	var resp *invokev1.InvokeMethodResponse
+	switch in.GetActor().ActorRuntimeVersion {
+	case internalv1pb.ActorVersion_ACTORS_V1:
+		resp, err = a.actor.Call(ctx, req)
+	case internalv1pb.ActorVersion_ACTORS_V2:
+		resp, err = a.ActorV2.Call(ctx, req)
+	default:
+		return nil, status.Error(codes.Internal, "unsupported actor runtime version")
+	}
 	if err != nil {
 		// We have to remove the error to keep the body, so callers must re-inspect for the header in the actual response.
 		if resp != nil && errors.Is(err, actors.ErrDaprResponseHeader) {

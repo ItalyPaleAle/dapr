@@ -120,4 +120,9 @@ var (
 	ErrSecretPermissionDenied   = APIError{"access denied by policy to get %q from %q", "ERR_PERMISSION_DENIED", http.StatusForbidden, grpcCodes.PermissionDenied}
 	ErrSecretGet                = APIError{"failed getting secret with key %s from secret store %s: %s", "ERR_SECRET_GET", http.StatusInternalServerError, grpcCodes.Internal}
 	ErrBulkSecretGet            = APIError{"failed getting secrets from secret store %s: %s", "ERR_SECRET_GET", http.StatusInternalServerError, grpcCodes.Internal}
+
+	// Actors V2.
+	ErrActorV2RuntimeNotFound = APIError{`the state store is not configured to use the actor runtime. Have you set the - name: actorStateStore value: "true" in your state store component file?`, "ERR_ACTOR_RUNTIME_NOT_FOUND", http.StatusInternalServerError, grpcCodes.FailedPrecondition}
+	ErrActorV2AppIDEmpty      = APIError{"appId is empty in request", "ERR_MISSING_APP_ID", http.StatusBadRequest, grpcCodes.InvalidArgument}
+	ErrActorV2Invoke          = APIError{"error invoke actor method: %s", "ERR_ACTOR_INVOKE_METHOD", http.StatusInternalServerError, grpcCodes.Internal}
 )

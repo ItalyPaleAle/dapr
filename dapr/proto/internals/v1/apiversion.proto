@@ -25,3 +25,12 @@ enum APIVersion {
   // Dapr API v1
   V1 = 1;
 }
+
+enum ActorVersion {
+  // Dapr API v2
+  // Uses 0 for backwards-compatibility
+  ACTORS_V1 = 0;
+
+  // Dapr Actors v2
+  ACTORS_V2 = 1;
+}

@@ -57,6 +57,9 @@ message Actor {
 
   // Required. The ID of actor type (actor_type)
   string actor_id = 2;
+
+  // Optional. Actor runtime version.
+  ActorVersion actor_runtime_version = 3;
 }
 
 // InternalInvokeRequest is the message to transfer caller's data to callee

@@ -121,7 +121,7 @@ service Dapr {
   rpc TerminateWorkflowAlpha1 (TerminateWorkflowRequest) returns (TerminateWorkflowResponse) {}
 
   // Calls a method on an actor using Actors V2 APIs.
-  rpc InvokeActorV2Alpha1(InvokeActorRequest) returns (InvokeActorResponse) {}
+  rpc InvokeActorV2Alpha1(InvokeActorV2Alpha1Request) returns (InvokeActorV2Alpha1Response) {}
 
   // Shutdown the sidecar
   rpc Shutdown (google.protobuf.Empty) returns (google.protobuf.Empty) {}
@@ -523,6 +523,22 @@ message InvokeActorRequest {
 
 // InvokeActorResponse is the method that returns an actor invocation response.
 message InvokeActorResponse {
+  bytes data = 1;
+}
+
+// InvokeActorV2Alpha1Request is the message to call an actor.
+message InvokeActorV2Alpha1Request {
+  // Required. Callee's app id.
+  string app_id = 1 [json_name = "appId"];
+  string actor_type = 2 [json_name = "actorType"];
+  string actor_id = 3 [json_name = "actorId"];
+  string method = 4;
+  bytes data = 5;
+  map<string, string> metadata = 6;
+}
+
+// InvokeActorV2Alpha1Response is the method that returns an actor invocation response.
+message InvokeActorV2Alpha1Response {
   bytes data = 1;
 }
 

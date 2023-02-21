@@ -276,6 +276,7 @@ func NewAPI(opts APIOpts) API {
 	}
 	return &api{
 		UniversalAPI: &universalapi.UniversalAPI{
+			AppID:                opts.AppID,
 			Logger:               apiServerLogger,
 			Resiliency:           opts.Resiliency,
 			ActorV2:              opts.ActorV2,

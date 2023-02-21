@@ -25,6 +25,7 @@ import (
 
 // UniversalAPI contains the implementation of gRPC APIs that are also used by the HTTP server.
 type UniversalAPI struct {
+	AppID                string
 	Logger               logger.Logger
 	Resiliency           resiliency.Provider
 	ActorV2              actorsv2.Actors
