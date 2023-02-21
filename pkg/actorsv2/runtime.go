@@ -15,12 +15,15 @@ import (
 	daprCredentials "github.com/dapr/dapr/pkg/credentials"
 	invokev1 "github.com/dapr/dapr/pkg/messaging/v1"
 	"github.com/dapr/dapr/pkg/resiliency"
+	"github.com/dapr/kit/logger"
 )
 
 const (
 	stateKeySeparator = "||"
 	stateKeySuffix    = "state"
 )
+
+var log = logger.NewLogger("dapr.runtime.actorv2")
 
 type ActorStateStore interface {
 	state.Store
@@ -94,14 +97,18 @@ func (a *actorsRuntime) Call(parentCtx context.Context, req *invokev1.InvokeMeth
 	ctx, cancel := context.WithCancel(parentCtx)
 	defer cancel()
 
+	log.Infof("Received actor invocation request: method='%s' actorType='%s' actorId='%s'", req.Message().Method, act.ActorType, act.ActorId)
+
 	// Start a state transaction that will retrieve the stateRes and acquire a lock
-	stateKey := a.constructActorStateKey(act.GetActorId(), act.GetActorId(), stateKeySuffix)
+	stateKey := a.constructActorStateKey(act.GetActorType(), act.GetActorId(), stateKeySuffix)
 	stateRes, commit, err := a.store.Transaction(ctx, state.TransactionStartRequest{
 		Key: stateKey,
 	})
 	if err != nil {
 		return nil, err
 	}
+
+	log.Infof("Lock received; beginning request: method='%s' actorType='%s' actorId='%s'", req.Message().Method, act.ActorType, act.ActorId)
 
 	if len(stateRes.Data) > 0 {
 		statepb, err := a.unserializeActorState(stateRes.Data)
@@ -152,6 +159,8 @@ func (a *actorsRuntime) Call(parentCtx context.Context, req *invokev1.InvokeMeth
 	} else {
 		cr.UpdateValue = resp.ActorStateUpdate()
 	}
+
+	log.Infof("Request done; releasing lock: method='%s' actorType='%s' actorId='%s'", req.Message().Method, act.ActorType, act.ActorId)
 	err = commit(cr)
 	if err != nil {
 		return nil, fmt.Errorf("error committing state: %w", err)
