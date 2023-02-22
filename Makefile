@@ -285,10 +285,11 @@ test: test-deps
 	CGO_ENABLED=$(CGO) \
 		gotestsum \
 			--jsonfile $(TEST_OUTPUT_FILE_PREFIX)_unit.json \
+			--rerun-fails \
 			--format standard-quiet \
+			--packages "./pkg/... ./utils/... ./cmd/..." \
 			-- \
-				./pkg/... ./utils/... ./cmd/... \
-				$(COVERAGE_OPTS) --tags=unit
+				$(COVERAGE_OPTS) -tags=unit
 	CGO_ENABLED=$(CGO) \
 		go test ./tests/...
 
