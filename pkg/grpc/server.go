@@ -25,6 +25,7 @@ import (
 	"time"
 
 	grpcMiddleware "github.com/grpc-ecosystem/go-grpc-middleware"
+	"github.com/quic-go/quic-go"
 	grpcGo "google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
@@ -33,6 +34,7 @@ import (
 	diag "github.com/dapr/dapr/pkg/diagnostics"
 	diagUtils "github.com/dapr/dapr/pkg/diagnostics/utils"
 	"github.com/dapr/dapr/pkg/grpc/metadata"
+	grpcquic "github.com/dapr/dapr/pkg/grpc/quic"
 	"github.com/dapr/dapr/pkg/messaging"
 	internalv1pb "github.com/dapr/dapr/pkg/proto/internals/v1"
 	runtimev1pb "github.com/dapr/dapr/pkg/proto/runtime/v1"
@@ -45,9 +47,12 @@ import (
 const (
 	certWatchInterval              = time.Second * 3
 	renewWhenPercentagePassed      = 70
-	apiServer                      = "apiServer"
-	internalServer                 = "internalServer"
 	defaultMaxConnectionAgeSeconds = 30
+)
+
+const (
+	apiServer byte = iota
+	internalServer
 )
 
 // Server is an interface for the dapr gRPC server.
@@ -67,7 +72,7 @@ type server struct {
 	signedCert         *auth.SignedCertificate
 	tlsCert            tls.Certificate
 	signedCertDuration time.Duration
-	kind               string
+	kind               byte
 	logger             logger.Logger
 	infoLogger         logger.Logger
 	maxConnectionAge   *time.Duration
@@ -75,6 +80,7 @@ type server struct {
 	apiSpec            config.APISpec
 	proxy              messaging.Proxy
 	workflowEngine     *wfengine.WorkflowEngine
+	stopCh             chan struct{}
 }
 
 var (
@@ -86,6 +92,8 @@ var (
 // NewAPIServer returns a new user facing gRPC API server.
 func NewAPIServer(api API, config ServerConfig, tracingSpec config.TracingSpec, metricSpec config.MetricSpec, apiSpec config.APISpec, proxy messaging.Proxy, workflowEngine *wfengine.WorkflowEngine) Server {
 	apiServerInfoLogger.SetOutputLevel(logger.LogLevel("info"))
+
+	// Context used to stop background processes
 	return &server{
 		api:            api,
 		config:         config,
@@ -98,6 +106,7 @@ func NewAPIServer(api API, config ServerConfig, tracingSpec config.TracingSpec, 
 		apiSpec:        apiSpec,
 		proxy:          proxy,
 		workflowEngine: workflowEngine,
+		stopCh:         make(chan struct{}),
 	}
 }
 
@@ -113,6 +122,7 @@ func NewInternalServer(api API, config ServerConfig, tracingSpec config.TracingS
 		logger:           internalServerLogger,
 		maxConnectionAge: getDefaultMaxAgeDuration(),
 		proxy:            proxy,
+		stopCh:           make(chan struct{}),
 	}
 }
 
@@ -123,6 +133,13 @@ func getDefaultMaxAgeDuration() *time.Duration {
 
 // StartNonBlocking starts a new server in a goroutine.
 func (s *server) StartNonBlocking() error {
+	if s.authenticator != nil {
+		err := s.generateWorkloadCert()
+		if err != nil {
+			return err
+		}
+	}
+
 	var listeners []net.Listener
 	if s.config.UnixDomainSocket != "" && s.kind == apiServer {
 		socket := fmt.Sprintf("%s/dapr-%s-grpc.socket", s.config.UnixDomainSocket, s.config.AppID)
@@ -131,17 +148,43 @@ func (s *server) StartNonBlocking() error {
 			return err
 		}
 		s.logger.Infof("gRPC server listening on UNIX socket: %s", socket)
-		listeners = append(listeners, l)
+		listeners = []net.Listener{l}
 	} else {
+		if s.kind == internalServer {
+			// For internal servers, we have TCP and UDP listeners
+			// TODO: When QUIC is the only option, listen on UDP only
+			listeners = make([]net.Listener, 0, len(s.config.APIListenAddresses)*2)
+
+			// TODO: Handle if no signedCert (tlsConfig == nil)
+			tlsConfig := s.getTLSConfig()
+			tlsConfig.NextProtos = []string{daprInternalQUICProto}
+			tlsConfig.MinVersion = tls.VersionTLS13
+
+			for _, apiListenAddress := range s.config.APIListenAddresses {
+				addr := apiListenAddress + ":" + strconv.Itoa(s.config.Port)
+				ql, err := quic.ListenAddr(addr, tlsConfig, nil)
+				if err != nil {
+					s.logger.Warnf("Failed to listen for gRPC server on QUIC address %s with error: %v", addr, err)
+					continue
+				}
+
+				s.logger.Infof("gRPC server listening on QUIC address: %s", addr)
+				listeners = append(listeners, grpcquic.Listen(ql))
+			}
+		} else {
+			listeners = make([]net.Listener, 0, len(s.config.APIListenAddresses))
+		}
+
 		for _, apiListenAddress := range s.config.APIListenAddresses {
 			addr := apiListenAddress + ":" + strconv.Itoa(s.config.Port)
 			l, err := net.Listen("tcp", addr)
 			if err != nil {
-				s.logger.Debugf("Failed to listen for gRPC server on TCP address %s with error: %v", addr, err)
-			} else {
-				s.logger.Infof("gRPC server listening on TCP address: %s", addr)
-				listeners = append(listeners, l)
+				s.logger.Warnf("Failed to listen for gRPC server on TCP address %s with error: %v", addr, err)
+				continue
 			}
+
+			s.logger.Infof("gRPC server listening on TCP address: %s", addr)
+			listeners = append(listeners, l)
 		}
 	}
 
@@ -149,14 +192,22 @@ func (s *server) StartNonBlocking() error {
 		return errors.New("could not listen on any endpoint")
 	}
 
-	for _, listener := range listeners {
-		// server is created in a loop because each instance
-		// has a handle on the underlying listener.
-		server, err := s.getGRPCServer()
+	var err error
+	ta := credentials.NewTLS(s.getTLSConfig())
+	s.servers = make([]*grpcGo.Server, len(listeners))
+	for i, listener := range listeners {
+		var server *grpcGo.Server
+		if _, ok := listener.(*grpcquic.Listener); ok {
+			// When using QUIC, the TLS configuration is set on the listener
+			server, err = s.getGRPCServer()
+		} else {
+			// For the default servers (HTTP/2), the TLS configuration is passed to the gRPC server as server option
+			server, err = s.getGRPCServer(grpcGo.Creds(ta))
+		}
 		if err != nil {
 			return err
 		}
-		s.servers = append(s.servers, server)
+		s.servers[i] = server
 
 		if s.kind == internalServer {
 			internalv1pb.RegisterServiceInvocationServer(server, s.api)
@@ -177,6 +228,9 @@ func (s *server) StartNonBlocking() error {
 }
 
 func (s *server) Close() error {
+	// Stop background processes
+	close(s.stopCh)
+
 	for _, server := range s.servers {
 		// This calls `Close()` on the underlying listener.
 		server.GracefulStop()
@@ -192,12 +246,12 @@ func (s *server) Close() error {
 }
 
 func (s *server) generateWorkloadCert() error {
-	s.logger.Info("sending workload csr request to sentry")
+	s.logger.Info("Sending workload CSR request to Sentry")
 	signedCert, err := s.authenticator.CreateSignedWorkloadCert(s.config.AppID, s.config.NameSpace, s.config.TrustDomain)
 	if err != nil {
 		return fmt.Errorf("error from authenticator CreateSignedWorkloadCert: %w", err)
 	}
-	s.logger.Info("certificate signed successfully")
+	s.logger.Info("Certificate signed successfully")
 
 	tlsCert, err := tls.X509KeyPair(signedCert.WorkloadCert, signedCert.PrivateKeyPem)
 	if err != nil {
@@ -206,7 +260,10 @@ func (s *server) generateWorkloadCert() error {
 
 	s.signedCert = signedCert
 	s.tlsCert = tlsCert
-	s.signedCertDuration = signedCert.Expiry.Sub(time.Now().UTC())
+	s.signedCertDuration = time.Until(signedCert.Expiry)
+
+	go s.startWorkloadCertRotation()
+
 	return nil
 }
 
@@ -262,30 +319,30 @@ func (s *server) getMiddlewareOptions() []grpcGo.ServerOption {
 	}
 }
 
-func (s *server) getGRPCServer() (*grpcGo.Server, error) {
-	opts := s.getMiddlewareOptions()
-	if s.maxConnectionAge != nil {
-		opts = append(opts, grpcGo.KeepaliveParams(keepalive.ServerParameters{MaxConnectionAge: *s.maxConnectionAge}))
+func (s *server) getTLSConfig() *tls.Config {
+	if s.signedCert == nil {
+		return nil
 	}
 
-	if s.authenticator != nil {
-		err := s.generateWorkloadCert()
-		if err != nil {
-			return nil, err
-		}
+	//nolint:gosec
+	return &tls.Config{
+		ClientCAs:  s.signedCert.TrustChain,
+		ClientAuth: tls.RequireAndVerifyClientCert,
+		GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+			return &s.tlsCert, nil
+		},
+	}
+}
 
-		//nolint:gosec
-		tlsConfig := tls.Config{
-			ClientCAs:  s.signedCert.TrustChain,
-			ClientAuth: tls.RequireAndVerifyClientCert,
-			GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
-				return &s.tlsCert, nil
-			},
-		}
-		ta := credentials.NewTLS(&tlsConfig)
+func (s *server) getGRPCServer(opts ...grpcGo.ServerOption) (*grpcGo.Server, error) {
+	if len(opts) == 0 {
+		opts = s.getMiddlewareOptions()
+	} else {
+		opts = append(opts, s.getMiddlewareOptions()...)
+	}
 
-		opts = append(opts, grpcGo.Creds(ta))
-		go s.startWorkloadCertRotation()
+	if s.maxConnectionAge != nil {
+		opts = append(opts, grpcGo.KeepaliveParams(keepalive.ServerParameters{MaxConnectionAge: *s.maxConnectionAge}))
 	}
 
 	opts = append(opts,
@@ -302,15 +359,22 @@ func (s *server) getGRPCServer() (*grpcGo.Server, error) {
 }
 
 func (s *server) startWorkloadCertRotation() {
-	s.logger.Infof("starting workload cert expiry watcher. current cert expires on: %s", s.signedCert.Expiry.String())
+	s.logger.Infof("Starting workload cert expiry watcher. current cert expires on: %s", s.signedCert.Expiry.String())
 
 	ticker := time.NewTicker(certWatchInterval)
 
-	for range ticker.C {
+	for {
+		select {
+		case <-s.stopCh:
+			// Stop the worker
+			return
+		case <-ticker.C:
+			// Nop - continue
+		}
 		s.renewMutex.Lock()
 		renew := shouldRenewCert(s.signedCert.Expiry, s.signedCertDuration)
 		if renew {
-			s.logger.Info("renewing certificate: requesting new cert and restarting gRPC server")
+			s.logger.Info("Renewing certificate: requesting new cert and restarting gRPC server")
 
 			err := s.generateWorkloadCert()
 			if err != nil {
@@ -325,7 +389,7 @@ func (s *server) startWorkloadCertRotation() {
 }
 
 func shouldRenewCert(certExpiryDate time.Time, certDuration time.Duration) bool {
-	expiresIn := certExpiryDate.Sub(time.Now())
+	expiresIn := time.Until(certExpiryDate)
 	expiresInSeconds := expiresIn.Seconds()
 	certDurationSeconds := certDuration.Seconds()
 

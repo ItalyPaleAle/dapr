@@ -16,6 +16,7 @@ package grpc
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -30,15 +31,19 @@ import (
 	grpcChannel "github.com/dapr/dapr/pkg/channel/grpc"
 	"github.com/dapr/dapr/pkg/config"
 	diag "github.com/dapr/dapr/pkg/diagnostics"
+	grpcquic "github.com/dapr/dapr/pkg/grpc/quic"
 	"github.com/dapr/dapr/pkg/modes"
 	"github.com/dapr/dapr/pkg/runtime/security"
 )
 
 const (
 	// needed to load balance requests for target services with multiple endpoints, ie. multiple instances.
-	grpcServiceConfig = `{"loadBalancingPolicy":"round_robin"}`
-	dialTimeout       = 30 * time.Second
-	maxConnIdle       = 3 * time.Minute
+	grpcServiceConfig     = `{"loadBalancingPolicy":"round_robin"}`
+	dialTimeout           = 30 * time.Second
+	maxConnIdle           = 3 * time.Minute
+	daprInternalQUICProto = "dapr-internal-quic"
+
+	QUIC_ENABLED = true
 )
 
 // ConnCreatorFn is a function that returns a gRPC connection
@@ -172,6 +177,9 @@ func (g *Manager) GetGRPCConnection(
 	// Load or create a connection
 	var connI grpc.ClientConnInterface
 	connI, err = g.remoteConns.Get(address, func() (grpc.ClientConnInterface, error) {
+		if QUIC_ENABLED {
+			return g.connectRemoteQUIC(parentCtx, address, id, namespace, customOpts...)
+		}
 		return g.connectRemote(parentCtx, address, id, namespace, customOpts...)
 	})
 	if err != nil {
@@ -220,6 +228,67 @@ func (g *Manager) connectRemote(
 	} else {
 		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
+
+	opts = append(opts, customOpts...)
+
+	dialPrefix := GetDialAddressPrefix(g.mode)
+
+	ctx, cancel := context.WithTimeout(parentCtx, dialTimeout)
+	conn, err = grpc.DialContext(ctx, dialPrefix+address, opts...)
+	cancel()
+	if err != nil {
+		return nil, err
+	}
+
+	return conn, nil
+}
+
+func (g *Manager) connectRemoteQUIC(
+	parentCtx context.Context,
+	address string,
+	id string,
+	namespace string,
+	customOpts ...grpc.DialOption,
+) (conn *grpc.ClientConn, err error) {
+	if g.auth == nil {
+		return nil, errors.New("using QUIC requires TLS")
+	}
+
+	opts := make([]grpc.DialOption, 0, 4+len(customOpts))
+	opts = append(opts, grpc.WithDefaultServiceConfig(grpcServiceConfig))
+
+	if diag.DefaultGRPCMonitoring.IsEnabled() {
+		opts = append(opts,
+			grpc.WithUnaryInterceptor(diag.DefaultGRPCMonitoring.UnaryClientInterceptor()),
+		)
+	}
+
+	signedCert := g.auth.GetCurrentSignedCert()
+	var cert tls.Certificate
+	cert, err = tls.X509KeyPair(signedCert.WorkloadCert, signedCert.PrivateKeyPem)
+	if err != nil {
+		return nil, fmt.Errorf("error loading x509 Key Pair: %w", err)
+	}
+
+	var serverName string
+	if id != "cluster.local" {
+		serverName = id + "." + namespace + ".svc.cluster.local"
+	}
+
+	tlsConfig := &tls.Config{
+		ServerName:   serverName,
+		Certificates: []tls.Certificate{cert},
+		RootCAs:      signedCert.TrustChain,
+		NextProtos:   []string{daprInternalQUICProto},
+	}
+
+	creds := grpcquic.NewCredentials(tlsConfig)
+	dialer := grpcquic.NewQUICDialer(tlsConfig)
+
+	opts = append(opts,
+		grpc.WithContextDialer(dialer),
+		grpc.WithTransportCredentials(creds),
+	)
 
 	opts = append(opts, customOpts...)
 
