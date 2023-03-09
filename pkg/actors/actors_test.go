@@ -1894,7 +1894,7 @@ func TestDeleteState(t *testing.T) {
 	fakeCallAndActivateActor(testActorsRuntime, actorType, actorID, testActorsRuntime.clock)
 
 	// insert state
-	testActorsRuntime.TransactionalStateOperation(ctx, &TransactionalRequest{
+	err := testActorsRuntime.TransactionalStateOperation(ctx, &TransactionalRequest{
 		ActorType: actorType,
 		ActorID:   actorID,
 		Operations: []TransactionalOperation{
@@ -1907,6 +1907,7 @@ func TestDeleteState(t *testing.T) {
 			},
 		},
 	})
+	require.NoError(t, err)
 
 	// save state
 	response, err := testActorsRuntime.GetState(ctx, &GetStateRequest{
@@ -1916,22 +1917,23 @@ func TestDeleteState(t *testing.T) {
 	})
 
 	// make sure that state is stored.
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, fakeData, string(response.Data))
 
 	// delete state
-	testActorsRuntime.TransactionalStateOperation(ctx, &TransactionalRequest{
+	err = testActorsRuntime.TransactionalStateOperation(ctx, &TransactionalRequest{
 		ActorType: actorType,
 		ActorID:   actorID,
 		Operations: []TransactionalOperation{
 			{
 				Operation: Delete,
-				Request: TransactionalUpsert{
+				Request: TransactionalDelete{
 					Key: TestKeyName,
 				},
 			},
 		},
 	})
+	require.NoError(t, err)
 
 	// act
 	response, err = testActorsRuntime.GetState(ctx, &GetStateRequest{
@@ -1942,7 +1944,108 @@ func TestDeleteState(t *testing.T) {
 
 	// assert
 	assert.NoError(t, err)
-	assert.Nil(t, response.Data)
+	assert.Nilf(t, response.Data, "expected nil, but got %s", string(response.Data))
+}
+
+func TestTransactionalOperation(t *testing.T) {
+	t.Run("test upsert operations", func(t *testing.T) {
+		op := TransactionalOperation{
+			Operation: Upsert,
+			Request: TransactionalUpsert{
+				Key:   TestKeyName,
+				Value: "respiri piano per non far rumore",
+			},
+		}
+		res, err := op.StateOperation("base||", StateOperationOpts{})
+		require.NoError(t, err)
+		require.Equal(t, state.Upsert, res.Operation)
+
+		// Uses a pointer
+		op = TransactionalOperation{
+			Operation: Upsert,
+			Request: &TransactionalUpsert{
+				Key:   TestKeyName,
+				Value: "respiri piano per non far rumore",
+			},
+		}
+		res, err = op.StateOperation("base||", StateOperationOpts{})
+		require.NoError(t, err)
+		require.Equal(t, state.Upsert, res.Operation)
+
+		// Missing key
+		op = TransactionalOperation{
+			Operation: Upsert,
+			Request:   &TransactionalUpsert{},
+		}
+		_, err = op.StateOperation("base||", StateOperationOpts{})
+		require.Error(t, err)
+	})
+
+	t.Run("test delete operations", func(t *testing.T) {
+		op := TransactionalOperation{
+			Operation: Delete,
+			Request: TransactionalDelete{
+				Key: TestKeyName,
+			},
+		}
+		res, err := op.StateOperation("base||", StateOperationOpts{})
+		require.NoError(t, err)
+		require.Equal(t, state.Delete, res.Operation)
+
+		// Uses a pointer
+		op = TransactionalOperation{
+			Operation: Delete,
+			Request: &TransactionalDelete{
+				Key: TestKeyName,
+			},
+		}
+		res, err = op.StateOperation("base||", StateOperationOpts{})
+		require.NoError(t, err)
+		require.Equal(t, state.Delete, res.Operation)
+
+		// Missing key
+		op = TransactionalOperation{
+			Operation: Delete,
+			Request:   &TransactionalDelete{},
+		}
+		_, err = op.StateOperation("base||", StateOperationOpts{})
+		require.Error(t, err)
+	})
+
+	t.Run("error on mismatched request and operation", func(t *testing.T) {
+		op := TransactionalOperation{
+			Operation: Upsert,
+			Request: TransactionalDelete{
+				Key: TestKeyName,
+			},
+		}
+		_, err := op.StateOperation("base||", StateOperationOpts{})
+		require.Error(t, err)
+
+		op = TransactionalOperation{
+			Operation: Delete,
+			Request: TransactionalUpsert{
+				Key: TestKeyName,
+			},
+		}
+		_, err = op.StateOperation("base||", StateOperationOpts{})
+		require.Error(t, err)
+	})
+
+	t.Run("request as map", func(t *testing.T) {
+		op := TransactionalOperation{
+			Operation: Upsert,
+			Request: map[string]any{
+				"key": TestKeyName,
+			},
+		}
+		resI, err := op.StateOperation("base||", StateOperationOpts{})
+		require.NoError(t, err)
+
+		res, ok := resI.Request.(state.SetRequest)
+		require.True(t, ok)
+		assert.Equal(t, "base||"+TestKeyName, res.Key)
+	})
 }
 
 func TestCallLocalActor(t *testing.T) {

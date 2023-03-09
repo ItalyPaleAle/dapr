@@ -121,7 +121,11 @@ type TransactionalUpsert struct {
 }
 
 // StateOperation returns the state.TransactionalStateOperation object.
-func (t TransactionalUpsert) StateOperation(baseKey string, opts StateOperationOpts) (state.TransactionalStateOperation, error) {
+func (t TransactionalUpsert) StateOperation(baseKey string, opts StateOperationOpts) (op state.TransactionalStateOperation, err error) {
+	if t.Key == "" {
+		return op, errors.New("missing key")
+	}
+
 	return state.TransactionalStateOperation{
 		Operation: state.Upsert,
 		Request: state.SetRequest{
@@ -141,7 +145,11 @@ type TransactionalDelete struct {
 }
 
 // StateOperation returns the state.TransactionalStateOperation object.
-func (t TransactionalDelete) StateOperation(baseKey string, opts StateOperationOpts) (state.TransactionalStateOperation, error) {
+func (t TransactionalDelete) StateOperation(baseKey string, opts StateOperationOpts) (op state.TransactionalStateOperation, err error) {
+	if t.Key == "" {
+		return op, errors.New("missing key")
+	}
+
 	return state.TransactionalStateOperation{
 		Operation: state.Delete,
 		Request: state.DeleteRequest{
