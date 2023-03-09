@@ -38,14 +38,11 @@ func NewReminderPeriod(val string) (p ReminderPeriod, err error) {
 	p = NewEmptyReminderPeriod()
 
 	if val != "" {
-		err = parseReminderPeriod(val, &p)
-		if err != nil {
-			return p, err
-		}
 		p.value = val
+		err = parseReminderPeriod(&p)
 	}
 
-	return p, nil
+	return p, err
 }
 
 // NewEmptyReminderPeriod returns an empty ReminderPeriod, which has unlimited repeats.
@@ -79,21 +76,20 @@ func (p *ReminderPeriod) UnmarshalJSON(data []byte) error {
 	if len(data) >= 2 && data[0] == '"' && data[len(data)-1] == '"' {
 		data = data[1 : len(data)-1]
 	}
-	dataStr := string(data)
 	*p = ReminderPeriod{
-		value:   dataStr,
+		value:   string(data),
 		repeats: -1,
 	}
 
-	if dataStr == "" {
+	if p.value == "" {
 		return nil
 	}
 
-	return parseReminderPeriod(dataStr, p)
+	return parseReminderPeriod(p)
 }
 
-func parseReminderPeriod(val string, p *ReminderPeriod) (err error) {
-	p.years, p.months, p.days, p.period, p.repeats, err = timeutils.ParseDuration(val)
+func parseReminderPeriod(p *ReminderPeriod) (err error) {
+	p.years, p.months, p.days, p.period, p.repeats, err = timeutils.ParseDuration(p.value)
 	if err != nil {
 		return fmt.Errorf("parse error: %w", err)
 	}

@@ -90,18 +90,18 @@ func (r *Reminder) UpdateFromTrack(track *ReminderTrack) {
 }
 
 func (r *Reminder) MarshalJSON() ([]byte, error) {
-	type ReminderAlias Reminder
+	type reminderAlias Reminder
 
 	// Custom serializer that encodes times (RegisteredTime and ExpirationTime) in the RFC3339 format.
 	// Also adds a custom serializer for Period to omit empty strings.
 	// This is for backwards-compatibility and also because we don't need to store precision with less than seconds
-	m := &struct {
+	m := struct {
 		RegisteredTime string `json:"registeredTime,omitempty"`
 		ExpirationTime string `json:"expirationTime,omitempty"`
 		Period         string `json:"period,omitempty"`
-		*ReminderAlias
+		*reminderAlias
 	}{
-		ReminderAlias: (*ReminderAlias)(r),
+		reminderAlias: (*reminderAlias)(r),
 	}
 
 	m.Period = r.Period.String()
@@ -116,7 +116,7 @@ func (r *Reminder) MarshalJSON() ([]byte, error) {
 }
 
 func (r *Reminder) UnmarshalJSON(data []byte) error {
-	type ReminderAlias Reminder
+	type reminderAlias Reminder
 
 	*r = Reminder{
 		Period: NewEmptyReminderPeriod(),
@@ -126,9 +126,9 @@ func (r *Reminder) UnmarshalJSON(data []byte) error {
 	m := &struct {
 		ExpirationTime string `json:"expirationTime"`
 		RegisteredTime string `json:"registeredTime"`
-		*ReminderAlias
+		*reminderAlias
 	}{
-		ReminderAlias: (*ReminderAlias)(r),
+		reminderAlias: (*reminderAlias)(r),
 	}
 	err := json.Unmarshal(data, &m)
 	if err != nil {
