@@ -64,6 +64,11 @@ type GetStateRequest struct {
 	Key       string `json:"key"`
 }
 
+// ActorKey returns the key of the actor for this request.
+func (r GetStateRequest) ActorKey() string {
+	return r.ActorType + daprSeparator + r.ActorID
+}
+
 // ReminderResponse is the payload that is sent to an Actor SDK API for execution.
 type ReminderResponse struct {
 	Data    any    `json:"data"`

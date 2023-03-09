@@ -1827,7 +1827,7 @@ func TestConstructActorStateKey(t *testing.T) {
 	expected := strings.Join([]string{TestAppID, actorType, actorID, TestKeyName}, delim)
 
 	// act
-	stateKey := testActorsRuntime.constructActorStateKey(actorType, actorID, TestKeyName)
+	stateKey := testActorsRuntime.constructActorStateKey(constructCompositeKey(actorType, actorID), TestKeyName)
 
 	// assert
 	assert.Equal(t, expected, stateKey)

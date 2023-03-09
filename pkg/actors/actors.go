@@ -610,10 +610,11 @@ func (a *actorsRuntime) GetState(ctx context.Context, req *GetStateRequest) (*St
 		return nil, errors.New("actors: state store does not exist or incorrectly configured")
 	}
 
-	partitionKey := constructCompositeKey(a.config.AppID, req.ActorType, req.ActorID)
+	actorKey := req.ActorKey()
+	partitionKey := constructCompositeKey(a.config.AppID, actorKey)
 	metadata := map[string]string{metadataPartitionKey: partitionKey}
 
-	key := a.constructActorStateKey(req.ActorType, req.ActorID, req.Key)
+	key := a.constructActorStateKey(actorKey, req.Key)
 
 	policyRunner := resiliency.NewRunner[*state.GetResponse](ctx,
 		a.resiliency.ComponentOutboundPolicy(a.storeName, resiliency.Statestore),
@@ -642,8 +643,9 @@ func (a *actorsRuntime) TransactionalStateOperation(ctx context.Context, req *Tr
 	if a.store == nil {
 		return errors.New("actors: state store does not exist or incorrectly configured. Have you set the - name: actorStateStore value: \"true\" in your state store component file?")
 	}
+	actorKey := req.ActorKey()
 	operations := make([]state.TransactionalStateOperation, len(req.Operations))
-	partitionKey := constructCompositeKey(a.config.AppID, req.ActorType, req.ActorID)
+	partitionKey := constructCompositeKey(a.config.AppID, actorKey)
 	metadata := map[string]string{metadataPartitionKey: partitionKey}
 	for i, o := range req.Operations {
 		switch o.Operation {
@@ -653,7 +655,7 @@ func (a *actorsRuntime) TransactionalStateOperation(ctx context.Context, req *Tr
 			if err != nil {
 				return err
 			}
-			key := a.constructActorStateKey(req.ActorType, req.ActorID, upsert.Key)
+			key := a.constructActorStateKey(actorKey, upsert.Key)
 			operations[i] = state.TransactionalStateOperation{
 				Request: state.SetRequest{
 					Key:      key,
@@ -668,7 +670,7 @@ func (a *actorsRuntime) TransactionalStateOperation(ctx context.Context, req *Tr
 			if err != nil {
 				return err
 			}
-			key := a.constructActorStateKey(req.ActorType, req.ActorID, delete.Key)
+			key := a.constructActorStateKey(actorKey, delete.Key)
 			operations[i] = state.TransactionalStateOperation{
 				Request: state.DeleteRequest{
 					Key:      key,
@@ -709,8 +711,8 @@ func (a *actorsRuntime) IsActorHosted(ctx context.Context, req *ActorHostedReque
 	return err == nil
 }
 
-func (a *actorsRuntime) constructActorStateKey(actorType, actorID, key string) string {
-	return constructCompositeKey(a.config.AppID, actorType, actorID, key)
+func (a *actorsRuntime) constructActorStateKey(actorKey, key string) string {
+	return constructCompositeKey(a.config.AppID, actorKey, key)
 }
 
 func (a *actorsRuntime) drainRebalancedActors() {
