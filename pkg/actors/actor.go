@@ -53,7 +53,6 @@ type actor struct {
 	// is used when runtime drains actor.
 	disposeCh chan struct{}
 
-	once  sync.Once
 	clock clocklib.Clock
 }
 
