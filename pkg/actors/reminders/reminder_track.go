@@ -23,18 +23,18 @@ import (
 type ReminderTrack struct {
 	LastFiredTime  time.Time `json:"lastFiredTime"`
 	RepetitionLeft int       `json:"repetitionLeft"`
-	Etag           *string
+	Etag           *string   `json:",omitempty"`
 }
 
 func (r *ReminderTrack) MarshalJSON() ([]byte, error) {
-	type ReminderTrackAlias ReminderTrack
+	type reminderTrackAlias ReminderTrack
 
 	// Custom serializer that encodes times (LastFiredTime) in the RFC3339 format, for backwards-compatibility
 	m := &struct {
 		LastFiredTime string `json:"lastFiredTime,omitempty"`
-		*ReminderTrackAlias
+		*reminderTrackAlias
 	}{
-		ReminderTrackAlias: (*ReminderTrackAlias)(r),
+		reminderTrackAlias: (*reminderTrackAlias)(r),
 	}
 
 	if !r.LastFiredTime.IsZero() {
@@ -45,14 +45,14 @@ func (r *ReminderTrack) MarshalJSON() ([]byte, error) {
 }
 
 func (r *ReminderTrack) UnmarshalJSON(data []byte) error {
-	type ReminderTrackAlias ReminderTrack
+	type reminderTrackAlias ReminderTrack
 
 	// Parse RegisteredTime and ExpirationTime as dates in the RFC3339 format
 	m := &struct {
 		LastFiredTime string `json:"lastFiredTime"`
-		*ReminderTrackAlias
+		*reminderTrackAlias
 	}{
-		ReminderTrackAlias: (*ReminderTrackAlias)(r),
+		reminderTrackAlias: (*reminderTrackAlias)(r),
 	}
 	err := json.Unmarshal(data, &m)
 	if err != nil {

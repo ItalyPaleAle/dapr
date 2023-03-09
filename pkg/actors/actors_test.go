@@ -16,6 +16,7 @@ package actors
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"runtime"
 	"strconv"
@@ -160,17 +161,19 @@ type fakeStateStoreItem struct {
 	etag *string
 }
 
+func (i fakeStateStoreItem) String() string {
+	return "[etag=" + (*i.etag) + "] " + string(i.data)
+}
+
 type fakeStateStore struct {
 	items map[string]*fakeStateStoreItem
 	lock  sync.RWMutex
 }
 
 func (f *fakeStateStore) newItem(data []byte) *fakeStateStoreItem {
-	etag, _ := uuid.NewRandom()
-	etagString := etag.String()
 	return &fakeStateStoreItem{
 		data: data,
-		etag: &etagString,
+		etag: ptr.Of(uuid.NewString()), // Panics if UUID generation fails - it's ok in a test
 	}
 }
 
@@ -189,6 +192,18 @@ func (f *fakeStateStore) Features() []state.Feature {
 func (f *fakeStateStore) Delete(ctx context.Context, req *state.DeleteRequest) error {
 	f.lock.Lock()
 	defer f.lock.Unlock()
+
+	currentItem := f.items[req.Key]
+	if req.ETag != nil {
+		if currentItem != nil {
+			if currentItem.etag == nil || *req.ETag != *currentItem.etag {
+				return errors.New("etag does not match")
+			}
+		} else {
+			return errors.New("etag does not match for key not found")
+		}
+	}
+
 	delete(f.items, req.Key)
 
 	return nil
@@ -236,6 +251,18 @@ func (f *fakeStateStore) Set(ctx context.Context, req *state.SetRequest) error {
 	b, _ := json.Marshal(&req.Value)
 	f.lock.Lock()
 	defer f.lock.Unlock()
+
+	currentItem := f.items[req.Key]
+	if req.ETag != nil {
+		if currentItem != nil {
+			if currentItem.etag == nil || *req.ETag != *currentItem.etag {
+				return errors.New("etag does not match")
+			}
+		} else {
+			return errors.New("etag does not match for key not found")
+		}
+	}
+
 	f.items[req.Key] = f.newItem(b)
 
 	return nil
@@ -266,11 +293,11 @@ func (f *fakeStateStore) Multi(ctx context.Context, request *state.Transactional
 		item := f.items[key]
 		if eTag != nil && item != nil {
 			if *eTag != *item.etag {
-				return fmt.Errorf("etag does not match for key %v", key)
+				return fmt.Errorf("etag does not match for key %s", key)
 			}
 		}
 		if eTag != nil && item == nil {
-			return fmt.Errorf("etag does not match for key not found %v", key)
+			return fmt.Errorf("etag does not match for key not found %s", key)
 		}
 	}
 
@@ -641,13 +668,13 @@ func TestStoreIsNotInitialized(t *testing.T) {
 	testActorsRuntime.store = nil
 
 	t.Run("getReminderTrack", func(t *testing.T) {
-		r, e := testActorsRuntime.getReminderTrack(context.Background(), "foo", "bar")
+		r, e := testActorsRuntime.getReminderTrack(context.Background(), "foo||bar")
 		assert.NotNil(t, e)
 		assert.Nil(t, r)
 	})
 
 	t.Run("updateReminderTrack", func(t *testing.T) {
-		e := testActorsRuntime.updateReminderTrack(context.Background(), "foo", "bar", 1, testActorsRuntime.clock.Now(), nil)
+		e := testActorsRuntime.updateReminderTrack(context.Background(), "foo||bar", 1, testActorsRuntime.clock.Now(), nil)
 		assert.NotNil(t, e)
 	})
 
@@ -759,7 +786,7 @@ func TestSetReminderTrack(t *testing.T) {
 
 	actorType, actorID := getTestActorTypeAndID()
 	noRepetition := -1
-	err := testActorsRuntime.updateReminderTrack(context.Background(), actorType, actorID, noRepetition, testActorsRuntime.clock.Now(), nil)
+	err := testActorsRuntime.updateReminderTrack(context.Background(), constructCompositeKey(actorType, actorID), noRepetition, testActorsRuntime.clock.Now(), nil)
 	assert.NoError(t, err)
 }
 
@@ -769,7 +796,7 @@ func TestGetReminderTrack(t *testing.T) {
 		defer testActorsRuntime.Stop()
 
 		actorType, actorID := getTestActorTypeAndID()
-		r, _ := testActorsRuntime.getReminderTrack(context.Background(), actorType, actorID)
+		r, _ := testActorsRuntime.getReminderTrack(context.Background(), constructCompositeKey(actorType, actorID))
 		assert.Empty(t, r.LastFiredTime)
 	})
 
@@ -780,8 +807,8 @@ func TestGetReminderTrack(t *testing.T) {
 		actorType, actorID := getTestActorTypeAndID()
 		repetition := 10
 		now := testActorsRuntime.clock.Now()
-		testActorsRuntime.updateReminderTrack(context.Background(), actorType, actorID, repetition, now, nil)
-		r, _ := testActorsRuntime.getReminderTrack(context.Background(), actorType, actorID)
+		testActorsRuntime.updateReminderTrack(context.Background(), constructCompositeKey(actorType, actorID), repetition, now, nil)
+		r, _ := testActorsRuntime.getReminderTrack(context.Background(), constructCompositeKey(actorType, actorID))
 		assert.NotEmpty(t, r.LastFiredTime)
 		assert.Equal(t, repetition, r.RepetitionLeft)
 		assert.Equal(t, now, r.LastFiredTime)
@@ -1697,7 +1724,7 @@ func TestReminderFires(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	actorKey := constructCompositeKey(actorType, actorID)
-	track, err := testActorsRuntime.getReminderTrack(context.Background(), actorKey, "reminder1")
+	track, err := testActorsRuntime.getReminderTrack(context.Background(), constructCompositeKey(actorKey, "reminder1"))
 	assert.NoError(t, err)
 	assert.NotNil(t, track)
 	assert.NotEmpty(t, track.LastFiredTime)
@@ -1715,7 +1742,7 @@ func TestReminderDueDate(t *testing.T) {
 	err := testActorsRuntime.CreateReminder(ctx, &reminder)
 	assert.NoError(t, err)
 
-	track, err := testActorsRuntime.getReminderTrack(context.Background(), actorKey, "reminder1")
+	track, err := testActorsRuntime.getReminderTrack(context.Background(), constructCompositeKey(actorKey, "reminder1"))
 	assert.NoError(t, err)
 	assert.Empty(t, track.LastFiredTime)
 
@@ -1727,7 +1754,7 @@ func TestReminderDueDate(t *testing.T) {
 	runtime.Gosched()
 	time.Sleep(100 * time.Millisecond)
 
-	track, err = testActorsRuntime.getReminderTrack(context.Background(), actorKey, "reminder1")
+	track, err = testActorsRuntime.getReminderTrack(context.Background(), constructCompositeKey(actorKey, "reminder1"))
 	assert.NoError(t, err)
 	assert.NotEmpty(t, track.LastFiredTime)
 }
@@ -1752,7 +1779,7 @@ func TestReminderPeriod(t *testing.T) {
 	runtime.Gosched()
 	time.Sleep(100 * time.Millisecond)
 
-	track, _ := testActorsRuntime.getReminderTrack(context.Background(), actorKey, "reminder1")
+	track, _ := testActorsRuntime.getReminderTrack(context.Background(), constructCompositeKey(actorKey, "reminder1"))
 	assert.NotEmpty(t, track.LastFiredTime)
 
 	clock.Add(3 * time.Second)
@@ -1761,7 +1788,7 @@ func TestReminderPeriod(t *testing.T) {
 	runtime.Gosched()
 	time.Sleep(100 * time.Millisecond)
 
-	track2, err := testActorsRuntime.getReminderTrack(context.Background(), actorKey, "reminder1")
+	track2, err := testActorsRuntime.getReminderTrack(context.Background(), constructCompositeKey(actorKey, "reminder1"))
 	assert.NoError(t, err)
 	assert.NotEmpty(t, track2.LastFiredTime)
 
@@ -1788,7 +1815,7 @@ func TestReminderFiresOnceWithEmptyPeriod(t *testing.T) {
 	runtime.Gosched()
 	time.Sleep(100 * time.Millisecond)
 
-	track, _ := testActorsRuntime.getReminderTrack(context.Background(), actorKey, "reminder1")
+	track, _ := testActorsRuntime.getReminderTrack(context.Background(), constructCompositeKey(actorKey, "reminder1"))
 	assert.Empty(t, track.LastFiredTime)
 }
 

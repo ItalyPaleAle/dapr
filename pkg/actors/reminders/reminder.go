@@ -96,20 +96,25 @@ func (r *Reminder) MarshalJSON() ([]byte, error) {
 	// Also adds a custom serializer for Period to omit empty strings.
 	// This is for backwards-compatibility and also because we don't need to store precision with less than seconds
 	m := struct {
-		RegisteredTime string `json:"registeredTime,omitempty"`
-		ExpirationTime string `json:"expirationTime,omitempty"`
-		Period         string `json:"period,omitempty"`
+		RegisteredTime string           `json:"registeredTime,omitempty"`
+		ExpirationTime string           `json:"expirationTime,omitempty"`
+		Period         string           `json:"period,omitempty"`
+		Data           *json.RawMessage `json:"data,omitempty"`
 		*reminderAlias
 	}{
 		reminderAlias: (*reminderAlias)(r),
 	}
 
-	m.Period = r.Period.String()
 	if !r.RegisteredTime.IsZero() {
 		m.RegisteredTime = r.RegisteredTime.Format(time.RFC3339)
 	}
 	if !r.ExpirationTime.IsZero() {
 		m.ExpirationTime = r.ExpirationTime.Format(time.RFC3339)
+	}
+
+	m.Period = r.Period.String()
+	if len(r.Data) > 0 {
+		m.Data = &r.Data
 	}
 
 	return json.Marshal(m)

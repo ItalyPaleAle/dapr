@@ -844,7 +844,7 @@ func (a *actorsRuntime) evaluateReminders(ctx context.Context) {
 	<-a.evaluationChan
 }
 
-func (a *actorsRuntime) getReminderTrack(ctx context.Context, actorKey, name string) (*reminders.ReminderTrack, error) {
+func (a *actorsRuntime) getReminderTrack(ctx context.Context, key string) (*reminders.ReminderTrack, error) {
 	if a.store == nil {
 		return nil, errors.New("actors: state store does not exist or incorrectly configured")
 	}
@@ -853,7 +853,7 @@ func (a *actorsRuntime) getReminderTrack(ctx context.Context, actorKey, name str
 		a.resiliency.ComponentOutboundPolicy(a.storeName, resiliency.Statestore),
 	)
 	storeReq := &state.GetRequest{
-		Key: constructCompositeKey(actorKey, name),
+		Key: key,
 	}
 	resp, err := policyRunner(func(ctx context.Context) (*state.GetResponse, error) {
 		return a.store.Get(ctx, storeReq)
@@ -873,7 +873,7 @@ func (a *actorsRuntime) getReminderTrack(ctx context.Context, actorKey, name str
 	return track, nil
 }
 
-func (a *actorsRuntime) updateReminderTrack(ctx context.Context, actorKey, name string, repetition int, lastInvokeTime time.Time, etag *string) error {
+func (a *actorsRuntime) updateReminderTrack(ctx context.Context, key string, repetition int, lastInvokeTime time.Time, etag *string) error {
 	if a.store == nil {
 		return errors.New("actors: state store does not exist or incorrectly configured")
 	}
@@ -887,7 +887,7 @@ func (a *actorsRuntime) updateReminderTrack(ctx context.Context, actorKey, name 
 		a.resiliency.ComponentOutboundPolicy(a.storeName, resiliency.Statestore),
 	)
 	setReq := &state.SetRequest{
-		Key:   constructCompositeKey(actorKey, name),
+		Key:   key,
 		Value: track,
 		ETag:  etag,
 		Options: state.SetStateOption{
@@ -901,10 +901,9 @@ func (a *actorsRuntime) updateReminderTrack(ctx context.Context, actorKey, name 
 }
 
 func (a *actorsRuntime) startReminder(reminder *reminders.Reminder, stopChannel chan struct{}) error {
-	actorKey := reminder.ActorKey()
 	reminderKey := reminder.Key()
 
-	track, err := a.getReminderTrack(context.TODO(), actorKey, reminder.Name)
+	track, err := a.getReminderTrack(context.TODO(), reminderKey)
 	if err != nil {
 		return fmt.Errorf("error getting reminder track: %w", err)
 	}
@@ -974,11 +973,11 @@ func (a *actorsRuntime) startReminder(reminder *reminders.Reminder, stopChannel 
 
 			_, exists = a.activeReminders.Load(reminderKey)
 			if exists {
-				err = a.updateReminderTrack(context.TODO(), actorKey, reminder.Name, reminder.RepeatsLeft(), reminder.NextTick(), eTag)
+				err = a.updateReminderTrack(context.TODO(), reminderKey, reminder.RepeatsLeft(), reminder.NextTick(), eTag)
 				if err != nil {
 					log.Errorf("Error updating reminder track for reminder %s: %v", reminderKey, err)
 				}
-				track, gErr := a.getReminderTrack(context.TODO(), actorKey, reminder.Name)
+				track, gErr := a.getReminderTrack(context.TODO(), reminderKey)
 				if gErr != nil {
 					log.Errorf("Error retrieving reminder %s: %v", reminderKey, gErr)
 				} else {
