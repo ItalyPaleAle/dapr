@@ -655,6 +655,10 @@ func (a *actorsRuntime) TransactionalStateOperation(ctx context.Context, req *Tr
 		}
 	}
 
+	return a.executeStateStoreTransaction(ctx, operations, metadata)
+}
+
+func (a *actorsRuntime) executeStateStoreTransaction(ctx context.Context, operations []state.TransactionalStateOperation, metadata map[string]string) error {
 	policyRunner := resiliency.NewRunner[struct{}](ctx,
 		a.resiliency.ComponentOutboundPolicy(a.storeName, resiliency.Statestore),
 	)
@@ -662,7 +666,7 @@ func (a *actorsRuntime) TransactionalStateOperation(ctx context.Context, req *Tr
 		Operations: operations,
 		Metadata:   metadata,
 	}
-	_, err = policyRunner(func(ctx context.Context) (struct{}, error) {
+	_, err := policyRunner(func(ctx context.Context) (struct{}, error) {
 		return struct{}{}, a.store.Multi(ctx, stateReq)
 	})
 	return err
@@ -1320,22 +1324,16 @@ func (a *actorsRuntime) CreateTimer(ctx context.Context, req *CreateTimerRequest
 	return nil
 }
 
-func (a *actorsRuntime) saveActorTypeMetadata(ctx context.Context, actorType string, actorMetadata *ActorMetadata) error {
-	setReq := &state.SetRequest{
-		Key:   constructCompositeKey("actors", actorType, "metadata"),
-		Value: actorMetadata,
-		ETag:  actorMetadata.Etag,
+func (a *actorsRuntime) saveActorTypeMetadataRequest(actorType string, actorMetadata *ActorMetadata, stateMetadata map[string]string) state.SetRequest {
+	return state.SetRequest{
+		Key:      constructCompositeKey("actors", actorType, "metadata"),
+		Value:    actorMetadata,
+		ETag:     actorMetadata.Etag,
+		Metadata: stateMetadata,
 		Options: state.SetStateOption{
 			Concurrency: state.FirstWrite,
 		},
 	}
-	policyRunner := resiliency.NewRunner[struct{}](ctx,
-		a.resiliency.ComponentOutboundPolicy(a.storeName, resiliency.Statestore),
-	)
-	_, err := policyRunner(func(ctx context.Context) (struct{}, error) {
-		return struct{}{}, a.store.Set(ctx, setReq)
-	})
-	return err
 }
 
 func (a *actorsRuntime) getActorTypeMetadata(ctx context.Context, actorType string, migrate bool) (result *ActorMetadata, err error) {
@@ -1417,7 +1415,11 @@ func (a *actorsRuntime) migrateRemindersForActorType(ctx context.Context, actorT
 	*actorMetadata = *refreshedActorMetadata
 
 	// Recreate as a new metadata identifier.
-	actorMetadata.ID = uuid.NewString()
+	idObj, err := uuid.NewRandom()
+	if err != nil {
+		return fmt.Errorf("failed to generate UUID: %w", err)
+	}
+	actorMetadata.ID = idObj.String()
 	actorMetadata.RemindersMetadata.PartitionCount = reminderPartitionCount
 	actorRemindersPartitions := make([][]reminders.Reminder, actorMetadata.RemindersMetadata.PartitionCount)
 	for i := 0; i < actorMetadata.RemindersMetadata.PartitionCount; i++ {
@@ -1430,22 +1432,31 @@ func (a *actorsRuntime) migrateRemindersForActorType(ctx context.Context, actorT
 		actorRemindersPartitions[partitionID-1] = append(actorRemindersPartitions[partitionID-1], reminderRef.reminder)
 	}
 
-	// Save to database.
+	// Create the requests to put in the transaction.
+	stateOperations := make([]state.TransactionalStateOperation, actorMetadata.RemindersMetadata.PartitionCount+1)
+	stateMetadata := map[string]string{
+		metadataPartitionKey: actorMetadata.ID,
+	}
 	for i := 0; i < actorMetadata.RemindersMetadata.PartitionCount; i++ {
-		partitionID := i + 1
-		stateKey := actorMetadata.calculateRemindersStateKey(actorType, uint32(partitionID))
-		stateValue := actorRemindersPartitions[i]
-		err = a.saveRemindersInPartition(ctx, stateKey, stateValue, nil, actorMetadata.ID)
-		if err != nil {
-			return err
+		stateKey := actorMetadata.calculateRemindersStateKey(actorType, uint32(i+1))
+		stateOperations[i] = state.TransactionalStateOperation{
+			Operation: state.Upsert,
+			Request:   a.saveRemindersInPartitionRequest(stateKey, actorRemindersPartitions[i], nil, stateMetadata),
 		}
 	}
 
-	// Save new metadata so the new "metadataID" becomes the new de factor referenced list for reminders.
-	err = a.saveActorTypeMetadata(ctx, actorType, actorMetadata)
-	if err != nil {
-		return err
+	// Also create a request to save the new metadata, so the new "metadataID" becomes the new de facto referenced list for reminders
+	stateOperations[len(stateOperations)-1] = state.TransactionalStateOperation{
+		Operation: state.Upsert,
+		Request:   a.saveActorTypeMetadataRequest(actorType, actorMetadata, stateMetadata),
 	}
+
+	// Perform all operations in a transaction
+	err = a.executeStateStoreTransaction(ctx, stateOperations, stateMetadata)
+	if err != nil {
+		return fmt.Errorf("failed to perform transaction to migrate records for actor type %s: %w", actorType, err)
+	}
+
 	log.Warnf(
 		"completed actor metadata record migration for actor type %s, new metadata ID = %s",
 		actorType, actorMetadata.ID)
@@ -1616,26 +1627,16 @@ func (a *actorsRuntime) getRemindersForActorType(ctx context.Context, actorType 
 	return reminderRefs, actorMetadata, nil
 }
 
-func (a *actorsRuntime) saveRemindersInPartition(ctx context.Context, stateKey string, reminders []reminders.Reminder, etag *string, databasePartitionKey string) error {
-	// Even when data is not partitioned, the save operation is the same.
-	// The only difference is stateKey.
-	log.Debugf("saving %d reminders in %s ...", len(reminders), stateKey)
-	policyRunner := resiliency.NewRunner[any](ctx,
-		a.resiliency.ComponentOutboundPolicy(a.storeName, resiliency.Statestore),
-	)
-	req := &state.SetRequest{
+func (a *actorsRuntime) saveRemindersInPartitionRequest(stateKey string, reminders []reminders.Reminder, etag *string, metadata map[string]string) state.SetRequest {
+	return state.SetRequest{
 		Key:      stateKey,
 		Value:    reminders,
 		ETag:     etag,
-		Metadata: map[string]string{metadataPartitionKey: databasePartitionKey},
+		Metadata: metadata,
 		Options: state.SetStateOption{
 			Concurrency: state.FirstWrite,
 		},
 	}
-	_, err := policyRunner(func(ctx context.Context) (any, error) {
-		return nil, a.store.Set(ctx, req)
-	})
-	return err
 }
 
 func (a *actorsRuntime) DeleteReminder(ctx context.Context, req *DeleteReminderRequest) error {
@@ -1701,23 +1702,24 @@ func (a *actorsRuntime) doDeleteReminder(ctx context.Context, actorType, actorID
 			return struct{}{}, fmt.Errorf("context error before saving reminders: %w", rErr)
 		}
 
-		// Then, save the partition to the database.
-		rErr = a.saveRemindersInPartition(ctx, stateKey, remindersInPartition, etag, databasePartitionKey)
-		if rErr != nil {
-			return struct{}{}, fmt.Errorf("error saving reminders partition: %w", rErr)
+		// Save the partition in the database, in a transaction where we also save the metadata.
+		// Saving the metadata too avoids a race condition between an update and repartitioning.
+		stateMetadata := map[string]string{
+			metadataPartitionKey: databasePartitionKey,
 		}
-
-		// Check if context is still valid
-		rErr = ctx.Err()
-		if rErr != nil {
-			return struct{}{}, fmt.Errorf("context error before saving actor type metadata: %w", rErr)
+		stateOperations := []state.TransactionalStateOperation{
+			{
+				Operation: state.Upsert,
+				Request:   a.saveRemindersInPartitionRequest(stateKey, remindersInPartition, etag, stateMetadata),
+			},
+			{
+				Operation: state.Upsert,
+				Request:   a.saveActorTypeMetadataRequest(actorType, actorMetadata, stateMetadata),
+			},
 		}
-
-		// Finally, we must save metadata to get a new eTag.
-		// This avoids a race condition between an update and a repartitioning.
-		rErr = a.saveActorTypeMetadata(ctx, actorType, actorMetadata)
+		rErr = a.executeStateStoreTransaction(ctx, stateOperations, stateMetadata)
 		if rErr != nil {
-			return struct{}{}, fmt.Errorf("error saving metadata: %w", rErr)
+			return struct{}{}, fmt.Errorf("error saving reminders partition and metadata: %w", rErr)
 		}
 
 		a.remindersLock.Lock()
@@ -1826,23 +1828,24 @@ func (a *actorsRuntime) storeReminder(ctx context.Context, reminder *reminders.R
 			return struct{}{}, fmt.Errorf("context error before saving reminders: %w", rErr)
 		}
 
-		// Then, save the partition to the database.
-		rErr = a.saveRemindersInPartition(ctx, stateKey, remindersInPartition, etag, databasePartitionKey)
-		if rErr != nil {
-			return struct{}{}, fmt.Errorf("error saving reminders partition: %w", rErr)
+		// Save the partition in the database, in a transaction where we also save the metadata.
+		// Saving the metadata too avoids a race condition between an update and repartitioning.
+		stateMetadata := map[string]string{
+			metadataPartitionKey: databasePartitionKey,
 		}
-
-		// Check if context is still valid
-		rErr = ctx.Err()
-		if rErr != nil {
-			return struct{}{}, fmt.Errorf("context error before saving actor type metadata: %w", rErr)
+		stateOperations := []state.TransactionalStateOperation{
+			{
+				Operation: state.Upsert,
+				Request:   a.saveRemindersInPartitionRequest(stateKey, remindersInPartition, etag, stateMetadata),
+			},
+			{
+				Operation: state.Upsert,
+				Request:   a.saveActorTypeMetadataRequest(reminder.ActorType, actorMetadata, stateMetadata),
+			},
 		}
-
-		// Finally, we must save metadata to get a new eTag.
-		// This avoids a race condition between an update and a repartitioning.
-		rErr = a.saveActorTypeMetadata(ctx, reminder.ActorType, actorMetadata)
+		rErr = a.executeStateStoreTransaction(ctx, stateOperations, stateMetadata)
 		if rErr != nil {
-			return struct{}{}, fmt.Errorf("error saving metadata: %w", rErr)
+			return struct{}{}, fmt.Errorf("error saving reminders partition and metadata: %w", rErr)
 		}
 
 		a.remindersLock.Lock()
