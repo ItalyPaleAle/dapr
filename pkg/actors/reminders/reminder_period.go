@@ -17,7 +17,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	timeutils "github.com/dapr/kit/time"
@@ -39,11 +38,14 @@ func NewReminderPeriod(val string) (p ReminderPeriod, err error) {
 	p = NewEmptyReminderPeriod()
 
 	if val != "" {
-		p.value = val
 		err = parseReminderPeriod(val, &p)
+		if err != nil {
+			return p, err
+		}
+		p.value = val
 	}
 
-	return p, err
+	return p, nil
 }
 
 // NewEmptyReminderPeriod returns an empty ReminderPeriod, which has unlimited repeats.
@@ -74,7 +76,10 @@ func (p ReminderPeriod) MarshalJSON() ([]byte, error) {
 }
 
 func (p *ReminderPeriod) UnmarshalJSON(data []byte) error {
-	dataStr := strings.Trim(string(data), `"`)
+	if len(data) >= 2 && data[0] == '"' && data[len(data)-1] == '"' {
+		data = data[1 : len(data)-1]
+	}
+	dataStr := string(data)
 	*p = ReminderPeriod{
 		value:   dataStr,
 		repeats: -1,
