@@ -31,7 +31,6 @@ import (
 	clocklib "github.com/benbjohnson/clock"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/google/uuid"
-	"github.com/mitchellh/mapstructure"
 	"github.com/valyala/fasthttp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -117,7 +116,7 @@ type actorsRuntime struct {
 	reminders              map[string][]actorReminderReference
 	evaluationLock         sync.RWMutex
 	evaluationChan         chan struct{}
-	appHealthy             atomic.Bool
+	appHealthy             *atomic.Bool
 	certChain              *daprCredentials.CertChain
 	tracingSpec            configuration.TracingSpec
 	resiliency             resiliency.Provider
@@ -190,7 +189,7 @@ func newActorsWithClock(opts ActorsOpts, clock clocklib.Clock) Actors {
 		}
 	}
 
-	appHealthy := atomic.Bool{}
+	appHealthy := &atomic.Bool{}
 	appHealthy.Store(true)
 	ctx, cancel := context.WithCancel(context.Background())
 	return &actorsRuntime{
@@ -639,59 +638,33 @@ func (a *actorsRuntime) GetState(ctx context.Context, req *GetStateRequest) (*St
 	}, nil
 }
 
-func (a *actorsRuntime) TransactionalStateOperation(ctx context.Context, req *TransactionalRequest) error {
+func (a *actorsRuntime) TransactionalStateOperation(ctx context.Context, req *TransactionalRequest) (err error) {
 	if a.store == nil {
-		return errors.New("actors: state store does not exist or incorrectly configured. Have you set the - name: actorStateStore value: \"true\" in your state store component file?")
+		return errors.New(`actors: state store does not exist or incorrectly configured. Have you set the property '{"name": "actorStateStore", "value": "true"}' in your state store component file?`)
 	}
 	actorKey := req.ActorKey()
 	operations := make([]state.TransactionalStateOperation, len(req.Operations))
 	partitionKey := constructCompositeKey(a.config.AppID, actorKey)
 	metadata := map[string]string{metadataPartitionKey: partitionKey}
+	baseKey := a.constructActorStateKey(actorKey, "")
 	for i, o := range req.Operations {
-		switch o.Operation {
-		case Upsert:
-			var upsert TransactionalUpsert
-			err := mapstructure.Decode(o.Request, &upsert)
-			if err != nil {
-				return err
-			}
-			key := a.constructActorStateKey(actorKey, upsert.Key)
-			operations[i] = state.TransactionalStateOperation{
-				Request: state.SetRequest{
-					Key:      key,
-					Value:    upsert.Value,
-					Metadata: metadata,
-				},
-				Operation: state.Upsert,
-			}
-		case Delete:
-			var delete TransactionalDelete
-			err := mapstructure.Decode(o.Request, &delete)
-			if err != nil {
-				return err
-			}
-			key := a.constructActorStateKey(actorKey, delete.Key)
-			operations[i] = state.TransactionalStateOperation{
-				Request: state.DeleteRequest{
-					Key:      key,
-					Metadata: metadata,
-				},
-				Operation: state.Delete,
-			}
-		default:
-			return fmt.Errorf("operation type %s not supported", o.Operation)
+		operations[i], err = o.StateOperation(baseKey, StateOperationOpts{
+			Metadata: metadata,
+		})
+		if err != nil {
+			return err
 		}
 	}
 
-	policyRunner := resiliency.NewRunner[any](ctx,
+	policyRunner := resiliency.NewRunner[struct{}](ctx,
 		a.resiliency.ComponentOutboundPolicy(a.storeName, resiliency.Statestore),
 	)
 	stateReq := &state.TransactionalStateRequest{
 		Operations: operations,
 		Metadata:   metadata,
 	}
-	_, err := policyRunner(func(ctx context.Context) (any, error) {
-		return nil, a.store.Multi(ctx, stateReq)
+	_, err = policyRunner(func(ctx context.Context) (struct{}, error) {
+		return struct{}{}, a.store.Multi(ctx, stateReq)
 	})
 	return err
 }
