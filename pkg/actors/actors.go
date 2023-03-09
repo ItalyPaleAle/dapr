@@ -96,24 +96,28 @@ type PlacementService interface {
 // GRPCConnectionFn is the type of the function that returns a gRPC connection
 type GRPCConnectionFn func(ctx context.Context, address string, id string, namespace string, customOpts ...grpc.DialOption) (*grpc.ClientConn, func(destroy bool), error)
 
+type transactionalStateStore interface {
+	state.Store
+	state.TransactionalStore
+}
+
 type actorsRuntime struct {
 	appChannel             channel.AppChannel
-	store                  state.Store
-	transactionalStore     state.TransactionalStore
+	store                  transactionalStateStore
 	placement              PlacementService
 	grpcConnectionFn       GRPCConnectionFn
 	config                 Config
 	actorsTable            *sync.Map
 	activeTimers           *sync.Map
-	activeTimersLock       *sync.RWMutex
+	activeTimersLock       sync.RWMutex
 	activeReminders        *sync.Map
-	remindersLock          *sync.RWMutex
-	remindersMigrationLock *sync.Mutex
-	activeRemindersLock    *sync.RWMutex
+	remindersLock          sync.RWMutex
+	remindersMigrationLock sync.Mutex
+	activeRemindersLock    sync.RWMutex
 	reminders              map[string][]actorReminderReference
-	evaluationLock         *sync.RWMutex
+	evaluationLock         sync.RWMutex
 	evaluationChan         chan struct{}
-	appHealthy             *atomic.Bool
+	appHealthy             atomic.Bool
 	certChain              *daprCredentials.CertChain
 	tracingSpec            configuration.TracingSpec
 	resiliency             resiliency.Provider
@@ -177,44 +181,39 @@ func NewActors(opts ActorsOpts) Actors {
 }
 
 func newActorsWithClock(opts ActorsOpts, clock clocklib.Clock) Actors {
-	var transactionalStore state.TransactionalStore
+	var store transactionalStateStore
 	if opts.StateStore != nil {
 		features := opts.StateStore.Features()
-		if state.FeatureETag.IsPresent(features) && state.FeatureTransactional.IsPresent(features) {
-			transactionalStore = opts.StateStore.(state.TransactionalStore)
+		ts, ok := opts.StateStore.(transactionalStateStore)
+		if ok && state.FeatureETag.IsPresent(features) && state.FeatureTransactional.IsPresent(features) {
+			store = ts
 		}
 	}
 
-	appHealthy := &atomic.Bool{}
+	appHealthy := atomic.Bool{}
 	appHealthy.Store(true)
 	ctx, cancel := context.WithCancel(context.Background())
 	return &actorsRuntime{
-		store:                  opts.StateStore,
-		appChannel:             opts.AppChannel,
-		grpcConnectionFn:       opts.GRPCConnectionFn,
-		config:                 opts.Config,
-		certChain:              opts.CertChain,
-		tracingSpec:            opts.TracingSpec,
-		resiliency:             opts.Resiliency,
-		storeName:              opts.StateStoreName,
-		placement:              opts.MockPlacement,
-		transactionalStore:     transactionalStore,
-		actorsTable:            &sync.Map{},
-		activeTimers:           &sync.Map{},
-		activeTimersLock:       &sync.RWMutex{},
-		activeReminders:        &sync.Map{},
-		remindersLock:          &sync.RWMutex{},
-		remindersMigrationLock: &sync.Mutex{},
-		activeRemindersLock:    &sync.RWMutex{},
-		reminders:              map[string][]actorReminderReference{},
-		evaluationLock:         &sync.RWMutex{},
-		evaluationChan:         make(chan struct{}, 1),
-		appHealthy:             appHealthy,
-		ctx:                    ctx,
-		cancel:                 cancel,
-		clock:                  clock,
-		internalActors:         map[string]InternalActor{},
-		internalActorChannel:   newInternalActorChannel(),
+		store:                store,
+		appChannel:           opts.AppChannel,
+		grpcConnectionFn:     opts.GRPCConnectionFn,
+		config:               opts.Config,
+		certChain:            opts.CertChain,
+		tracingSpec:          opts.TracingSpec,
+		resiliency:           opts.Resiliency,
+		storeName:            opts.StateStoreName,
+		placement:            opts.MockPlacement,
+		actorsTable:          &sync.Map{},
+		activeTimers:         &sync.Map{},
+		activeReminders:      &sync.Map{},
+		reminders:            map[string][]actorReminderReference{},
+		evaluationChan:       make(chan struct{}, 1),
+		appHealthy:           appHealthy,
+		ctx:                  ctx,
+		cancel:               cancel,
+		clock:                clock,
+		internalActors:       map[string]InternalActor{},
+		internalActorChannel: newInternalActorChannel(),
 	}
 }
 
@@ -640,7 +639,7 @@ func (a *actorsRuntime) GetState(ctx context.Context, req *GetStateRequest) (*St
 }
 
 func (a *actorsRuntime) TransactionalStateOperation(ctx context.Context, req *TransactionalRequest) error {
-	if a.store == nil || a.transactionalStore == nil {
+	if a.store == nil {
 		return errors.New("actors: state store does not exist or incorrectly configured. Have you set the - name: actorStateStore value: \"true\" in your state store component file?")
 	}
 	operations := make([]state.TransactionalStateOperation, len(req.Operations))
@@ -690,7 +689,7 @@ func (a *actorsRuntime) TransactionalStateOperation(ctx context.Context, req *Tr
 		Metadata:   metadata,
 	}
 	_, err := policyRunner(func(ctx context.Context) (any, error) {
-		return nil, a.transactionalStore.Multi(ctx, stateReq)
+		return nil, a.store.Multi(ctx, stateReq)
 	})
 	return err
 }

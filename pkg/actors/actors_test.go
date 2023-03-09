@@ -851,7 +851,6 @@ func TestCreateReminder(t *testing.T) {
 	defer testActorsRuntimeWithPartition.Stop()
 
 	testActorsRuntimeWithPartition.store = testActorsRuntime.store
-	testActorsRuntimeWithPartition.transactionalStore = testActorsRuntime.transactionalStore
 	for i := 1; i < numReminders; i++ {
 		for _, reminderActorType := range []string{actorType, secondActorType} {
 			err = testActorsRuntimeWithPartition.CreateReminder(ctx, &CreateReminderRequest{
