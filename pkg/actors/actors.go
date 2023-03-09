@@ -792,62 +792,53 @@ func (a *actorsRuntime) evaluateReminders() {
 	for _, t := range a.config.HostedActorTypes {
 		vals, _, err := a.getRemindersForActorType(t, true)
 		if err != nil {
-			log.Errorf("error getting reminders for actor type %s: %s", t, err)
-		} else {
-			log.Debugf("loaded %d reminders for actor type %s", len(vals), t)
-			a.remindersLock.Lock()
-			a.reminders[t] = vals
-			a.remindersLock.Unlock()
+			log.Errorf("Error getting reminders for actor type %s: %s", t, err)
+			continue
+		}
 
-			wg.Add(1)
-			go func(wg *sync.WaitGroup, reminders []actorReminderReference) {
-				defer wg.Done()
+		log.Debugf("Loaded %d reminders for actor type %s", len(vals), t)
+		a.remindersLock.Lock()
+		a.reminders[t] = vals
+		a.remindersLock.Unlock()
 
-				for i := range reminders {
-					r := reminders[i] // Make a copy since we will refer to this as a reference in this loop.
-					targetActorAddress, _ := a.placement.LookupActor(r.reminder.ActorType, r.reminder.ActorID)
-					if targetActorAddress == "" {
-						log.Warnf("did not find address for actor ID %s and actor type %s in reminder %s",
-							r.reminder.ActorID,
-							r.reminder.ActorType,
-							r.reminder.Name)
-						continue
-					}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 
-					actorKey := constructCompositeKey(r.reminder.ActorType, r.reminder.ActorID)
-					reminderKey := constructCompositeKey(actorKey, r.reminder.Name)
-					if a.isActorLocal(targetActorAddress, a.config.HostAddress, a.config.Port) {
-						_, exists := a.activeReminders.Load(reminderKey)
+			for i := range vals {
+				rmd := vals[i].reminder
+				reminderKey := rmd.Key()
+				targetActorAddress, _ := a.placement.LookupActor(rmd.ActorType, rmd.ActorID)
+				if targetActorAddress == "" {
+					log.Warn("Did not find address for actor for reminder " + reminderKey)
+					continue
+				}
 
-						if !exists {
-							stop := make(chan struct{})
-							a.activeReminders.Store(reminderKey, stop)
-							err := a.startReminder(&r.reminder, stop)
-							if err != nil {
-								log.Errorf("error starting reminder: %s", err)
-							} else {
-								log.Debugf("started reminder %s for actor ID %s and actor type %s",
-									r.reminder.Name,
-									r.reminder.ActorID,
-									r.reminder.ActorType)
-							}
+				if a.isActorLocal(targetActorAddress, a.config.HostAddress, a.config.Port) {
+					_, exists := a.activeReminders.Load(reminderKey)
+
+					if !exists {
+						stop := make(chan struct{})
+						a.activeReminders.Store(reminderKey, stop)
+						err := a.startReminder(&rmd, stop)
+						if err != nil {
+							log.Errorf("Error starting reminder %s: %v", reminderKey, err)
 						} else {
-							log.Debugf("reminder %s already exists for actor ID %s and actor type %s",
-								r.reminder.Name,
-								r.reminder.ActorID,
-								r.reminder.ActorType)
+							log.Debug("Started reminder " + reminderKey)
 						}
 					} else {
-						stopChan, exists := a.activeReminders.Load(reminderKey)
-						if exists {
-							log.Debugf("stopping reminder %s on %s as it's active on host %s", reminderKey, a.config.HostAddress, targetActorAddress)
-							close(stopChan.(chan struct{}))
-							a.activeReminders.Delete(reminderKey)
-						}
+						log.Debug("Reminder " + reminderKey + " already exists")
+					}
+				} else {
+					stopChan, exists := a.activeReminders.Load(reminderKey)
+					if exists {
+						log.Debugf("Stopping reminder %s on %s as it's active on host %s", reminderKey, a.config.HostAddress, targetActorAddress)
+						close(stopChan.(chan struct{}))
+						a.activeReminders.Delete(reminderKey)
 					}
 				}
-			}(&wg, vals)
-		}
+			}
+		}()
 	}
 	wg.Wait()
 	<-a.evaluationChan
@@ -1724,11 +1715,15 @@ func (a *actorsRuntime) doDeleteReminder(ctx context.Context, req *DeleteReminde
 		remindersInPartition, stateKey, etag := actorMetadata.removeReminderFromPartition(reminders, req.ActorType, req.ActorID, req.Name)
 
 		// now, we can remove from the "global" list.
-		for i := len(reminders) - 1; i >= 0; i-- {
-			if reminders[i].reminder.ActorType == req.ActorType && reminders[i].reminder.ActorID == req.ActorID && reminders[i].reminder.Name == req.Name {
-				reminders = append(reminders[:i], reminders[i+1:]...)
+		n := 0
+		for _, v := range reminders {
+			if v.reminder.ActorType != req.ActorType ||
+				v.reminder.ActorID != req.ActorID || v.reminder.Name != req.Name {
+				reminders[n] = v
+				n++
 			}
 		}
+		reminders = reminders[:n]
 
 		// Get the database partiton key (needed for CosmosDB)
 		databasePartitionKey := actorMetadata.calculateDatabasePartitionKey(stateKey)
