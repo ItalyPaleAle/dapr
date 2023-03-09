@@ -642,11 +642,10 @@ func (a *actorsRuntime) TransactionalStateOperation(ctx context.Context, req *Tr
 	if a.store == nil {
 		return errors.New(`actors: state store does not exist or incorrectly configured. Have you set the property '{"name": "actorStateStore", "value": "true"}' in your state store component file?`)
 	}
-	actorKey := req.ActorKey()
+
 	operations := make([]state.TransactionalStateOperation, len(req.Operations))
-	partitionKey := constructCompositeKey(a.config.AppID, actorKey)
-	metadata := map[string]string{metadataPartitionKey: partitionKey}
-	baseKey := a.constructActorStateKey(actorKey, "")
+	baseKey := constructCompositeKey(a.config.AppID, req.ActorKey()) + daprSeparator
+	metadata := map[string]string{metadataPartitionKey: baseKey}
 	for i, o := range req.Operations {
 		operations[i], err = o.StateOperation(baseKey, StateOperationOpts{
 			Metadata: metadata,

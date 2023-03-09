@@ -1854,7 +1854,7 @@ func TestGetState(t *testing.T) {
 
 	fakeCallAndActivateActor(testActorsRuntime, actorType, actorID, testActorsRuntime.clock)
 
-	testActorsRuntime.TransactionalStateOperation(ctx, &TransactionalRequest{
+	err := testActorsRuntime.TransactionalStateOperation(ctx, &TransactionalRequest{
 		ActorType: actorType,
 		ActorID:   actorID,
 		Operations: []TransactionalOperation{
@@ -1867,6 +1867,7 @@ func TestGetState(t *testing.T) {
 			},
 		},
 	})
+	require.NoError(t, err)
 
 	// act
 	response, err := testActorsRuntime.GetState(ctx, &GetStateRequest{
@@ -1876,7 +1877,7 @@ func TestGetState(t *testing.T) {
 	})
 
 	// assert
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, fakeData, string(response.Data))
 }
 
