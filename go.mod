@@ -10,7 +10,7 @@ require (
 	github.com/benbjohnson/clock v1.3.0
 	github.com/cenkalti/backoff/v4 v4.2.0
 	github.com/dapr/components-contrib v1.10.0-rc.9.0.20230303212325-d6f35401af8a
-	github.com/dapr/kit v0.0.4
+	github.com/dapr/kit v0.0.5-0.20230307192505-b5bafe889a81
 	github.com/fasthttp/router v1.4.15
 	github.com/ghodss/yaml v1.0.0
 	github.com/go-logr/logr v1.2.3
@@ -38,7 +38,7 @@ require (
 	github.com/prometheus/client_model v0.3.0
 	github.com/prometheus/common v0.39.0
 	github.com/sony/gobreaker v0.5.0
-	github.com/stretchr/testify v1.8.1
+	github.com/stretchr/testify v1.8.2
 	github.com/tidwall/transform v0.0.0-20201103190739-32f242e2dbde
 	github.com/valyala/fasthttp v1.44.0
 	go.opencensus.io v0.24.0
@@ -53,7 +53,7 @@ require (
 	go.temporal.io/sdk v1.20.0
 	go.uber.org/automaxprocs v1.5.1
 	go.uber.org/ratelimit v0.2.0
-	golang.org/x/exp v0.0.0-20230213192124-5e25df0256eb
+	golang.org/x/exp v0.0.0-20230224173230-c95f2b4c22f2
 	golang.org/x/net v0.7.0
 	golang.org/x/sync v0.1.0
 	google.golang.org/genproto v0.0.0-20230209215440-0dfe4f8abfcc
