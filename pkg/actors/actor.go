@@ -19,7 +19,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	clocklib "github.com/benbjohnson/clock"
+	"k8s.io/utils/clock"
 
 	diag "github.com/dapr/dapr/pkg/diagnostics"
 )
@@ -53,19 +53,19 @@ type actor struct {
 	// is used when runtime drains actor.
 	disposeCh chan struct{}
 
-	clock clocklib.Clock
+	clock clock.Clock
 }
 
-func newActor(actorType, actorID string, maxReentrancyDepth *int, clock clocklib.Clock) *actor {
-	if clock == nil {
-		clock = clocklib.New()
+func newActor(actorType, actorID string, maxReentrancyDepth *int, cl clock.Clock) *actor {
+	if cl == nil {
+		cl = &clock.RealClock{}
 	}
 	return &actor{
 		actorType:    actorType,
 		actorID:      actorID,
 		actorLock:    NewActorLock(int32(*maxReentrancyDepth)),
-		clock:        clock,
-		lastUsedTime: clock.Now(),
+		clock:        cl,
+		lastUsedTime: cl.Now().UTC(),
 	}
 }
 

@@ -28,13 +28,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	clocklib "github.com/benbjohnson/clock"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/google/uuid"
 	"github.com/valyala/fasthttp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/utils/clock"
 
 	"github.com/dapr/components-contrib/state"
 	"github.com/dapr/dapr/pkg/actors/internal"
@@ -123,7 +123,7 @@ type actorsRuntime struct {
 	storeName              string
 	ctx                    context.Context
 	cancel                 context.CancelFunc
-	clock                  clocklib.Clock
+	clock                  clock.WithTicker
 	internalActors         map[string]InternalActor
 	internalActorChannel   *internalActorChannel
 }
@@ -176,10 +176,10 @@ type ActorsOpts struct {
 
 // NewActors create a new actors runtime with given config.
 func NewActors(opts ActorsOpts) Actors {
-	return newActorsWithClock(opts, clocklib.New())
+	return newActorsWithClock(opts, &clock.RealClock{})
 }
 
-func newActorsWithClock(opts ActorsOpts, clock clocklib.Clock) Actors {
+func newActorsWithClock(opts ActorsOpts, clock clock.WithTicker) Actors {
 	var store transactionalStateStore
 	if opts.StateStore != nil {
 		features := opts.StateStore.Features()
@@ -333,12 +333,13 @@ func (a *actorsRuntime) getActorTypeAndIDFromKey(key string) (string, string) {
 type deactivateFn = func(actorType string, actorID string) error
 
 func (a *actorsRuntime) deactivationTicker(configuration Config, deactivateFn deactivateFn) {
-	ticker := a.clock.Ticker(configuration.ActorDeactivationScanInterval)
+	ticker := a.clock.NewTicker(configuration.ActorDeactivationScanInterval)
+	ch := ticker.C()
 	defer ticker.Stop()
 
 	for {
 		select {
-		case t := <-ticker.C:
+		case t := <-ch:
 			a.actorsTable.Range(func(key, value interface{}) bool {
 				actorInstance := value.(*actor)
 
@@ -889,21 +890,21 @@ func (a *actorsRuntime) startReminder(reminder *reminders.Reminder, stopChannel 
 
 	go func() {
 		var (
-			ttlTimer, nextTimer *clocklib.Timer
+			ttlTimer, nextTimer clock.Timer
 			ttlTimerC           <-chan time.Time
 			err                 error
 		)
 		eTag := track.Etag
 
 		if !reminder.ExpirationTime.IsZero() {
-			ttlTimer = a.clock.Timer(a.clock.Until(reminder.ExpirationTime))
-			ttlTimerC = ttlTimer.C
+			ttlTimer = a.clock.NewTimer(reminder.ExpirationTime.Sub(a.clock.Now()))
+			ttlTimerC = ttlTimer.C()
 		}
 
-		nextTimer = a.clock.Timer(a.clock.Until(reminder.NextTick()))
+		nextTimer = a.clock.NewTimer(reminder.NextTick().Sub(a.clock.Now()))
 		defer func() {
 			if nextTimer.Stop() {
-				<-nextTimer.C
+				<-nextTimer.C()
 			}
 			if ttlTimer != nil && ttlTimer.Stop() {
 				<-ttlTimerC
@@ -913,7 +914,7 @@ func (a *actorsRuntime) startReminder(reminder *reminders.Reminder, stopChannel 
 	L:
 		for {
 			select {
-			case <-nextTimer.C:
+			case <-nextTimer.C():
 				// noop
 			case <-ttlTimerC:
 				// proceed with reminder deletion
@@ -970,9 +971,9 @@ func (a *actorsRuntime) startReminder(reminder *reminders.Reminder, stopChannel 
 			}
 
 			if nextTimer.Stop() {
-				<-nextTimer.C
+				<-nextTimer.C()
 			}
-			nextTimer.Reset(a.clock.Until(reminder.NextTick()))
+			nextTimer.Reset(reminder.NextTick().Sub(a.clock.Now()))
 		}
 
 		err = a.DeleteReminder(context.TODO(), &DeleteReminderRequest{
@@ -1174,12 +1175,12 @@ func (m *ActorMetadata) calculateDatabasePartitionKey(stateKey string) string {
 }
 
 func (a *actorsRuntime) waitForEvaluationChan() bool {
-	t := a.clock.Timer(5 * time.Second)
+	t := a.clock.NewTimer(5 * time.Second)
 	defer t.Stop()
 	select {
 	case <-a.ctx.Done():
 		return false
-	case <-t.C:
+	case <-t.C():
 		return false
 	case a.evaluationChan <- struct{}{}:
 		<-a.evaluationChan
@@ -1256,20 +1257,20 @@ func (a *actorsRuntime) CreateTimer(ctx context.Context, req *CreateTimerRequest
 
 	go func() {
 		var (
-			ttlTimer, nextTimer *clocklib.Timer
+			ttlTimer, nextTimer clock.Timer
 			ttlTimerC           <-chan time.Time
 			err                 error
 		)
 
 		if !reminder.ExpirationTime.IsZero() {
-			ttlTimer = a.clock.Timer(a.clock.Until(reminder.ExpirationTime))
-			ttlTimerC = ttlTimer.C
+			ttlTimer = a.clock.NewTimer(reminder.ExpirationTime.Sub(a.clock.Now()))
+			ttlTimerC = ttlTimer.C()
 		}
 
-		nextTimer = a.clock.Timer(a.clock.Until(reminder.NextTick()))
+		nextTimer = a.clock.NewTimer(reminder.NextTick().Sub(a.clock.Now()))
 		defer func() {
 			if nextTimer.Stop() {
-				<-nextTimer.C
+				<-nextTimer.C()
 			}
 			if ttlTimer != nil && ttlTimer.Stop() {
 				<-ttlTimerC
@@ -1279,7 +1280,7 @@ func (a *actorsRuntime) CreateTimer(ctx context.Context, req *CreateTimerRequest
 	L:
 		for {
 			select {
-			case <-nextTimer.C:
+			case <-nextTimer.C():
 				// noop
 			case <-ttlTimerC:
 				// timer has expired; proceed with deletion
@@ -1307,9 +1308,9 @@ func (a *actorsRuntime) CreateTimer(ctx context.Context, req *CreateTimerRequest
 			}
 
 			if nextTimer.Stop() {
-				<-nextTimer.C
+				<-nextTimer.C()
 			}
-			nextTimer.Reset(a.clock.Until(reminder.NextTick()))
+			nextTimer.Reset(reminder.NextTick().Sub(a.clock.Now()))
 		}
 
 		err = a.DeleteTimer(ctx, &DeleteTimerRequest{
