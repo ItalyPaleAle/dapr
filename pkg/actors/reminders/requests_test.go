@@ -18,6 +18,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewReminderFromCreateReminderRequest(t *testing.T) {
@@ -130,6 +132,18 @@ func TestNewReminderFromCreateReminderRequest(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("TTL in the past", func(t *testing.T) {
+		req := &CreateReminderRequest{
+			ActorID:   "id",
+			ActorType: "type",
+			Name:      "name",
+			TTL:       "2002-02-02T12:00:02Z", // In the past
+		}
+		_, err := NewReminderFromCreateReminderRequest(req, now)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "has already expired")
+	})
 }
 
 func TestNewReminderFromCreateTimerRequest(t *testing.T) {
@@ -242,4 +256,16 @@ func TestNewReminderFromCreateTimerRequest(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("TTL in the past", func(t *testing.T) {
+		req := &CreateTimerRequest{
+			ActorID:   "id",
+			ActorType: "type",
+			Name:      "name",
+			TTL:       "2002-02-02T12:00:02Z", // In the past
+		}
+		_, err := NewReminderFromCreateTimerRequest(req, now)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "has already expired")
+	})
 }
