@@ -900,6 +900,12 @@ func TestCreateReminder(t *testing.T) {
 	assert.Equal(t, numReminders, len(reminderReferences))
 	assert.Equal(t, numReminders, len(reminders))
 
+	// For the rest of the test, we're disabling bulk get in the fake state store
+	testActorsRuntime.store.(*fakeStateStore).noBulkGet = true
+	defer func() {
+		testActorsRuntime.store.(*fakeStateStore).noBulkGet = false
+	}()
+
 	// Check for 2nd type.
 	secondReminderReferences, secondTypeMetadata, err := testActorsRuntimeWithPartition.getRemindersForActorType(context.Background(), secondActorType, true)
 	require.NoError(t, err)
@@ -1158,14 +1164,7 @@ func TestDeleteReminderWithPartitions(t *testing.T) {
 	testActorsRuntime := newTestActorsRuntimeWithMockAndActorMetadataPartition(appChannel)
 	defer testActorsRuntime.Stop()
 
-	// For this test, we're disabling bulk get in the fake state store
-	testActorsRuntime.store.(*fakeStateStore).noBulkGet = true
-	defer func() {
-		testActorsRuntime.store.(*fakeStateStore).noBulkGet = false
-	}()
-
-	const actorType = "actor2"
-	_, actorID := getTestActorTypeAndID()
+	actorType, actorID := getTestActorTypeAndID()
 	ctx := context.Background()
 	reminder := createReminderData(actorID, actorType, "reminder1", "1s", "1s", "", "")
 	err := testActorsRuntime.CreateReminder(ctx, &reminder)
