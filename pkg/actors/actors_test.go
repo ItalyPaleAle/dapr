@@ -166,8 +166,9 @@ func (i fakeStateStoreItem) String() string {
 }
 
 type fakeStateStore struct {
-	items map[string]*fakeStateStoreItem
-	lock  sync.RWMutex
+	items     map[string]*fakeStateStoreItem
+	lock      sync.RWMutex
+	noBulkGet bool
 }
 
 func (f *fakeStateStore) newItem(data []byte) *fakeStateStoreItem {
@@ -226,6 +227,10 @@ func (f *fakeStateStore) Get(ctx context.Context, req *state.GetRequest) (*state
 }
 
 func (f *fakeStateStore) BulkGet(ctx context.Context, req []state.GetRequest) (bool, []state.BulkGetResponse, error) {
+	if f.noBulkGet {
+		return false, nil, nil
+	}
+
 	res := []state.BulkGetResponse{}
 	for _, oneRequest := range req {
 		oneResponse, err := f.Get(ctx, &state.GetRequest{
@@ -341,7 +346,6 @@ func (b *runtimeBuilder) buildActorRuntime() *actorsRuntime {
 		b.config = &config
 	}
 
-	tracingSpec := config.TracingSpec{SamplingRate: "1"}
 	store := fakeStore()
 	storeName := "actorStore"
 	if b.actorStore != nil {
@@ -359,7 +363,7 @@ func (b *runtimeBuilder) buildActorRuntime() *actorsRuntime {
 		StateStore:     store,
 		AppChannel:     b.appChannel,
 		Config:         *b.config,
-		TracingSpec:    tracingSpec,
+		TracingSpec:    config.TracingSpec{SamplingRate: "1"},
 		Resiliency:     resiliency.FromConfigurations(log, testResiliency),
 		StateStoreName: storeName,
 	}, clock)
@@ -368,9 +372,7 @@ func (b *runtimeBuilder) buildActorRuntime() *actorsRuntime {
 }
 
 func newTestActorsRuntimeWithMock(appChannel channel.AppChannel) *actorsRuntime {
-	spec := config.TracingSpec{SamplingRate: "1"}
-	store := fakeStore()
-	config := NewConfig(ConfigOpts{
+	conf := NewConfig(ConfigOpts{
 		AppID:              TestAppID,
 		PlacementAddresses: []string{"placement:5050"},
 		AppConfig:          config.ApplicationConfig{},
@@ -379,10 +381,10 @@ func newTestActorsRuntimeWithMock(appChannel channel.AppChannel) *actorsRuntime 
 	clock := clocktesting.NewFakeClock(startOfTime)
 
 	a := newActorsWithClock(ActorsOpts{
-		StateStore:     store,
+		StateStore:     fakeStore(),
 		AppChannel:     appChannel,
-		Config:         config,
-		TracingSpec:    spec,
+		Config:         conf,
+		TracingSpec:    config.TracingSpec{SamplingRate: "1"},
 		Resiliency:     resiliency.New(log),
 		StateStoreName: "actorStore",
 	}, clock)
@@ -391,8 +393,7 @@ func newTestActorsRuntimeWithMock(appChannel channel.AppChannel) *actorsRuntime 
 }
 
 func newTestActorsRuntimeWithMockWithoutPlacement(appChannel channel.AppChannel) *actorsRuntime {
-	spec := config.TracingSpec{SamplingRate: "1"}
-	config := NewConfig(ConfigOpts{
+	conf := NewConfig(ConfigOpts{
 		AppID:              TestAppID,
 		PlacementAddresses: []string{""},
 		AppConfig:          config.ApplicationConfig{},
@@ -402,8 +403,8 @@ func newTestActorsRuntimeWithMockWithoutPlacement(appChannel channel.AppChannel)
 
 	a := newActorsWithClock(ActorsOpts{
 		AppChannel:     appChannel,
-		Config:         config,
-		TracingSpec:    spec,
+		Config:         conf,
+		TracingSpec:    config.TracingSpec{SamplingRate: "1"},
 		Resiliency:     resiliency.New(log),
 		StateStoreName: "actorStore",
 	}, clock)
@@ -412,9 +413,7 @@ func newTestActorsRuntimeWithMockWithoutPlacement(appChannel channel.AppChannel)
 }
 
 func newTestActorsRuntimeWithMockAndNoStore(appChannel channel.AppChannel) *actorsRuntime {
-	spec := config.TracingSpec{SamplingRate: "1"}
-	var store state.Store
-	config := NewConfig(ConfigOpts{
+	conf := NewConfig(ConfigOpts{
 		AppID:              TestAppID,
 		PlacementAddresses: []string{""},
 		AppConfig:          config.ApplicationConfig{},
@@ -423,10 +422,10 @@ func newTestActorsRuntimeWithMockAndNoStore(appChannel channel.AppChannel) *acto
 	clock := clocktesting.NewFakeClock(startOfTime)
 
 	a := newActorsWithClock(ActorsOpts{
-		StateStore:     store,
+		StateStore:     nil,
 		AppChannel:     appChannel,
-		Config:         config,
-		TracingSpec:    spec,
+		Config:         conf,
+		TracingSpec:    config.TracingSpec{SamplingRate: "1"},
 		Resiliency:     resiliency.New(log),
 		StateStoreName: "actorStore",
 	}, clock)
@@ -435,8 +434,6 @@ func newTestActorsRuntimeWithMockAndNoStore(appChannel channel.AppChannel) *acto
 }
 
 func newTestActorsRuntimeWithMockAndActorMetadataPartition(appChannel channel.AppChannel) *actorsRuntime {
-	spec := config.TracingSpec{SamplingRate: "1"}
-	store := fakeStore()
 	appConfig := config.ApplicationConfig{
 		Entities:                   []string{"cat", "actor2"},
 		RemindersStoragePartitions: TestActorMetadataPartitionCount,
@@ -447,7 +444,7 @@ func newTestActorsRuntimeWithMockAndActorMetadataPartition(appChannel channel.Ap
 			},
 		},
 	}
-	c := NewConfig(ConfigOpts{
+	conf := NewConfig(ConfigOpts{
 		AppID:              TestAppID,
 		PlacementAddresses: []string{"placement:5050"},
 		AppConfig:          appConfig,
@@ -456,10 +453,10 @@ func newTestActorsRuntimeWithMockAndActorMetadataPartition(appChannel channel.Ap
 	clock := clocktesting.NewFakeClock(startOfTime)
 
 	a := newActorsWithClock(ActorsOpts{
-		StateStore:     store,
+		StateStore:     fakeStore(),
 		AppChannel:     appChannel,
-		Config:         c,
-		TracingSpec:    spec,
+		Config:         conf,
+		TracingSpec:    config.TracingSpec{SamplingRate: "1"},
 		Resiliency:     resiliency.New(log),
 		StateStoreName: "actorStore",
 	}, clock)
@@ -1156,40 +1153,49 @@ func TestOverrideReminderCancelsMultipleActiveReminders(t *testing.T) {
 	})
 }
 
-func TestDeleteReminder(t *testing.T) {
+func TestDeleteReminderWithPartitions(t *testing.T) {
 	appChannel := new(mockAppChannel)
 	testActorsRuntime := newTestActorsRuntimeWithMockAndActorMetadataPartition(appChannel)
 	defer testActorsRuntime.Stop()
 
-	actorType, actorID := getTestActorTypeAndID()
+	// For this test, we're disabling bulk get in the fake state store
+	testActorsRuntime.store.(*fakeStateStore).noBulkGet = true
+	defer func() {
+		testActorsRuntime.store.(*fakeStateStore).noBulkGet = false
+	}()
+
+	const actorType = "actor2"
+	_, actorID := getTestActorTypeAndID()
 	ctx := context.Background()
 	reminder := createReminderData(actorID, actorType, "reminder1", "1s", "1s", "", "")
-	testActorsRuntime.CreateReminder(ctx, &reminder)
+	err := testActorsRuntime.CreateReminder(ctx, &reminder)
+	require.NoError(t, err)
 	assert.Equal(t, 1, len(testActorsRuntime.reminders[actorType]))
-	err := testActorsRuntime.DeleteReminder(ctx, &DeleteReminderRequest{
+	err = testActorsRuntime.DeleteReminder(ctx, &DeleteReminderRequest{
 		Name:      "reminder1",
 		ActorID:   actorID,
 		ActorType: actorType,
 	})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, 0, len(testActorsRuntime.reminders[actorType]))
 }
 
-func TestDeleteReminderWithPartitions(t *testing.T) {
+func TestDeleteReminder(t *testing.T) {
 	testActorsRuntime := newTestActorsRuntime()
 	defer testActorsRuntime.Stop()
 
 	actorType, actorID := getTestActorTypeAndID()
 	ctx := context.Background()
 	reminder := createReminderData(actorID, actorType, "reminder1", "1s", "1s", "", "")
-	testActorsRuntime.CreateReminder(ctx, &reminder)
+	err := testActorsRuntime.CreateReminder(ctx, &reminder)
 	assert.Equal(t, 1, len(testActorsRuntime.reminders[actorType]))
-	err := testActorsRuntime.DeleteReminder(ctx, &DeleteReminderRequest{
+	require.NoError(t, err)
+	err = testActorsRuntime.DeleteReminder(ctx, &DeleteReminderRequest{
 		Name:      "reminder1",
 		ActorID:   actorID,
 		ActorType: actorType,
 	})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, 0, len(testActorsRuntime.reminders[actorType]))
 }
 

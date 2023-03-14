@@ -245,7 +245,7 @@ func TestReminderString(t *testing.T) {
 
 			// Encode to string
 			got := r.String()
-			assert.Equal(t, tt.want, string(got))
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
