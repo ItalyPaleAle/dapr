@@ -27,23 +27,6 @@ import (
 	"github.com/dapr/dapr/pkg/resiliency"
 )
 
-func (a *UniversalAPI) getStateStore(name string) (state.Store, error) {
-	if a.CompStore.StateStoresLen() == 0 {
-		err := messages.ErrStateStoresNotConfigured
-		a.Logger.Debug(err)
-		return nil, err
-	}
-
-	state, ok := a.CompStore.GetStateStore(name)
-	if !ok {
-		err := messages.ErrStateStoreNotFound.WithFormat(name)
-		a.Logger.Debug(err)
-		return nil, err
-	}
-
-	return state, nil
-}
-
 func (a *UniversalAPI) QueryStateAlpha1(ctx context.Context, in *runtimev1pb.QueryStateRequest) (*runtimev1pb.QueryStateResponse, error) {
 	store, err := a.getStateStore(in.StoreName)
 	if err != nil {

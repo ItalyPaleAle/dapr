@@ -32,7 +32,6 @@ import (
 
 	"github.com/dapr/components-contrib/bindings"
 	"github.com/dapr/components-contrib/configuration"
-	"github.com/dapr/components-contrib/contenttype"
 	contribMetadata "github.com/dapr/components-contrib/metadata"
 	"github.com/dapr/components-contrib/pubsub"
 	"github.com/dapr/components-contrib/state"
@@ -621,7 +620,7 @@ func (a *api) GetState(ctx context.Context, in *runtimev1pb.GetStateRequest) (*r
 		Key:      key,
 		Metadata: in.Metadata,
 		Options: state.GetStateOption{
-			Consistency: stateConsistencyToString(in.Consistency),
+			Consistency: universalapi.StateConsistencyToString(in.Consistency),
 		},
 	}
 
@@ -663,197 +662,6 @@ func (a *api) GetState(ctx context.Context, in *runtimev1pb.GetStateRequest) (*r
 		response.Metadata = getResponse.Metadata
 	}
 	return response, nil
-}
-
-func (a *api) SaveState(ctx context.Context, in *runtimev1pb.SaveStateRequest) (*emptypb.Empty, error) {
-	empty := &emptypb.Empty{}
-
-	store, err := a.getStateStore(in.StoreName)
-	if err != nil {
-		// Error has already been logged
-		return empty, err
-	}
-
-	l := len(in.States)
-	if l == 0 {
-		return empty, nil
-	}
-
-	reqs := make([]state.SetRequest, l)
-	for i, s := range in.States {
-		var key string
-		key, err = stateLoader.GetModifiedStateKey(s.Key, in.StoreName, a.id)
-		if err != nil {
-			return empty, err
-		}
-		req := state.SetRequest{
-			Key:      key,
-			Metadata: s.Metadata,
-		}
-
-		if req.Metadata[contribMetadata.ContentType] == contenttype.JSONContentType {
-			err = json.Unmarshal(s.Value, &req.Value)
-			if err != nil {
-				return empty, err
-			}
-		} else {
-			req.Value = s.Value
-		}
-
-		if s.Etag != nil {
-			req.ETag = &s.Etag.Value
-		}
-		if s.Options != nil {
-			req.Options = state.SetStateOption{
-				Consistency: stateConsistencyToString(s.Options.Consistency),
-				Concurrency: stateConcurrencyToString(s.Options.Concurrency),
-			}
-		}
-		if encryption.EncryptedStateStore(in.StoreName) {
-			val, encErr := encryption.TryEncryptValue(in.StoreName, s.Value)
-			if encErr != nil {
-				apiServerLogger.Debug(encErr)
-				return empty, encErr
-			}
-
-			req.Value = val
-		}
-
-		reqs[i] = req
-	}
-
-	start := time.Now()
-	policyRunner := resiliency.NewRunner[struct{}](ctx,
-		a.resiliency.ComponentOutboundPolicy(in.StoreName, resiliency.Statestore),
-	)
-	_, err = policyRunner(func(ctx context.Context) (struct{}, error) {
-		// If there's a single request, perform it in non-bulk
-		if len(reqs) == 1 {
-			return struct{}{}, store.Set(ctx, &reqs[0])
-		}
-		return struct{}{}, store.BulkSet(ctx, reqs)
-	})
-	elapsed := diag.ElapsedSince(start)
-
-	diag.DefaultComponentMonitoring.StateInvoked(ctx, in.StoreName, diag.Set, err == nil, elapsed)
-
-	if err != nil {
-		err = a.stateErrorResponse(err, messages.ErrStateSave, in.StoreName, err.Error())
-		apiServerLogger.Debug(err)
-		return empty, err
-	}
-	return empty, nil
-}
-
-// stateErrorResponse takes a state store error, format and args and returns a status code encoded gRPC error.
-func (a *api) stateErrorResponse(err error, format string, args ...interface{}) error {
-	e, ok := err.(*state.ETagError)
-	if !ok {
-		return status.Errorf(codes.Internal, format, args...)
-	}
-	switch e.Kind() {
-	case state.ETagMismatch:
-		return status.Errorf(codes.Aborted, format, args...)
-	case state.ETagInvalid:
-		return status.Errorf(codes.InvalidArgument, format, args...)
-	}
-
-	return status.Errorf(codes.Internal, format, args...)
-}
-
-func (a *api) DeleteState(ctx context.Context, in *runtimev1pb.DeleteStateRequest) (*emptypb.Empty, error) {
-	empty := &emptypb.Empty{}
-
-	store, err := a.getStateStore(in.StoreName)
-	if err != nil {
-		// Error has already been logged
-		return empty, err
-	}
-
-	key, err := stateLoader.GetModifiedStateKey(in.Key, in.StoreName, a.id)
-	if err != nil {
-		return empty, err
-	}
-	req := state.DeleteRequest{
-		Key:      key,
-		Metadata: in.Metadata,
-	}
-	if in.Etag != nil {
-		req.ETag = &in.Etag.Value
-	}
-	if in.Options != nil {
-		req.Options = state.DeleteStateOption{
-			Concurrency: stateConcurrencyToString(in.Options.Concurrency),
-			Consistency: stateConsistencyToString(in.Options.Consistency),
-		}
-	}
-
-	start := time.Now()
-	policyRunner := resiliency.NewRunner[any](ctx,
-		a.resiliency.ComponentOutboundPolicy(in.StoreName, resiliency.Statestore),
-	)
-	_, err = policyRunner(func(ctx context.Context) (any, error) {
-		return nil, store.Delete(ctx, &req)
-	})
-	elapsed := diag.ElapsedSince(start)
-
-	diag.DefaultComponentMonitoring.StateInvoked(ctx, in.StoreName, diag.Delete, err == nil, elapsed)
-
-	if err != nil {
-		err = a.stateErrorResponse(err, messages.ErrStateDelete, in.Key, err.Error())
-		apiServerLogger.Debug(err)
-		return empty, err
-	}
-	return empty, nil
-}
-
-func (a *api) DeleteBulkState(ctx context.Context, in *runtimev1pb.DeleteBulkStateRequest) (*emptypb.Empty, error) {
-	empty := &emptypb.Empty{}
-
-	store, err := a.getStateStore(in.StoreName)
-	if err != nil {
-		// Error has already been logged
-		return empty, err
-	}
-
-	reqs := make([]state.DeleteRequest, 0, len(in.States))
-	for _, item := range in.States {
-		key, err1 := stateLoader.GetModifiedStateKey(item.Key, in.StoreName, a.id)
-		if err1 != nil {
-			return empty, err1
-		}
-		req := state.DeleteRequest{
-			Key:      key,
-			Metadata: item.Metadata,
-		}
-		if item.Etag != nil {
-			req.ETag = &item.Etag.Value
-		}
-		if item.Options != nil {
-			req.Options = state.DeleteStateOption{
-				Concurrency: stateConcurrencyToString(item.Options.Concurrency),
-				Consistency: stateConsistencyToString(item.Options.Consistency),
-			}
-		}
-		reqs = append(reqs, req)
-	}
-
-	start := time.Now()
-	policyRunner := resiliency.NewRunner[any](ctx,
-		a.resiliency.ComponentOutboundPolicy(in.StoreName, resiliency.Statestore),
-	)
-	_, err = policyRunner(func(ctx context.Context) (any, error) {
-		return nil, store.BulkDelete(ctx, reqs)
-	})
-	elapsed := diag.ElapsedSince(start)
-
-	diag.DefaultComponentMonitoring.StateInvoked(ctx, in.StoreName, diag.BulkDelete, err == nil, elapsed)
-
-	if err != nil {
-		apiServerLogger.Debug(err)
-		return empty, err
-	}
-	return empty, nil
 }
 
 func extractEtag(req *commonv1pb.StateItem) (bool, string) {
@@ -902,8 +710,8 @@ func (a *api) ExecuteStateTransaction(ctx context.Context, in *runtimev1pb.Execu
 			}
 			if req.Options != nil {
 				setReq.Options = state.SetStateOption{
-					Concurrency: stateConcurrencyToString(req.Options.Concurrency),
-					Consistency: stateConsistencyToString(req.Options.Consistency),
+					Concurrency: universalapi.StateConcurrencyToString(req.Options.Concurrency),
+					Consistency: universalapi.StateConsistencyToString(req.Options.Consistency),
 				}
 			}
 
@@ -920,8 +728,8 @@ func (a *api) ExecuteStateTransaction(ctx context.Context, in *runtimev1pb.Execu
 			}
 			if req.Options != nil {
 				delReq.Options = state.DeleteStateOption{
-					Concurrency: stateConcurrencyToString(req.Options.Concurrency),
-					Consistency: stateConsistencyToString(req.Options.Consistency),
+					Concurrency: universalapi.StateConcurrencyToString(req.Options.Concurrency),
+					Consistency: universalapi.StateConsistencyToString(req.Options.Consistency),
 				}
 			}
 
