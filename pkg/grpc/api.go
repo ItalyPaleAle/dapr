@@ -531,6 +531,8 @@ func (a *api) GetBulkState(ctx context.Context, in *runtimev1pb.GetBulkStateRequ
 	for i, k := range in.Keys {
 		key, err = stateLoader.GetModifiedStateKey(k, in.StoreName, a.id)
 		if err != nil {
+			err = messages.ErrStateBadKey.WithFormat(err)
+			apiServerLogger.Debug(err)
 			return &runtimev1pb.GetBulkStateResponse{}, err
 		}
 		r := state.GetRequest{
@@ -614,6 +616,8 @@ func (a *api) GetState(ctx context.Context, in *runtimev1pb.GetStateRequest) (*r
 	}
 	key, err := stateLoader.GetModifiedStateKey(in.Key, in.StoreName, a.id)
 	if err != nil {
+		err = messages.ErrStateBadKey.WithFormat(err)
+		apiServerLogger.Debug(err)
 		return &runtimev1pb.GetStateResponse{}, err
 	}
 	req := &state.GetRequest{
@@ -692,6 +696,8 @@ func (a *api) ExecuteStateTransaction(ctx context.Context, in *runtimev1pb.Execu
 		hasEtag, etag := extractEtag(req)
 		key, err := stateLoader.GetModifiedStateKey(req.Key, in.StoreName, a.id)
 		if err != nil {
+			err = messages.ErrStateBadKey.WithFormat(err)
+			apiServerLogger.Debug(err)
 			return &emptypb.Empty{}, err
 		}
 		switch state.OperationType(inputReq.OperationType) {

@@ -25,11 +25,6 @@ const (
 	ErrMalformedRequest     = "failed deserializing HTTP body: %s"
 	ErrMalformedRequestData = "can't serialize request data field: %s"
 
-	// State.
-	ErrStateGet    = "fail to get %s from state store %s: %s"
-	ErrStateDelete = "failed deleting state with key %s: %s"
-	ErrStateSave   = "failed saving state in state store %s: %s"
-
 	// StateTransaction.
 	ErrStateStoreNotSupported     = "state store %s doesn't support transaction"
 	ErrNotSupportedStateOperation = "operation type %s not supported"
@@ -101,6 +96,10 @@ var (
 	// State.
 	ErrStateStoresNotConfigured = APIError{"state store is not configured", "ERR_STATE_STORE_NOT_CONFIGURED", http.StatusInternalServerError, grpcCodes.FailedPrecondition}
 	ErrStateStoreNotFound       = APIError{"state store %s is not found", "ERR_STATE_STORE_NOT_FOUND", http.StatusBadRequest, grpcCodes.InvalidArgument}
+	ErrStateBadKey              = APIError{"key is not valid: %v", "ERR_STATE_BAD_KEY", http.StatusBadRequest, grpcCodes.InvalidArgument}
+	ErrStateGet                 = APIError{"fail to get %s from state store %s: %v", "", http.StatusTeapot, 0}
+	ErrStateDelete              = APIError{"failed deleting state with key %s: %v", "", 0, 0}     // Status code is set dynamically
+	ErrStateSave                = APIError{"failed saving state in state store %s: %v", "", 0, 0} // Status code is set dynamically
 	ErrStateQueryFailed         = APIError{"failed query in state store %s: %s", "ERR_STATE_QUERY", http.StatusInternalServerError, grpcCodes.Internal}
 	ErrStateQueryUnsupported    = APIError{"state store does not support querying", "ERR_STATE_STORE_NOT_SUPPORTED", http.StatusInternalServerError, grpcCodes.Internal}
 

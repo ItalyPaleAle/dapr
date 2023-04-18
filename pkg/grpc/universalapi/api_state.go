@@ -51,7 +51,9 @@ func (a *UniversalAPI) SaveState(ctx context.Context, in *runtimev1pb.SaveStateR
 		var key string
 		key, err = stateLoader.GetModifiedStateKey(s.Key, in.StoreName, a.AppID)
 		if err != nil {
-			return &emptypb.Empty{}, err
+			err = messages.ErrStateBadKey.WithFormat(err)
+			a.Logger.Debug(err)
+			return &emptypb.Empty{}, messages.ErrStateBadKey.WithFormat(err)
 		}
 		req := state.SetRequest{
 			Key:      key,
@@ -121,7 +123,9 @@ func (a *UniversalAPI) DeleteState(ctx context.Context, in *runtimev1pb.DeleteSt
 
 	key, err := stateLoader.GetModifiedStateKey(in.Key, in.StoreName, a.AppID)
 	if err != nil {
-		return &emptypb.Empty{}, err
+		err = messages.ErrStateBadKey.WithFormat(err)
+		a.Logger.Debug(err)
+		return &emptypb.Empty{}, messages.ErrStateBadKey.WithFormat(err)
 	}
 	req := state.DeleteRequest{
 		Key:      key,
@@ -165,9 +169,12 @@ func (a *UniversalAPI) DeleteBulkState(ctx context.Context, in *runtimev1pb.Dele
 
 	reqs := make([]state.DeleteRequest, 0, len(in.States))
 	for _, item := range in.States {
-		key, err1 := stateLoader.GetModifiedStateKey(item.Key, in.StoreName, a.AppID)
-		if err1 != nil {
-			return &emptypb.Empty{}, err1
+		var key string
+		key, err = stateLoader.GetModifiedStateKey(item.Key, in.StoreName, a.AppID)
+		if err != nil {
+			err = messages.ErrStateBadKey.WithFormat(err)
+			a.Logger.Debug(err)
+			return &emptypb.Empty{}, messages.ErrStateBadKey.WithFormat(err)
 		}
 		req := state.DeleteRequest{
 			Key:      key,
@@ -204,7 +211,8 @@ func (a *UniversalAPI) DeleteBulkState(ctx context.Context, in *runtimev1pb.Dele
 }
 
 // stateErrorResponse takes a state store error, format and args and returns a status code encoded gRPC error.
-func (a *UniversalAPI) stateErrorResponse(err error, format string, args ...any) error {
+// Although we take an APIError, we override the status codes.
+func (a *UniversalAPI) stateErrorResponse(err error, msg messages.APIError, arg any) error {
 	e, ok := err.(*state.ETagError)
 	if !ok {
 		return status.Errorf(codes.Internal, format, args...)
