@@ -259,6 +259,9 @@ message DeleteBulkStateRequest {
 
   // The array of the state key values.
   repeated common.v1.StateItem states = 2;
+
+  // The number of parallel operations executed on the state store for a delete operation, when there are more than one
+  int32 parallelism = 3;
 }
 
 // SaveStateRequest is the message to save multiple states into state store.
@@ -268,6 +271,9 @@ message SaveStateRequest {
 
   // The array of the state key values.
   repeated common.v1.StateItem states = 2;
+
+  // The number of parallel operations executed on the state store for a set operation, when there are more than one.
+  int32 parallelism = 3;
 }
 
 // QueryStateRequest is the message to query state store.
