@@ -1202,8 +1202,13 @@ func (a *actorsRuntime) CreateReminder(ctx context.Context, req *CreateReminderR
 		return err
 	}
 
+	fmt.Println("LOCKING REMINDERS")
 	a.activeRemindersLock.Lock()
-	defer a.activeRemindersLock.Unlock()
+	defer func() {
+		fmt.Println("UNLOCKING REMINDERS")
+		a.activeRemindersLock.Unlock()
+	}()
+	fmt.Println("ACQUIRED LOCK")
 
 	existing, ok := a.getReminder(req.Name, req.ActorType, req.ActorID)
 	if ok {

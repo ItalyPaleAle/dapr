@@ -540,36 +540,36 @@ func TestStoreIsNotInitialized(t *testing.T) {
 	}
 
 	t.Run("getReminderTrack", func(t *testing.T) {
-		r, e := testActorsRuntime.getReminderTrack(context.Background(), "foo||bar")
-		assert.NotNil(t, e)
+		r, err := testActorsRuntime.getReminderTrack(context.Background(), "foo||bar")
+		assert.Error(t, err)
 		assert.Nil(t, r)
 	})
 
 	t.Run("updateReminderTrack", func(t *testing.T) {
-		e := testActorsRuntime.updateReminderTrack(context.Background(), "foo||bar", 1, testActorsRuntime.clock.Now(), nil)
-		assert.NotNil(t, e)
+		err := testActorsRuntime.updateReminderTrack(context.Background(), "foo||bar", 1, testActorsRuntime.clock.Now(), nil)
+		assert.Error(t, err)
 	})
 
 	t.Run("CreateReminder", func(t *testing.T) {
-		e := testActorsRuntime.CreateReminder(context.Background(), &CreateReminderRequest{})
-		assert.NotNil(t, e)
+		err := testActorsRuntime.CreateReminder(context.Background(), &CreateReminderRequest{})
+		assert.Error(t, err)
 	})
 
 	t.Run("getRemindersForActorType", func(t *testing.T) {
-		r1, r2, e := testActorsRuntime.getRemindersForActorType(context.Background(), "foo", false)
+		r1, r2, err := testActorsRuntime.getRemindersForActorType(context.Background(), "foo", false)
 		assert.Nil(t, r1)
 		assert.Nil(t, r2)
-		assert.NotNil(t, e)
+		assert.Error(t, err)
 	})
 
 	t.Run("DeleteReminder", func(t *testing.T) {
-		e := testActorsRuntime.DeleteReminder(context.Background(), &DeleteReminderRequest{})
-		assert.NotNil(t, e)
+		err := testActorsRuntime.DeleteReminder(context.Background(), &DeleteReminderRequest{})
+		assert.Error(t, err)
 	})
 
 	t.Run("RenameReminder", func(t *testing.T) {
-		e := testActorsRuntime.RenameReminder(context.Background(), &RenameReminderRequest{})
-		assert.NotNil(t, e)
+		err := testActorsRuntime.RenameReminder(context.Background(), &RenameReminderRequest{})
+		assert.Error(t, err)
 	})
 }
 
@@ -698,8 +698,6 @@ func TestReminderCountFiringBad(t *testing.T) {
 
 	// init default service metrics where actor metrics are registered
 	assert.NoError(t, diag.DefaultMonitoring.Init(testActorsRuntime.config.AppID))
-	t.Cleanup(func() {
-	})
 
 	numReminders := 2
 
@@ -796,30 +794,47 @@ func TestCreateReminder(t *testing.T) {
 	testActorsRuntime := newTestActorsRuntimeWithMock(appChannel)
 	defer testActorsRuntime.Stop()
 
-	actorType, actorID := getTestActorTypeAndID()
-	secondActorType := "actor2"
-	ctx := context.Background()
-	err := testActorsRuntime.CreateReminder(ctx, &CreateReminderRequest{
-		ActorID:   actorID,
-		ActorType: actorType,
-		Name:      "reminder0",
-		Period:    "1s",
-		DueTime:   "1s",
-		TTL:       "PT10M",
-		Data:      nil,
-	})
-	require.NoError(t, err)
+	// Set the state store to not use locks when accessing data.
+	// This will cause race conditions to surface when running these tests with `go test -race` if the methods accessing reminders' storage are not safe for concurrent access.
+	stateStore, _ := testActorsRuntime.stateStore()
+	stateStore.(*daprt.FakeStateStore).NoLock = true
 
-	err = testActorsRuntime.CreateReminder(ctx, &CreateReminderRequest{
-		ActorID:   actorID,
-		ActorType: secondActorType,
-		Name:      "reminder0",
-		Period:    "1s",
-		DueTime:   "1s",
-		TTL:       "PT10M",
-		Data:      nil,
-	})
-	require.NoError(t, err)
+	actorType, actorID := getTestActorTypeAndID()
+	const secondActorType = "actor2"
+	ctx := context.Background()
+
+	// Create the reminders in parallel, which would surface race conditions if present
+	wg := sync.WaitGroup{}
+	go func() {
+		wg.Add(1)
+		defer wg.Done()
+
+		err := testActorsRuntime.CreateReminder(ctx, &CreateReminderRequest{
+			ActorID:   actorID,
+			ActorType: actorType,
+			Name:      "reminder0",
+			Period:    "1s",
+			DueTime:   "1s",
+			TTL:       "PT10M",
+			Data:      nil,
+		})
+		require.NoError(t, err)
+	}()
+	go func() {
+		wg.Add(1)
+		defer wg.Done()
+		err := testActorsRuntime.CreateReminder(ctx, &CreateReminderRequest{
+			ActorID:   actorID,
+			ActorType: secondActorType,
+			Name:      "reminder0",
+			Period:    "1s",
+			DueTime:   "1s",
+			TTL:       "PT10M",
+			Data:      nil,
+		})
+		require.NoError(t, err)
+	}()
+	wg.Wait()
 
 	// Now creates new reminders and migrates the previous one.
 	testActorsRuntimeWithPartition := newTestActorsRuntimeWithMockAndActorMetadataPartition(appChannel)
@@ -828,7 +843,7 @@ func TestCreateReminder(t *testing.T) {
 	testActorsRuntimeWithPartition.compStore = testActorsRuntime.compStore
 	for i := 1; i < numReminders; i++ {
 		for _, reminderActorType := range []string{actorType, secondActorType} {
-			err = testActorsRuntimeWithPartition.CreateReminder(ctx, &CreateReminderRequest{
+			err := testActorsRuntimeWithPartition.CreateReminder(ctx, &CreateReminderRequest{
 				ActorID:   actorID,
 				ActorType: reminderActorType,
 				Name:      "reminder" + strconv.Itoa(i),
