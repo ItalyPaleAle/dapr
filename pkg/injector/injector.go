@@ -211,7 +211,7 @@ func (i *injector) Run(ctx context.Context) error {
 	go func() {
 		srverr := i.server.ServeTLS(ln, i.config.TLSCertFile, i.config.TLSKeyFile)
 		if !errors.Is(srverr, http.ErrServerClosed) {
-			errCh <- fmt.Errorf("sidecar injector error: %s", srverr)
+			errCh <- fmt.Errorf("sidecar injector error: %w", srverr)
 			return
 		}
 		errCh <- nil
@@ -225,7 +225,7 @@ func (i *injector) Run(ctx context.Context) error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err = i.server.Shutdown(shutdownCtx); err != nil {
-			return fmt.Errorf("error while shutting down injector: %v; %v", err, <-errCh)
+			return fmt.Errorf("error while shutting down injector: %w; %w", err, <-errCh)
 		}
 		return <-errCh
 	case err = <-errCh:

@@ -17,7 +17,6 @@ import (
 	"strings"
 
 	"github.com/dapr/dapr/pkg/components/pluggable"
-
 	"github.com/dapr/dapr/pkg/injector/annotations"
 	"github.com/dapr/dapr/pkg/injector/patcher"
 
