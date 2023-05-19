@@ -32,6 +32,9 @@ func TestPodPatcherInit(t *testing.T) {
 	assert.Equal(t, int32(9090), p.MetricsPort)
 	assert.False(t, p.EnableProfiling)
 	assert.True(t, p.EnableMetrics)
+
+	// Nullable properties
+	assert.Nil(t, p.EnableAPILogging)
 }
 
 func TestPodPatcherSetFromAnnotations(t *testing.T) {
@@ -39,14 +42,19 @@ func TestPodPatcherSetFromAnnotations(t *testing.T) {
 
 	// Set properties of supported kinds: bools, strings, ints
 	p.SetFromAnnotations(map[string]string{
-		annotations.KeyEnabled:     "1", // Will be cast using utils.IsTruthy
-		annotations.KeyAppID:       "myappid",
-		annotations.KeyAppPort:     "9876",
-		annotations.KeyMetricsPort: "6789", // Override default value
+		annotations.KeyEnabled:          "1", // Will be cast using utils.IsTruthy
+		annotations.KeyAppID:            "myappid",
+		annotations.KeyAppPort:          "9876",
+		annotations.KeyMetricsPort:      "6789",  // Override default value
+		annotations.KeyEnableAPILogging: "false", // Nullable property
 	})
 
 	assert.True(t, p.Enabled)
 	assert.Equal(t, "myappid", p.AppID)
 	assert.Equal(t, int32(9876), p.AppPort)
 	assert.Equal(t, int32(6789), p.MetricsPort)
+
+	// Nullable properties
+	_ = assert.NotNil(t, p.EnableAPILogging) &&
+		assert.False(t, *p.EnableAPILogging)
 }

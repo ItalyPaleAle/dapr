@@ -74,7 +74,7 @@ type PodPatcher struct {
 	HTTPMaxRequestSize                  int32  `annotation:"dapr.io/http-max-request-size"`
 	HTTPReadBufferSize                  int32  `annotation:"dapr.io/http-read-buffer-size"`
 	GracefulShutdownSeconds             int32  `annotation:"dapr.io/graceful-shutdown-seconds"`
-	EnableAPILogging                    bool   `annotation:"dapr.io/enable-api-logging"`
+	EnableAPILogging                    *bool  `annotation:"dapr.io/enable-api-logging"`
 	UnixDomainSocketPath                string `annotation:"dapr.io/unix-domain-socket-path"`
 	VolumeMounts                        string `annotation:"dapr.io/volume-mounts"`
 	VolumeMountsRW                      string `annotation:"dapr.io/volume-mounts-rw"`
@@ -99,23 +99,6 @@ func NewPodPatcher() *PodPatcher {
 	return p
 }
 
-func (p *PodPatcher) setDefaultValues() {
-	// Iterate through the fields using reflection
-	val := reflect.ValueOf(p).Elem()
-	for i := 0; i < val.NumField(); i++ {
-		fieldT := val.Type().Field(i)
-		fieldV := val.Field(i)
-		an := fieldT.Tag.Get("annotation")
-		def := fieldT.Tag.Get("default")
-		if !fieldV.CanSet() || an == "" || def == "" {
-			continue
-		}
-
-		// Assign the default value
-		setValueFromString(fieldT.Type.Kind(), fieldV, def)
-	}
-}
-
 // SetFromAnnotations updates the object with properties from an annotation map.
 func (p *PodPatcher) SetFromAnnotations(an map[string]string) {
 	// Iterate through the fields using reflection
@@ -134,12 +117,35 @@ func (p *PodPatcher) SetFromAnnotations(an map[string]string) {
 		}
 
 		// Assign the value
-		setValueFromString(fieldT.Type.Kind(), fieldV, an[key])
+		setValueFromString(fieldT.Type, fieldV, an[key])
 	}
 }
 
-func setValueFromString(rk reflect.Kind, rv reflect.Value, val string) {
-	switch rk {
+
+func (p *PodPatcher) setDefaultValues() {
+	// Iterate through the fields using reflection
+	val := reflect.ValueOf(p).Elem()
+	for i := 0; i < val.NumField(); i++ {
+		fieldT := val.Type().Field(i)
+		fieldV := val.Field(i)
+		an := fieldT.Tag.Get("annotation")
+		def := fieldT.Tag.Get("default")
+		if !fieldV.CanSet() || an == "" || def == "" {
+			continue
+		}
+
+		// Assign the default value
+		setValueFromString(fieldT.Type, fieldV, def)
+	}
+}
+
+func setValueFromString(rt reflect.Type, rv reflect.Value, val string) {
+	switch rt.Kind() {
+	case reflect.Pointer:
+		pt := rt.Elem()
+		pv := reflect.New(rt.Elem()).Elem()
+		setValueFromString(pt, pv, val)
+		rv.Set(pv.Addr())
 	case reflect.String:
 		rv.SetString(val)
 	case reflect.Bool:
