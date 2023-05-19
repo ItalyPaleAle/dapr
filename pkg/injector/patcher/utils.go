@@ -11,16 +11,18 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package sidecar
+package patcher
 
 import (
 	"regexp"
 	"strings"
 
 	coreV1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/dapr/dapr/pkg/injector/annotations"
+	"github.com/dapr/dapr/utils"
 )
 
 var envRegexp = regexp.MustCompile(`(?m)(,)\s*[a-zA-Z\_][a-zA-Z0-9\_]*=`)
@@ -28,11 +30,6 @@ var envRegexp = regexp.MustCompile(`(?m)(,)\s*[a-zA-Z\_][a-zA-Z0-9\_]*=`)
 // GetAppID returns the app ID from the pod's annotation, or uses the pod's name as fallback.
 func GetAppID(pod metaV1.ObjectMeta) string {
 	return annotations.New(pod.Annotations).GetStringOrDefault(annotations.KeyAppID, pod.GetName())
-}
-
-// GetMetricsEnabled returns true if metrics have been enabled, or false as fallback.
-func GetMetricsEnabled(pod metaV1.ObjectMeta) bool {
-	return annotations.New(pod.Annotations).GetBoolOrDefault(annotations.KeyEnableMetrics, annotations.DefaultEnableMetric)
 }
 
 // add env-vars from annotations.
@@ -89,5 +86,21 @@ func PodContainsSidecarContainer(pod *coreV1.Pod) bool {
 			return true
 		}
 	}
+	return false
+}
+
+// podContainsTolerations returns true if the pod contains any of the tolerations specified in ts.
+func podContainsTolerations(ts []corev1.Toleration, podTolerations []corev1.Toleration) bool {
+	if len(ts) == 0 || len(podTolerations) == 0 {
+		return false
+	}
+
+	// If the pod contains any of the tolerations specified, return true.
+	for _, t := range ts {
+		if utils.Contains(podTolerations, t) {
+			return true
+		}
+	}
+
 	return false
 }
