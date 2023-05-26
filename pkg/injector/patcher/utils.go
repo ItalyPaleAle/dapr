@@ -32,7 +32,7 @@ func GetAppID(pod metaV1.ObjectMeta) string {
 	return annotations.New(pod.Annotations).GetStringOrDefault(annotations.KeyAppID, pod.GetName())
 }
 
-// add env-vars from annotations.
+// ParseEnvString gets env vars from an annotation string.
 func ParseEnvString(envStr string) []coreV1.EnvVar {
 	indexes := envRegexp.FindAllStringIndex(envStr, -1)
 	lastEnd := len(envStr)
@@ -77,6 +77,15 @@ func ParseVolumeMountsString(volumeMountStr string, readOnly bool) []coreV1.Volu
 		})
 	}
 	return volumeMounts
+}
+
+func podContainsVolume(pod *corev1.Pod, name string) bool {
+	for _, volume := range pod.Spec.Volumes {
+		if volume.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // PodContainsSidecarContainer returns true if the pod contains a sidecar container (i.e. a container named "daprd").

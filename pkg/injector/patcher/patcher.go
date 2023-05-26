@@ -15,6 +15,7 @@ package patcher
 
 import (
 	"fmt"
+	"path"
 	"reflect"
 	"strconv"
 	"strings"
@@ -22,9 +23,9 @@ import (
 	"github.com/spf13/cast"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/dapr/dapr/pkg/components/pluggable"
-	"github.com/dapr/dapr/pkg/injector/annotations"
 	authConsts "github.com/dapr/dapr/pkg/runtime/security/consts"
 	sentryConsts "github.com/dapr/dapr/pkg/sentry/consts"
 	"github.com/dapr/dapr/utils"
@@ -50,6 +51,7 @@ type PatchOperation struct {
 // Its parameters can be read from annotations on a pod.
 // Note: make sure that the annotations defined here are in-sync with the constants in the annotations package.
 type PodPatcher struct {
+	Pod                         *corev1.Pod
 	Namespace                   string
 	CertChain                   string
 	CertKey                     string
@@ -253,10 +255,6 @@ func (p *PodPatcher) GetSidecarContainer() (*corev1.Container, error) {
 		}, args...)
 	}
 
-	if image := cfg.Annotations.GetString(annotations.KeySidecarImage); image != "" {
-		cfg.DaprSidecarImage = image
-	}
-
 	securityContext := &corev1.SecurityContext{
 		AllowPrivilegeEscalation: ptr.Of(false),
 		RunAsNonRoot:             ptr.Of(p.RunAsNonRoot),
@@ -273,6 +271,7 @@ func (p *PodPatcher) GetSidecarContainer() (*corev1.Container, error) {
 		securityContext.Capabilities = &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}
 	}
 
+	probeHTTPHandler := getProbeHTTPHandler(SidecarPublicPort, APIVersionV1, SidecarHealthzPath)
 	container := &corev1.Container{
 		Name:            SidecarContainerName,
 		Image:           p.SidecarImage,
@@ -323,7 +322,7 @@ func (p *PodPatcher) GetSidecarContainer() (*corev1.Container, error) {
 		container.Args = append(container.Args, args...)
 	}
 
-	containerEnv := ParseEnvString(cfg.Annotations[annotations.KeyEnv])
+	containerEnv := ParseEnvString(p.Env)
 	if len(containerEnv) > 0 {
 		container.Env = append(container.Env, containerEnv...)
 	}
@@ -347,8 +346,9 @@ func (p *PodPatcher) GetSidecarContainer() (*corev1.Container, error) {
 		}
 	}
 
-	if len(cfg.VolumeMounts) > 0 {
-		container.VolumeMounts = append(container.VolumeMounts, cfg.VolumeMounts...)
+	volumeMounts := p.getSidecarVolumeMounts()
+	if len(volumeMounts) > 0 {
+		container.VolumeMounts = append(container.VolumeMounts, volumeMounts...)
 	}
 
 	if cfg.ComponentsSocketsVolumeMount != nil {
@@ -449,6 +449,26 @@ func (p *PodPatcher) setDefaultValues() {
 	}
 }
 
+// getSidecarVolumeMounts returns the list of VolumeMount's for the sidecar container.
+func (p *PodPatcher) getSidecarVolumeMounts() []corev1.VolumeMount {
+	volumeMounts := []corev1.VolumeMount{}
+
+	for _, vs := range [][]corev1.VolumeMount{
+		ParseVolumeMountsString(p.VolumeMounts, true),
+		ParseVolumeMountsString(p.VolumeMountsRW, false),
+	} {
+		for _, v := range vs {
+			if podContainsVolume(p.Pod, v.Name) {
+				volumeMounts = append(volumeMounts, v)
+			} else {
+				log.Warnf("Volume %q is not present in pod %q; skipping", v.Name, p.Pod.Name)
+			}
+		}
+	}
+
+	return volumeMounts
+}
+
 func (p *PodPatcher) getResourceRequirements() (*corev1.ResourceRequirements, error) {
 	r := corev1.ResourceRequirements{
 		Limits:   corev1.ResourceList{},
@@ -545,4 +565,21 @@ func (p *PodPatcher) toString(includeAll bool) string {
 	}
 
 	return res.String()
+}
+
+func getProbeHTTPHandler(port int32, pathElements ...string) corev1.ProbeHandler {
+	return corev1.ProbeHandler{
+		HTTPGet: &corev1.HTTPGetAction{
+			Path: formatProbePath(pathElements...),
+			Port: intstr.IntOrString{IntVal: port},
+		},
+	}
+}
+
+func formatProbePath(elements ...string) string {
+	pathStr := path.Join(elements...)
+	if !strings.HasPrefix(pathStr, "/") {
+		pathStr = "/" + pathStr
+	}
+	return pathStr
 }

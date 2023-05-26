@@ -16,9 +16,10 @@ package patcher
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-
 	"github.com/dapr/dapr/pkg/injector/annotations"
+	"github.com/stretchr/testify/assert"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 func TestPodPatcherInit(t *testing.T) {
@@ -57,4 +58,49 @@ func TestPodPatcherSetFromAnnotations(t *testing.T) {
 	// Nullable properties
 	_ = assert.NotNil(t, p.EnableAPILogging) &&
 		assert.False(t, *p.EnableAPILogging)
+}
+
+func TestGetProbeHttpHandler(t *testing.T) {
+	pathElements := []string{"api", "v1", "healthz"}
+	expectedPath := "/api/v1/healthz"
+	expectedHandler := corev1.ProbeHandler{
+		HTTPGet: &corev1.HTTPGetAction{
+			Path: expectedPath,
+			Port: intstr.IntOrString{IntVal: SidecarHTTPPort},
+		},
+	}
+
+	assert.EqualValues(t, expectedHandler, getProbeHTTPHandler(SidecarHTTPPort, pathElements...))
+}
+
+func TestFormatProbePath(t *testing.T) {
+	testCases := []struct {
+		given    []string
+		expected string
+	}{
+		{
+			given:    []string{"api", "v1"},
+			expected: "/api/v1",
+		},
+		{
+			given:    []string{"//api", "v1"},
+			expected: "/api/v1",
+		},
+		{
+			given:    []string{"//api", "/v1/"},
+			expected: "/api/v1",
+		},
+		{
+			given:    []string{"//api", "/v1/", "healthz"},
+			expected: "/api/v1/healthz",
+		},
+		{
+			given:    []string{""},
+			expected: "/",
+		},
+	}
+
+	for _, tc := range testCases {
+		assert.Equal(t, tc.expected, formatProbePath(tc.given...))
+	}
 }
