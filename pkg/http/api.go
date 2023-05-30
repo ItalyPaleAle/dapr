@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	nethttp "net/http"
 	"strconv"
 	"strings"
@@ -1250,6 +1251,102 @@ func (a *api) getBaseURL(targetAppID string) string {
 		return endpoint.Spec.BaseURL
 	}
 	return ""
+}
+
+func (a *api) onDirectMessageStd(w nethttp.ResponseWriter, r *nethttp.Request) {
+	targetID := "invokesrv"
+
+	verb := "POST"
+
+	// regular service to service invocation
+	invokeMethodName := "echo"
+	policyDef := a.resiliency.EndpointPolicy(targetID, targetID+":"+invokeMethodName)
+
+	req := invokev1.NewInvokeMethodRequest(invokeMethodName).
+		WithHTTPExtension(verb, r.URL.Query().Encode()).
+		WithRawData(r.Body).
+		WithContentType(r.Header.Get("content-type")).
+		// Save headers to internal metadata
+		WithHTTPHeaders(r.Header)
+	if policyDef != nil {
+		req.WithReplay(policyDef.HasRetries())
+	}
+	defer req.Close()
+
+	policyRunner := resiliency.NewRunnerWithOptions(
+		r.Context(), policyDef,
+		resiliency.RunnerOpts[*invokev1.InvokeMethodResponse]{
+			Disposer: resiliency.DisposerCloser[*invokev1.InvokeMethodResponse],
+		},
+	)
+	// Since we don't want to return the actual error, we have to extract several things in order to construct our response.
+	resp, err := policyRunner(func(ctx context.Context) (*invokev1.InvokeMethodResponse, error) {
+		rResp, rErr := a.directMessaging.Invoke(ctx, targetID, req)
+		if rErr != nil {
+			// Allowlist policies that are applied on the callee side can return a Permission Denied error.
+			// For everything else, treat it as a gRPC transport error
+			invokeErr := invokeError{
+				statusCode: nethttp.StatusInternalServerError,
+				msg:        NewErrorResponse("ERR_DIRECT_INVOKE", fmt.Sprintf(messages.ErrDirectInvoke, targetID, rErr)),
+			}
+
+			if status.Code(rErr) == codes.PermissionDenied {
+				invokeErr.statusCode = invokev1.HTTPStatusFromCode(codes.PermissionDenied)
+			}
+			return rResp, invokeErr
+		}
+
+		// Construct response if not HTTP
+		resStatus := rResp.Status()
+		if !rResp.IsHTTPResponse() {
+			statusCode := int32(invokev1.HTTPStatusFromCode(codes.Code(resStatus.Code)))
+			if statusCode != nethttp.StatusOK {
+				// Close the response to replace the body
+				_ = rResp.Close()
+				var body []byte
+				body, rErr = invokev1.ProtobufToJSON(resStatus)
+				rResp.WithRawDataBytes(body)
+				resStatus.Code = statusCode
+				if rErr != nil {
+					return rResp, invokeError{
+						statusCode: nethttp.StatusInternalServerError,
+						msg:        NewErrorResponse("ERR_MALFORMED_RESPONSE", rErr.Error()),
+					}
+				}
+			} else {
+				resStatus.Code = statusCode
+			}
+		} else if resStatus.Code < 200 || resStatus.Code > 399 {
+			// We are not returning an `invokeError` here on purpose.
+			// Returning an error that is not an `invokeError` will cause Resiliency to retry the request (if retries are enabled), but if the request continues to fail, the response is sent to the user with whatever status code the app returned so the "received non-successful status code" is "swallowed" (will appear in logs but won't be returned to the app).
+			return rResp, fmt.Errorf("received non-successful status code: %d", resStatus.Code)
+		}
+		return rResp, nil
+	})
+
+	// Special case for timeouts/circuit breakers since they won't go through the rest of the logic.
+	if errors.Is(err, context.DeadlineExceeded) || breaker.IsErrorPermanent(err) {
+		w.WriteHeader(nethttp.StatusInternalServerError)
+		return
+	}
+
+	invokeErr := invokeError{}
+	if errors.As(err, &invokeErr) {
+		w.WriteHeader(invokeErr.statusCode)
+		w.Write([]byte(invokeErr.msg.Message))
+		if resp != nil {
+			_ = resp.Close()
+		}
+		return
+	}
+	defer resp.Close()
+
+	statusCode := int(resp.Status().Code)
+
+	w.Header().Set("content-type", resp.ContentType())
+	w.WriteHeader(statusCode)
+
+	io.Copy(w, resp.RawData())
 }
 
 func (a *api) onDirectMessage(reqCtx *fasthttp.RequestCtx) {

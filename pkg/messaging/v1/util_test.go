@@ -388,18 +388,3 @@ func TestFasthttpHeadersToInternalMetadata(t *testing.T) {
 	require.NotEmpty(t, imd["Bar"].Values)
 	assert.Equal(t, []string{"test2", "test3"}, imd["Bar"].Values)
 }
-
-func TestFasthttpHeadersToMap(t *testing.T) {
-	header := &fasthttp.RequestHeader{}
-	header.Add("foo", "test")
-	header.Add("bar", "test2")
-	header.Add("bar", "test3")
-
-	md := fasthttpHeadersToMap(header)
-
-	require.NotEmpty(t, md)
-	require.NotEmpty(t, md["Foo"])
-	assert.Equal(t, []string{"test"}, md["Foo"])
-	require.NotEmpty(t, md["Bar"])
-	assert.Equal(t, []string{"test2", "test3"}, md["Bar"])
-}

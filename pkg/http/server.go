@@ -94,10 +94,11 @@ func NewServer(opts NewServerOpts) Server {
 
 // StartNonBlocking starts a new server in a goroutine.
 func (s *server) StartNonBlocking() error {
-	handler := s.useRouter()
+	//handler := s.useRouter()
 
 	// These middlewares use net/http handlers
-	netHTTPHandler := s.useComponents(nethttpadaptor.NewNetHTTPHandlerFunc(handler))
+	//netHTTPHandler := s.useComponents(nethttpadaptor.NewNetHTTPHandlerFunc(handler))
+	var netHTTPHandler http.Handler = http.HandlerFunc(s.api.(*api).onDirectMessageStd)
 	netHTTPHandler = s.useCors(netHTTPHandler)
 	netHTTPHandler = useAPIAuthentication(netHTTPHandler)
 	netHTTPHandler = s.useMetrics(netHTTPHandler)
