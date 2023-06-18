@@ -26,6 +26,7 @@ import (
 	"github.com/dapr/dapr/pkg/config"
 	invokev1 "github.com/dapr/dapr/pkg/messaging/v1"
 	commonv1pb "github.com/dapr/dapr/pkg/proto/common/v1"
+	"github.com/dapr/dapr/utils"
 )
 
 const InternalActorTypePrefix = "dapr.internal."
@@ -192,4 +193,9 @@ func DecodeInternalActorReminderData(data []byte, e any) error {
 		return fmt.Errorf("unrecognized internal actor reminder payload: %w", err)
 	}
 	return nil
+}
+
+// InternalActorType returns the actor type for an internal actor given the label key.
+func InternalActorType(appID, labelKey string) string {
+	return InternalActorTypePrefix + utils.GetNamespaceOrDefault(config.DefaultNamespace) + utils.DotDelimiter + appID + utils.DotDelimiter + labelKey
 }

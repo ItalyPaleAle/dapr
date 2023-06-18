@@ -25,7 +25,6 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/dapr/dapr/pkg/actors"
-	"github.com/dapr/dapr/utils"
 	"github.com/dapr/kit/logger"
 )
 
@@ -46,7 +45,6 @@ type WorkflowEngine struct {
 }
 
 const (
-	defaultNamespace     = "default"
 	WorkflowNameLabelKey = "workflow"
 	ActivityNameLabelKey = "activity"
 )
@@ -67,8 +65,8 @@ type wfConfig struct {
 func NewWorkflowConfig(appID string) wfConfig {
 	return wfConfig{
 		AppID:             appID,
-		workflowActorType: actors.InternalActorTypePrefix + utils.GetNamespaceOrDefault(defaultNamespace) + utils.DotDelimiter + appID + utils.DotDelimiter + WorkflowNameLabelKey,
-		activityActorType: actors.InternalActorTypePrefix + utils.GetNamespaceOrDefault(defaultNamespace) + utils.DotDelimiter + appID + utils.DotDelimiter + ActivityNameLabelKey,
+		workflowActorType: actors.InternalActorType(appID, WorkflowNameLabelKey),
+		activityActorType: actors.InternalActorType(appID, ActivityNameLabelKey),
 	}
 }
 
