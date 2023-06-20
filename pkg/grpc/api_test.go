@@ -1788,8 +1788,8 @@ func TestUnSubscribeConfiguration(t *testing.T) {
 			}
 
 			resp, err := client.SubscribeConfigurationAlpha1(context.Background(), req)
-			assert.NoError(t, err, "Error should be nil")
-			retry := 3
+			require.NoError(t, err, "Error should be nil")
+			const retry = 3
 			count := 0
 			var subscribeID string
 			for {
@@ -1808,15 +1808,15 @@ func TestUnSubscribeConfiguration(t *testing.T) {
 				}
 				subscribeID = rsp.Id
 			}
-			assert.NoError(t, err, "Error should be nil")
+			require.NoError(t, err, "Error should be nil")
 			_, err = client.UnsubscribeConfigurationAlpha1(context.Background(), &runtimev1pb.UnsubscribeConfigurationRequest{
 				StoreName: tt.storeName,
 				Id:        subscribeID,
 			})
-			assert.NoError(t, err, "Error should be nil")
+			require.NoError(t, err, "Error should be nil")
 			count = 0
 			for {
-				if err != nil && err.Error() == "EOF" {
+				if errors.Is(err, io.EOF) {
 					break
 				}
 				if count > retry {
@@ -1826,8 +1826,9 @@ func TestUnSubscribeConfiguration(t *testing.T) {
 				time.Sleep(time.Millisecond * 10)
 				_, err = resp.Recv()
 			}
-			assert.Error(t, err, "Unsubscribed channel should returns EOF")
+			require.ErrorIs(t, err, io.EOF, "Unsubscribed channel should returns EOF")
 		})
+
 		// Testing stable endpoint
 		t.Run(tt.testName, func(t *testing.T) {
 			req := &runtimev1pb.SubscribeConfigurationRequest{
@@ -1836,8 +1837,8 @@ func TestUnSubscribeConfiguration(t *testing.T) {
 			}
 
 			resp, err := client.SubscribeConfiguration(context.Background(), req)
-			assert.NoError(t, err, "Error should be nil")
-			retry := 3
+			require.NoError(t, err, "Error should be nil")
+			const retry = 3
 			count := 0
 			var subscribeID string
 			for {
@@ -1856,15 +1857,15 @@ func TestUnSubscribeConfiguration(t *testing.T) {
 				}
 				subscribeID = rsp.Id
 			}
-			assert.NoError(t, err, "Error should be nil")
+			require.NoError(t, err, "Error should be nil")
 			_, err = client.UnsubscribeConfiguration(context.Background(), &runtimev1pb.UnsubscribeConfigurationRequest{
 				StoreName: tt.storeName,
 				Id:        subscribeID,
 			})
-			assert.NoError(t, err, "Error should be nil")
+			require.NoError(t, err, "Error should be nil")
 			count = 0
 			for {
-				if err != nil && err.Error() == "EOF" {
+				if errors.Is(err, io.EOF) {
 					break
 				}
 				if count > retry {
@@ -1874,7 +1875,7 @@ func TestUnSubscribeConfiguration(t *testing.T) {
 				time.Sleep(time.Millisecond * 10)
 				_, err = resp.Recv()
 			}
-			assert.Error(t, err, "Unsubscribed channel should returns EOF")
+			require.ErrorIs(t, err, io.EOF, "Unsubscribed channel should returns EOF")
 		})
 	}
 }

@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -1306,12 +1307,25 @@ func (a *api) GetConfigurationAlpha1(ctx context.Context, in *runtimev1pb.GetCon
 }
 
 type configurationEventHandler struct {
+	readyCh      chan struct{}
+	lock         sync.Mutex
 	api          *api
 	storeName    string
 	serverStream runtimev1pb.Dapr_SubscribeConfigurationAlpha1Server //nolint:nosnakecase
 }
 
+func (h *configurationEventHandler) ready() {
+	close(h.readyCh)
+}
+
 func (h *configurationEventHandler) updateEventHandler(ctx context.Context, e *configuration.UpdateEvent) error {
+	// Blocks until the first message is sent
+	<-h.readyCh
+
+	// Calling Send on a gRPC stream from multiple goroutines at the same time is not supported
+	h.lock.Lock()
+	defer h.lock.Unlock()
+
 	items := make(map[string]*commonv1pb.ConfigurationItem, len(e.Items))
 	for k, v := range e.Items {
 		items[k] = &commonv1pb.ConfigurationItem{
@@ -1321,10 +1335,11 @@ func (h *configurationEventHandler) updateEventHandler(ctx context.Context, e *c
 		}
 	}
 
-	if err := h.serverStream.Send(&runtimev1pb.SubscribeConfigurationResponse{
+	err := h.serverStream.Send(&runtimev1pb.SubscribeConfigurationResponse{
 		Items: items,
 		Id:    e.ID,
-	}); err != nil {
+	})
+	if err != nil {
 		apiServerLogger.Debug(err)
 		return err
 	}
@@ -1337,24 +1352,18 @@ func (a *api) SubscribeConfiguration(request *runtimev1pb.SubscribeConfiguration
 		apiServerLogger.Debug(err)
 		return err
 	}
-	sort.Slice(request.Keys, func(i, j int) bool {
-		return request.Keys[i] < request.Keys[j]
-	})
 
-	subscribeKeys := make([]string, 0)
+	sort.Strings(request.Keys)
 
 	// TODO(@halspang) provide a switch to use just resiliency or this.
 
-	if len(request.Keys) > 0 {
-		subscribeKeys = append(subscribeKeys, request.Keys...)
-	}
-
 	req := &configuration.SubscribeRequest{
-		Keys:     subscribeKeys,
+		Keys:     request.Keys,
 		Metadata: request.GetMetadata(),
 	}
 
 	handler := &configurationEventHandler{
+		readyCh:      make(chan struct{}),
 		api:          a,
 		storeName:    request.StoreName,
 		serverStream: configurationServer,
@@ -1377,12 +1386,17 @@ func (a *api) SubscribeConfiguration(request *runtimev1pb.SubscribeConfiguration
 		apiServerLogger.Debug(err)
 		return err
 	}
-	if err := handler.serverStream.Send(&runtimev1pb.SubscribeConfigurationResponse{
+
+	err = handler.serverStream.Send(&runtimev1pb.SubscribeConfigurationResponse{
 		Id: subscribeID,
-	}); err != nil {
+	})
+	if err != nil {
 		apiServerLogger.Debug(err)
 		return err
 	}
+
+	// We have sent the first message, so signal that we're ready to send messages in the stream
+	handler.ready()
 
 	stop := make(chan struct{})
 	a.CompStore.AddConfigurationSubscribe(subscribeID, stop)
@@ -1415,12 +1429,10 @@ func (a *api) UnsubscribeConfiguration(ctx context.Context, request *runtimev1pb
 			Message: fmt.Sprintf(messages.ErrConfigurationUnsubscribe, subscribeID, "subscription does not exist"),
 		}, nil
 	}
-	a.CompStore.DeleteConfigurationSubscribe(subscribeID)
 
 	policyRunner := resiliency.NewRunner[any](ctx,
 		a.resiliency.ComponentOutboundPolicy(request.StoreName, resiliency.Configuration),
 	)
-
 	start := time.Now()
 	storeReq := &configuration.UnsubscribeRequest{
 		ID: subscribeID,
@@ -1438,6 +1450,9 @@ func (a *api) UnsubscribeConfiguration(ctx context.Context, request *runtimev1pb
 			Message: err.Error(),
 		}, err
 	}
+
+	a.CompStore.DeleteConfigurationSubscribe(subscribeID)
+
 	return &runtimev1pb.UnsubscribeConfigurationResponse{
 		Ok: true,
 	}, nil
