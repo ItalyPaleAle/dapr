@@ -1308,6 +1308,7 @@ func (a *api) GetConfigurationAlpha1(ctx context.Context, in *runtimev1pb.GetCon
 
 type configurationEventHandler struct {
 	readyCh      chan struct{}
+	readyClosed  bool
 	lock         sync.Mutex
 	api          *api
 	storeName    string
@@ -1315,7 +1316,10 @@ type configurationEventHandler struct {
 }
 
 func (h *configurationEventHandler) ready() {
-	close(h.readyCh)
+	if !h.readyClosed {
+		close(h.readyCh)
+		h.readyClosed = true
+	}
 }
 
 func (h *configurationEventHandler) updateEventHandler(ctx context.Context, e *configuration.UpdateEvent) error {
@@ -1368,6 +1372,8 @@ func (a *api) SubscribeConfiguration(request *runtimev1pb.SubscribeConfiguration
 		storeName:    request.StoreName,
 		serverStream: configurationServer,
 	}
+	// Prevents a leak
+	defer handler.ready()
 
 	// TODO(@laurence) deal with failed subscription and retires
 	start := time.Now()
@@ -1395,11 +1401,13 @@ func (a *api) SubscribeConfiguration(request *runtimev1pb.SubscribeConfiguration
 		return err
 	}
 
+	stop := make(chan struct{})
+	a.CompStore.AddConfigurationSubscribe(subscribeID, stop)
+
 	// We have sent the first message, so signal that we're ready to send messages in the stream
 	handler.ready()
 
-	stop := make(chan struct{})
-	a.CompStore.AddConfigurationSubscribe(subscribeID, stop)
+	// Wait until the channel is stopped
 	<-stop
 
 	return nil
