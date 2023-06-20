@@ -1407,13 +1407,8 @@ func (a *api) SubscribeConfiguration(request *runtimev1pb.SubscribeConfiguration
 	// We have sent the first message, so signal that we're ready to send messages in the stream
 	handler.ready()
 
-	// Wait until the channel is stopped or the request ends
-	select {
-	case <-configurationServer.Context().Done():
-		// nop
-	case <-stop:
-		// nop
-	}
+	// Wait until the channel is stopped
+	<-stop
 
 	return nil
 }
