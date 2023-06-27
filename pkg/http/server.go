@@ -34,6 +34,8 @@ import (
 	chi "github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 
 	"github.com/dapr/dapr/pkg/config"
 	corsDapr "github.com/dapr/dapr/pkg/cors"
@@ -129,11 +131,14 @@ func (s *server) StartNonBlocking() error {
 		return errors.New("could not listen on any endpoint")
 	}
 
+	// Create a handler with support for HTTP/2 Cleartext
+	h2cHandler := h2c.NewHandler(r, &http2.Server{})
+
 	for _, listener := range listeners {
 		// srv is created in a loop because each instance
 		// has a handle on the underlying listener.
 		srv := &http.Server{
-			Handler:           r,
+			Handler:           h2cHandler,
 			ReadHeaderTimeout: 10 * time.Second,
 			MaxHeaderBytes:    s.config.ReadBufferSizeKB << 10, // To bytes
 		}
