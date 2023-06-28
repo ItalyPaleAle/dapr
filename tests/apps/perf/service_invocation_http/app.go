@@ -16,6 +16,9 @@ package main
 import (
 	"log"
 	"net/http"
+
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 )
 
 func handler(w http.ResponseWriter, r *http.Request) {
@@ -23,6 +26,12 @@ func handler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	http.HandleFunc("/test", handler)
-	log.Fatal(http.ListenAndServe(":3000", nil))
+	mux := http.NewServeMux()
+	mux.HandleFunc("/test", handler)
+
+	log.Print("Starting server on port 3000")
+	err := http.ListenAndServe(":3000", h2c.NewHandler(mux, &http2.Server{}))
+	if err != http.ErrServerClosed {
+		log.Fatal(err)
+	}
 }

@@ -33,6 +33,7 @@ type TestParameters struct {
 	PayloadSizeKB     int    `json:"payloadSizeKB"`
 	Payload           string `json:"payload"`
 	StdClient         bool   `json:"stdClient"`
+	HTTP2             bool   `json:"http2"`
 	Grpc              bool   `json:"grpc"`
 	Dapr              string `json:"dapr"`
 }
@@ -117,10 +118,14 @@ func buildFortioArgs(params TestParameters) []string {
 			"-payload-size", strconv.Itoa(params.PayloadSizeKB),
 		}
 	}
-	if params.StdClient {
+
+	// Using HTTP2 requires stdclient
+	if params.StdClient || params.HTTP2 {
 		args = append(args, "-stdclient")
 	}
-
+	if params.HTTP2 {
+		args = append(args, "-h2")
+	}
 	if params.Grpc {
 		args = append(args, "-grpc")
 	}

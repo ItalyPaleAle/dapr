@@ -41,6 +41,7 @@ type TestParameters struct {
 	PayloadSizeKB     int    `json:"payloadSizeKB"`
 	Payload           string `json:"payload"`
 	StdClient         bool   `json:"stdClient"`
+	HTTP2             bool   `json:"http2"`
 	Grpc              bool   `json:"grpc"`
 	Dapr              string `json:"dapr"`
 }
@@ -79,6 +80,13 @@ func WithPayloadSize(sizeKB int) Opt {
 func WithPayload(payload string) Opt {
 	return func(tp *TestParameters) {
 		tp.Payload = payload
+	}
+}
+
+// WithHTTP2 enables HTTP2 support.
+func WithHTTP2(enabled bool) Opt {
+	return func(tp *TestParameters) {
+		tp.HTTP2 = enabled
 	}
 }
 

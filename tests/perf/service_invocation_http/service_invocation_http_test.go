@@ -90,13 +90,25 @@ func TestMain(m *testing.M) {
 }
 
 func TestServiceInvocationHTTPPerformance(t *testing.T) {
-	p := perf.Params(
+	doTest(t)
+}
+
+func TestServiceInvocationHTTPPerformanceHTTP2(t *testing.T) {
+	doTest(t, perf.WithHTTP2(true))
+}
+
+func doTest(t *testing.T, opts ...func(*perf.TestParameters)) {
+	if opts == nil {
+		opts = make([]func(*perf.TestParameters), 0, 5)
+	}
+	opts = append(opts,
 		perf.WithQPS(1000),
 		perf.WithConnections(16),
 		perf.WithDuration("1m"),
 		perf.WithPayloadSize(1024),
 	)
-	t.Logf("running service invocation http test with params: qps=%v, connections=%v, duration=%s, payload size=%v, payload=%v", p.QPS, p.ClientConnections, p.TestDuration, p.PayloadSizeKB, p.Payload)
+	p := perf.Params(opts...)
+	t.Logf("running service invocation http test with params: qps=%v, connections=%v, duration=%s, payload size=%v, payload=%v, http2=%v", p.QPS, p.ClientConnections, p.TestDuration, p.PayloadSizeKB, p.Payload, p.HTTP2)
 
 	// Get the ingress external url of test app
 	testAppURL := tr.Platform.AcquireAppExternalURL("testapp")
