@@ -24,6 +24,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/exp/slices"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	kclock "k8s.io/utils/clock"
@@ -54,7 +55,6 @@ const (
 var DefaultAppConfig = config.ApplicationConfig{
 	Entities:                   []string{"1", "reentrantActor"},
 	ActorIdleTimeout:           "1s",
-	ActorScanInterval:          "2s",
 	DrainOngoingCallTimeout:    "3s",
 	DrainRebalancedActors:      true,
 	Reentrancy:                 config.ReentrancyConfig{},
@@ -297,57 +297,24 @@ func fakeStore() state.Store {
 
 func fakeCallAndActivateActor(actors *actorsRuntime, actorType, actorID string, clock kclock.WithTicker) {
 	actorKey := constructCompositeKey(actorType, actorID)
-	actors.actorsTable.LoadOrStore(actorKey, newActor(actorType, actorID, &reentrancyStackDepth, clock))
+	act := newActor(actorType, actorID, &reentrancyStackDepth, actors.actorsConfig.GetIdleTimeoutForType(actorType), clock)
+	actors.actorsTable.LoadOrStore(actorKey, act)
+	if actors.actorLockIdleTimeCh != nil {
+		actors.actorLockIdleTimeCh <- act.idleTimeout
+	}
 }
 
-func deactivateActorWithDuration(testActorsRuntime *actorsRuntime, actorType, actorID string) <-chan struct{} {
-	fakeCallAndActivateActor(testActorsRuntime, actorType, actorID, testActorsRuntime.clock)
-
-	ch := make(chan struct{}, 1)
-	go testActorsRuntime.deactivationTicker(testActorsRuntime.actorsConfig, func(at, aid string) error {
-		if actorType == at {
+func deactivateActorsCh(testActorsRuntime *actorsRuntime) <-chan string {
+	ch := make(chan string, 2)
+	testActorsRuntime.deactivationTicker(
+		testActorsRuntime.ctx,
+		func(at, aid string) error {
 			testActorsRuntime.removeActorFromTable(at, aid)
-			ch <- struct{}{}
-		}
-		return nil
-	})
+			ch <- constructCompositeKey(at, aid)
+			return nil
+		},
+	)
 	return ch
-}
-
-func assertTestSignal(t *testing.T, clock *clocktesting.FakeClock, ch <-chan struct{}) {
-	t.Helper()
-
-	end := clock.Now().Add(700 * time.Millisecond)
-
-	for {
-		select {
-		case <-ch:
-			// all good
-			return
-		default:
-		}
-
-		if clock.Now().After(end) {
-			require.Fail(t, "did not receive signal in 700ms")
-		}
-
-		// The signal is sent in a background goroutine, so we need to use a wall
-		// clock here
-		time.Sleep(time.Millisecond * 5)
-		advanceTickers(t, clock, time.Millisecond*10)
-	}
-}
-
-func assertNoTestSignal(t *testing.T, ch <-chan struct{}) {
-	t.Helper()
-
-	// The signal is sent in a background goroutine, so we need to use a wall clock here
-	select {
-	case <-ch:
-		t.Fatalf("received unexpected signal")
-	case <-time.After(500 * time.Millisecond):
-		// all good
-	}
 }
 
 // Makes tickers advance
@@ -363,25 +330,29 @@ func advanceTickers(t *testing.T, clock *clocktesting.FakeClock, step time.Durat
 }
 
 func TestDeactivationTicker(t *testing.T) {
+	actorType, actorID := getTestActorTypeAndID()
+	actorKey := constructCompositeKey(actorType, actorID)
+
 	t.Run("actor is deactivated", func(t *testing.T) {
 		testActorsRuntime := newTestActorsRuntime()
+		testActorsRuntime.actorsConfig.ActorIdleTimeout = time.Second * 2
 		defer testActorsRuntime.Stop()
 		clock := testActorsRuntime.clock.(*clocktesting.FakeClock)
 
-		actorType, actorID := getTestActorTypeAndID()
-		actorKey := constructCompositeKey(actorType, actorID)
+		ch := deactivateActorsCh(testActorsRuntime)
 
-		testActorsRuntime.actorsConfig.ActorIdleTimeout = time.Second * 2
-		testActorsRuntime.actorsConfig.ActorDeactivationScanInterval = time.Second * 1
-
-		ch := deactivateActorWithDuration(testActorsRuntime, actorType, actorID)
+		fakeCallAndActivateActor(testActorsRuntime, actorType, actorID, testActorsRuntime.clock)
 
 		_, exists := testActorsRuntime.actorsTable.Load(actorKey)
 		assert.True(t, exists)
 
-		advanceTickers(t, clock, time.Second*3)
-
-		assertTestSignal(t, clock, ch)
+		clock.Step(2 * time.Second)
+		select {
+		case deactivatedKey := <-ch:
+			assert.Equal(t, actorKey, deactivatedKey)
+		case <-time.After(700 * time.Millisecond):
+			t.Errorf("Did not receive signal in time")
+		}
 
 		_, exists = testActorsRuntime.actorsTable.Load(actorKey)
 		assert.False(t, exists)
@@ -389,22 +360,24 @@ func TestDeactivationTicker(t *testing.T) {
 
 	t.Run("actor is not deactivated", func(t *testing.T) {
 		testActorsRuntime := newTestActorsRuntime()
+		testActorsRuntime.actorsConfig.ActorIdleTimeout = time.Second * 5
 		defer testActorsRuntime.Stop()
 		clock := testActorsRuntime.clock.(*clocktesting.FakeClock)
 
-		actorType, actorID := getTestActorTypeAndID()
-		actorKey := constructCompositeKey(actorType, actorID)
+		ch := deactivateActorsCh(testActorsRuntime)
 
-		testActorsRuntime.actorsConfig.ActorIdleTimeout = time.Second * 5
-		testActorsRuntime.actorsConfig.ActorDeactivationScanInterval = time.Second * 1
-
-		ch := deactivateActorWithDuration(testActorsRuntime, actorType, actorID)
+		fakeCallAndActivateActor(testActorsRuntime, actorType, actorID, testActorsRuntime.clock)
 
 		_, exists := testActorsRuntime.actorsTable.Load(actorKey)
 		assert.True(t, exists)
 
-		advanceTickers(t, clock, time.Second*3)
-		assertNoTestSignal(t, ch)
+		clock.Step(3 * time.Second)
+		select {
+		case <-ch:
+			t.Errorf("Received unexpected signal")
+		case <-time.After(500 * time.Millisecond):
+			// all good
+		}
 
 		_, exists = testActorsRuntime.actorsTable.Load(actorKey)
 		assert.True(t, exists)
@@ -415,26 +388,67 @@ func TestDeactivationTicker(t *testing.T) {
 		defer testActorsRuntime.Stop()
 		clock := testActorsRuntime.clock.(*clocktesting.FakeClock)
 
-		firstType := "a"
-		secondType := "b"
-		actorID := "1"
+		ch := deactivateActorsCh(testActorsRuntime)
 
-		testActorsRuntime.actorsConfig.EntityConfigs[firstType] = internal.EntityConfig{Entities: []string{firstType}, ActorIdleTimeout: time.Second * 2}
-		testActorsRuntime.actorsConfig.EntityConfigs[secondType] = internal.EntityConfig{Entities: []string{secondType}, ActorIdleTimeout: time.Second * 5}
-		testActorsRuntime.actorsConfig.ActorDeactivationScanInterval = time.Second * 1
+		testActorsRuntime.actorsConfig.EntityConfigs["a"] = internal.EntityConfig{
+			Entities:         []string{"a"},
+			ActorIdleTimeout: time.Second * 2,
+		}
+		testActorsRuntime.actorsConfig.EntityConfigs["b"] = internal.EntityConfig{
+			Entities:         []string{"b"},
+			ActorIdleTimeout: time.Second * 5,
+		}
 
-		ch1 := deactivateActorWithDuration(testActorsRuntime, firstType, actorID)
-		ch2 := deactivateActorWithDuration(testActorsRuntime, secondType, actorID)
+		// Actors a||1 and a||2 should be deactivated in 2s, while b||1 in 5s
+		fakeCallAndActivateActor(testActorsRuntime, "a", "1", testActorsRuntime.clock)
+		fakeCallAndActivateActor(testActorsRuntime, "a", "2", testActorsRuntime.clock)
+		fakeCallAndActivateActor(testActorsRuntime, "b", "1", testActorsRuntime.clock)
 
-		advanceTickers(t, clock, time.Second*2)
-		assertTestSignal(t, clock, ch1)
-		assertNoTestSignal(t, ch2)
+		collectSignals := func() []string {
+			signals := make([]string, 0)
+			deadline := time.After(700 * time.Millisecond)
+			for {
+				select {
+				case <-deadline:
+					slices.Sort(signals)
+					return signals
+				case key := <-ch:
+					signals = append(signals, key)
+				}
+			}
+		}
 
-		_, exists := testActorsRuntime.actorsTable.Load(constructCompositeKey(firstType, actorID))
-		assert.False(t, exists)
+		assertActorExists := func(t *testing.T, actorKey string, expectExists bool) {
+			_, exists := testActorsRuntime.actorsTable.Load(actorKey)
+			assert.Equal(t, expectExists, exists)
+		}
 
-		_, exists = testActorsRuntime.actorsTable.Load(constructCompositeKey(secondType, actorID))
-		assert.True(t, exists)
+		// After 2s, we should have a||1 and a||2 deactivated only
+		advanceTickers(t, clock, 2*time.Second)
+		assert.Equal(t, []string{constructCompositeKey("a", "1"), constructCompositeKey("a", "2")}, collectSignals())
+		assertActorExists(t, constructCompositeKey("a", "1"), false)
+		assertActorExists(t, constructCompositeKey("a", "2"), false)
+		assertActorExists(t, constructCompositeKey("b", "1"), true)
+
+		// Activate a||3 which should be deactivated in 2s, before b||1
+		fakeCallAndActivateActor(testActorsRuntime, "a", "3", testActorsRuntime.clock)
+		advanceTickers(t, clock, 2*time.Second)
+		assert.Equal(t, []string{constructCompositeKey("a", "3")}, collectSignals())
+		assertActorExists(t, constructCompositeKey("a", "3"), false)
+		assertActorExists(t, constructCompositeKey("b", "1"), true)
+
+		// Activate a||4 which should be deactivated in 2s
+		// But first, in 1s, b||1 should be deactivated too
+		fakeCallAndActivateActor(testActorsRuntime, "a", "4", testActorsRuntime.clock)
+		advanceTickers(t, clock, 1*time.Second)
+		assert.Equal(t, []string{constructCompositeKey("b", "1")}, collectSignals())
+		assertActorExists(t, constructCompositeKey("b", "1"), false)
+		assertActorExists(t, constructCompositeKey("a", "4"), true)
+
+		// Lastly, a||4 should be deactivated in 1s
+		advanceTickers(t, clock, 1*time.Second)
+		assert.Equal(t, []string{constructCompositeKey("a", "4")}, collectSignals())
+		assertActorExists(t, constructCompositeKey("a", "4"), false)
 	})
 }
 
@@ -758,7 +772,7 @@ func TestCallLocalActor(t *testing.T) {
 		defer testActorsRuntime.Stop()
 
 		actorKey := constructCompositeKey(testActorType, testActorID)
-		act := newActor(testActorType, testActorID, &reentrancyStackDepth, testActorsRuntime.clock)
+		act := newActor(testActorType, testActorID, &reentrancyStackDepth, 2*time.Second, testActorsRuntime.clock)
 
 		// add test actor
 		testActorsRuntime.actorsTable.LoadOrStore(actorKey, act)

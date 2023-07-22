@@ -114,6 +114,7 @@ type actorsRuntime struct {
 	clock                clock.WithTicker
 	internalActors       map[string]InternalActor
 	internalActorChannel *internalActorChannel
+	actorLockIdleTimeCh  chan time.Duration
 
 	// TODO: @joshvanl Remove in Dapr 1.12 when ActorStateTTL is finalized.
 	stateTTLEnabled bool
@@ -245,10 +246,9 @@ func (a *actorsRuntime) Init() error {
 	}
 
 	go a.placement.Start(context.TODO())
-	go a.deactivationTicker(a.actorsConfig, a.deactivateActor)
+	a.deactivationTicker(a.ctx, a.deactivateActor)
 
-	log.Infof("Actor runtime started. Actor idle timeout: %v. Actor scan interval: %v",
-		a.actorsConfig.Config.ActorIdleTimeout, a.actorsConfig.Config.ActorDeactivationScanInterval)
+	log.Infof("Actor runtime started. Idle timeout: %v", a.actorsConfig.Config.ActorIdleTimeout)
 
 	// Be careful to configure healthz endpoint option. If app healthz returns unhealthy status, Dapr will
 	// disconnect from placement to remove the node from consistent hashing ring.
@@ -325,38 +325,70 @@ func (a *actorsRuntime) getActorTypeAndIDFromKey(key string) (string, string) {
 
 type deactivateFn = func(actorType string, actorID string) error
 
-func (a *actorsRuntime) deactivationTicker(configuration Config, deactivateFn deactivateFn) {
-	ticker := a.clock.NewTicker(configuration.ActorDeactivationScanInterval)
-	ch := ticker.C()
-	defer ticker.Stop()
+func (a *actorsRuntime) deactivationTicker(ctx context.Context, deactivateFn deactivateFn) {
+	a.actorLockIdleTimeCh = make(chan time.Duration)
 
-	for {
-		select {
-		case t := <-ch:
-			a.actorsTable.Range(func(key, value interface{}) bool {
-				actorInstance := value.(*actor)
-
-				if actorInstance.isBusy() {
-					return true
+	go func() {
+		var (
+			nextIdle time.Time
+			timer    clock.Timer
+			tch      <-chan time.Time
+		)
+		for {
+			select {
+			case t := <-tch:
+				nextIdle = a.deactivateIdleActors(t, deactivateFn)
+				if nextIdle.IsZero() {
+					tch = nil
+				} else {
+					timer = a.clock.NewTimer(nextIdle.Sub(a.clock.Now()))
+					tch = timer.C()
 				}
-
-				durationPassed := t.Sub(actorInstance.lastUsedTime)
-				if durationPassed >= configuration.GetIdleTimeoutForType(actorInstance.actorType) {
-					go func(actorKey string) {
-						actorType, actorID := a.getActorTypeAndIDFromKey(actorKey)
-						err := deactivateFn(actorType, actorID)
-						if err != nil {
-							log.Errorf("failed to deactivate actor %s: %s", actorKey, err)
-						}
-					}(key.(string))
+			case d := <-a.actorLockIdleTimeCh:
+				// If the next expiration is before the one we're waiting for, reset the timer
+				newIdle := a.clock.Now().Add(d)
+				if nextIdle.IsZero() || newIdle.Before(nextIdle) {
+					nextIdle = newIdle
+					if tch != nil && !timer.Stop() {
+						<-tch
+					}
+					timer = a.clock.NewTimer(d)
+					tch = timer.C()
 				}
-
-				return true
-			})
-		case <-a.ctx.Done():
-			return
+			case <-ctx.Done():
+				if tch != nil && !timer.Stop() {
+					<-tch
+				}
+				return
+			}
 		}
-	}
+	}()
+}
+
+// deactivateIdleActors deactivates all idle actors and returns the time the next idle actor should be deactivated at.
+// The returned time could be zero if there are no more active actors.
+func (a *actorsRuntime) deactivateIdleActors(t time.Time, deactivateFn deactivateFn) (next time.Time) {
+	a.actorsTable.Range(func(key, value any) bool {
+		actorInstance := value.(*actor)
+		if actorInstance.isBusy() {
+			return true
+		}
+
+		// Doing `actorInstance.idleAt.Before(t)` would return false if the two times are equal
+		if !t.Before(actorInstance.idleAt) {
+			go func(actorInstance *actor) {
+				err := deactivateFn(actorInstance.actorType, actorInstance.actorID)
+				if err != nil {
+					log.Errorf("Failed to deactivate actor %s/%s: %v", actorInstance.actorType, actorInstance.actorID, err)
+				}
+			}(actorInstance)
+		} else if next.IsZero() || actorInstance.idleAt.Before(next) {
+			next = actorInstance.idleAt
+		}
+
+		return true
+	})
+	return next
 }
 
 type lookupActorRes struct {
@@ -461,7 +493,12 @@ func (a *actorsRuntime) getOrCreateActor(actorType, actorID string) *actor {
 	// call newActor, but this is trivial.
 	val, ok := a.actorsTable.Load(key)
 	if !ok {
-		val, _ = a.actorsTable.LoadOrStore(key, newActor(actorType, actorID, a.actorsConfig.GetReentrancyForType(actorType).MaxStackDepth, a.clock))
+		actorInstance := newActor(actorType, actorID,
+			a.actorsConfig.GetReentrancyForType(actorType).MaxStackDepth,
+			a.actorsConfig.GetIdleTimeoutForType(actorType),
+			a.clock,
+		)
+		val, _ = a.actorsTable.LoadOrStore(key, actorInstance)
 	}
 
 	return val.(*actor)
@@ -493,6 +530,9 @@ func (a *actorsRuntime) callLocalActor(ctx context.Context, req *invokev1.Invoke
 	err := act.lock(reentrancyID)
 	if err != nil {
 		return nil, status.Error(codes.ResourceExhausted, err.Error())
+	}
+	if a.actorLockIdleTimeCh != nil {
+		a.actorLockIdleTimeCh <- act.idleTimeout
 	}
 	defer act.unlock()
 

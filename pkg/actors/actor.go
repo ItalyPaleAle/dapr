@@ -39,11 +39,12 @@ type actor struct {
 	// pendingActorCalls is the number of the current pending actor calls by turn-based concurrency.
 	pendingActorCalls atomic.Int32
 
-	// When consistent hashing tables are updated, actor runtime drains actor to rebalance actors
-	// across actor hosts after drainOngoingCallTimeout or until all pending actor calls are completed.
-	// lastUsedTime is the time when the last actor call holds lock. This is used to calculate
-	// the duration of ongoing calls to time out.
-	lastUsedTime time.Time
+	// idleTimeout is the configured max idle time for actors of this kind.
+	idleTimeout time.Duration
+
+	// idleAt is the time after which this actor is considered to be idle.
+	// When the actor is locked, idleAt is updated by adding the idleTimeout to the current time.
+	idleAt time.Time
 
 	// disposeLock guards disposed and disposeCh.
 	disposeLock sync.RWMutex
@@ -56,16 +57,17 @@ type actor struct {
 	clock clock.Clock
 }
 
-func newActor(actorType, actorID string, maxReentrancyDepth *int, cl clock.Clock) *actor {
+func newActor(actorType, actorID string, maxReentrancyDepth *int, idleTimeout time.Duration, cl clock.Clock) *actor {
 	if cl == nil {
 		cl = &clock.RealClock{}
 	}
 	return &actor{
-		actorType:    actorType,
-		actorID:      actorID,
-		actorLock:    NewActorLock(int32(*maxReentrancyDepth)),
-		clock:        cl,
-		lastUsedTime: cl.Now().UTC(),
+		actorType:   actorType,
+		actorID:     actorID,
+		actorLock:   NewActorLock(int32(*maxReentrancyDepth)),
+		clock:       cl,
+		idleTimeout: idleTimeout,
+		idleAt:      cl.Now().Add(idleTimeout),
 	}
 }
 
@@ -115,7 +117,7 @@ func (a *actor) lock(reentrancyID *string) error {
 		a.unlock()
 		return ErrActorDisposed
 	}
-	a.lastUsedTime = a.clock.Now().UTC()
+	a.idleAt = a.clock.Now().Add(a.idleTimeout)
 	return nil
 }
 
