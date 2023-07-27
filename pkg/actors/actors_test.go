@@ -299,21 +299,19 @@ func fakeCallAndActivateActor(actors *actorsRuntime, actorType, actorID string, 
 	actorKey := constructCompositeKey(actorType, actorID)
 	act := newActor(actorType, actorID, &reentrancyStackDepth, actors.actorsConfig.GetIdleTimeoutForType(actorType), clock)
 	actors.actorsTable.LoadOrStore(actorKey, act)
-	if actors.actorLockIdleTimeCh != nil {
-		actors.actorLockIdleTimeCh <- act.idleTimeout
-	}
+	actors.idleActorProcessor.Enqueue(act)
 }
 
 func deactivateActorsCh(testActorsRuntime *actorsRuntime) <-chan string {
 	ch := make(chan string, 2)
-	testActorsRuntime.deactivationTicker(
-		testActorsRuntime.ctx,
-		func(at, aid string) error {
-			testActorsRuntime.removeActorFromTable(at, aid)
-			ch <- constructCompositeKey(at, aid)
-			return nil
-		},
-	)
+
+	// Replace the processor with a mock one that returns deactivated actors in a channel
+	testActorsRuntime.idleActorProcessor = internal.NewProcessor[*actor](func(act *actor) {
+		key := act.Key()
+		testActorsRuntime.actorsTable.Delete(key)
+		ch <- constructCompositeKey(key)
+	}, testActorsRuntime.clock)
+
 	return ch
 }
 

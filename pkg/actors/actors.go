@@ -52,6 +52,7 @@ import (
 	"github.com/dapr/dapr/pkg/retry"
 	"github.com/dapr/dapr/pkg/runtime/compstore"
 	"github.com/dapr/kit/logger"
+	"github.com/dapr/kit/ptr"
 )
 
 const (
@@ -60,6 +61,9 @@ const (
 
 	errStateStoreNotFound      = "actors: state store does not exist or incorrectly configured"
 	errStateStoreNotConfigured = `actors: state store does not exist or incorrectly configured. Have you set the property '{"name": "actorStateStore", "value": "true"}' in your state store component file?`
+
+	// If an idle actor is getting deactivated, but it's still busy, will be re-enqueued with its idle timeout increased by this duration.
+	actorBusyReEnqueueInterval = 10 * time.Second
 )
 
 var (
@@ -114,7 +118,7 @@ type actorsRuntime struct {
 	clock                clock.WithTicker
 	internalActors       map[string]InternalActor
 	internalActorChannel *internalActorChannel
-	actorLockIdleTimeCh  chan time.Duration
+	idleActorProcessor   *internal.Processor[*actor]
 
 	// TODO: @joshvanl Remove in Dapr 1.12 when ActorStateTTL is finalized.
 	stateTTLEnabled bool
@@ -183,7 +187,24 @@ func newActorsWithClock(opts ActorsOpts, clock clock.WithTicker) Actors {
 	a.actorsReminders.SetStateStoreProviderFn(a.stateStore)
 	a.actorsReminders.SetLookupActorFn(a.isActorLocallyHosted)
 
+	a.idleActorProcessor = internal.NewProcessor[*actor](a.idleProcessorExecuteFn, clock)
+
 	return a
+}
+
+func (a *actorsRuntime) idleProcessorExecuteFn(act *actor) {
+	// If the actor is still busy, we will increase its idle time and re-enqueue it
+	if act.isBusy() {
+		act.idleAt.Store(ptr.Of(a.clock.Now().Add(actorBusyReEnqueueInterval)))
+		a.idleActorProcessor.Enqueue(act)
+		return
+	}
+
+	// Proceed with deactivating the actor
+	err := a.deactivateActor(act)
+	if err != nil {
+		log.Errorf("Failed to deactivate actor %s: %v", act.Key(), err)
+	}
 }
 
 func (a *actorsRuntime) isActorLocallyHosted(actorType string, actorID string) (isLocal bool, actorAddress string) {
@@ -246,7 +267,6 @@ func (a *actorsRuntime) Init() error {
 	}
 
 	go a.placement.Start(context.TODO())
-	a.deactivationTicker(a.ctx, a.deactivateActor)
 
 	log.Infof("Actor runtime started. Idle timeout: %v", a.actorsConfig.Config.ActorIdleTimeout)
 
@@ -284,111 +304,40 @@ func constructCompositeKey(keys ...string) string {
 	return strings.Join(keys, daprSeparator)
 }
 
-func (a *actorsRuntime) deactivateActor(actorType, actorID string) error {
-	req := invokev1.NewInvokeMethodRequest("actors/"+actorType+"/"+actorID).
-		WithActor(actorType, actorID).
+func (a *actorsRuntime) deactivateActor(act *actor) error {
+	ctx := context.Background()
+
+	// Delete the actor from the actor table regardless of the outcome of deactivation the actor in the app
+	a.actorsTable.Delete(act.Key())
+
+	req := invokev1.NewInvokeMethodRequest("actors/"+act.actorType+"/"+act.actorID).
+		WithActor(act.actorType, act.actorID).
 		WithHTTPExtension(http.MethodDelete, "").
 		WithContentType(invokev1.JSONContentType)
 	defer req.Close()
 
-	// TODO Propagate context.
-	ctx := context.TODO()
-
-	resp, err := a.getAppChannel(actorType).InvokeMethod(ctx, req, "")
+	resp, err := a.getAppChannel(act.actorType).InvokeMethod(ctx, req, "")
 	if err != nil {
-		diag.DefaultMonitoring.ActorDeactivationFailed(actorType, "invoke")
+		diag.DefaultMonitoring.ActorDeactivationFailed(act.actorType, "invoke")
 		return err
 	}
 	defer resp.Close()
 
 	if resp.Status().Code != http.StatusOK {
-		diag.DefaultMonitoring.ActorDeactivationFailed(actorType, "status_code_"+strconv.FormatInt(int64(resp.Status().Code), 10))
+		diag.DefaultMonitoring.ActorDeactivationFailed(act.actorType, "status_code_"+strconv.FormatInt(int64(resp.Status().Code), 10))
 		body, _ := resp.RawDataFull()
 		return fmt.Errorf("error from actor service: %s", string(body))
 	}
 
-	a.removeActorFromTable(actorType, actorID)
-	diag.DefaultMonitoring.ActorDeactivated(actorType)
-	log.Debugf("Deactivated actor type=%s, id=%s", actorType, actorID)
+	diag.DefaultMonitoring.ActorDeactivated(act.actorType)
+	log.Debugf("Deactivated actor type=%s, id=%s", act.actorType, act.actorID)
 
 	return nil
-}
-
-func (a *actorsRuntime) removeActorFromTable(actorType, actorID string) {
-	a.actorsTable.Delete(constructCompositeKey(actorType, actorID))
 }
 
 func (a *actorsRuntime) getActorTypeAndIDFromKey(key string) (string, string) {
 	arr := strings.Split(key, daprSeparator)
 	return arr[0], arr[1]
-}
-
-type deactivateFn = func(actorType string, actorID string) error
-
-func (a *actorsRuntime) deactivationTicker(ctx context.Context, deactivateFn deactivateFn) {
-	a.actorLockIdleTimeCh = make(chan time.Duration)
-
-	go func() {
-		var (
-			nextIdle time.Time
-			timer    clock.Timer
-			tch      <-chan time.Time
-		)
-		for {
-			select {
-			case t := <-tch:
-				nextIdle = a.deactivateIdleActors(t, deactivateFn)
-				if nextIdle.IsZero() {
-					tch = nil
-				} else {
-					timer = a.clock.NewTimer(nextIdle.Sub(a.clock.Now()))
-					tch = timer.C()
-				}
-			case d := <-a.actorLockIdleTimeCh:
-				// If the next expiration is before the one we're waiting for, reset the timer
-				newIdle := a.clock.Now().Add(d)
-				if nextIdle.IsZero() || newIdle.Before(nextIdle) {
-					nextIdle = newIdle
-					if tch != nil && !timer.Stop() {
-						<-tch
-					}
-					timer = a.clock.NewTimer(d)
-					tch = timer.C()
-				}
-			case <-ctx.Done():
-				if tch != nil && !timer.Stop() {
-					<-tch
-				}
-				return
-			}
-		}
-	}()
-}
-
-// deactivateIdleActors deactivates all idle actors and returns the time the next idle actor should be deactivated at.
-// The returned time could be zero if there are no more active actors.
-func (a *actorsRuntime) deactivateIdleActors(t time.Time, deactivateFn deactivateFn) (next time.Time) {
-	a.actorsTable.Range(func(key, value any) bool {
-		actorInstance := value.(*actor)
-		if actorInstance.isBusy() {
-			return true
-		}
-
-		// Doing `actorInstance.idleAt.Before(t)` would return false if the two times are equal
-		if !t.Before(actorInstance.idleAt) {
-			go func(actorInstance *actor) {
-				err := deactivateFn(actorInstance.actorType, actorInstance.actorID)
-				if err != nil {
-					log.Errorf("Failed to deactivate actor %s/%s: %v", actorInstance.actorType, actorInstance.actorID, err)
-				}
-			}(actorInstance)
-		} else if next.IsZero() || actorInstance.idleAt.Before(next) {
-			next = actorInstance.idleAt
-		}
-
-		return true
-	})
-	return next
 }
 
 type lookupActorRes struct {
@@ -531,8 +480,9 @@ func (a *actorsRuntime) callLocalActor(ctx context.Context, req *invokev1.Invoke
 	if err != nil {
 		return nil, status.Error(codes.ResourceExhausted, err.Error())
 	}
-	if a.actorLockIdleTimeCh != nil {
-		a.actorLockIdleTimeCh <- act.idleTimeout
+	err = a.idleActorProcessor.Enqueue(act)
+	if err != nil {
+		return nil, fmt.Errorf("failed to enqueue actor in idle processor: %w", err)
 	}
 	defer act.unlock()
 
@@ -751,14 +701,14 @@ func (a *actorsRuntime) drainRebalancedActors() {
 				// each item in reminders contain a struct with some metadata + the actual reminder struct
 				a.actorsReminders.DrainRebalancedReminders(actorType, actorID)
 
-				actor := value.(*actor)
+				act := value.(*actor)
 				if a.actorsConfig.GetDrainRebalancedActorsForType(actorType) {
 					// wait until actor isn't busy or timeout hits
-					if actor.isBusy() {
+					if act.isBusy() {
 						select {
 						case <-a.clock.After(a.actorsConfig.Config.DrainOngoingCallTimeout):
 							break
-						case <-actor.channel():
+						case <-act.channel():
 							// if a call comes in from the actor for state changes, that's still allowed
 							break
 						}
@@ -772,10 +722,10 @@ func (a *actorsRuntime) drainRebalancedActors() {
 
 				for {
 					// wait until actor is not busy, then deactivate
-					if !actor.isBusy() {
-						err := a.deactivateActor(actorType, actorID)
+					if !act.isBusy() {
+						err := a.deactivateActor(act)
 						if err != nil {
-							log.Errorf("failed to deactivate actor %s: %s", actorKey, err)
+							log.Errorf("Failed to deactivate actor %s: %v", actorKey, err)
 						}
 						break
 					}
@@ -995,7 +945,13 @@ func (a *actorsRuntime) Stop() {
 	if a.placement != nil {
 		err := a.placement.Close()
 		if err != nil {
-			log.Warnf("Failed to close placement service: %v", err)
+			log.Errorf("Failed to close placement service: %v", err)
+		}
+	}
+	if a.idleActorProcessor != nil {
+		err := a.idleActorProcessor.Close()
+		if err != nil {
+			log.Errorf("Failed to close actor idle processor: %v", err)
 		}
 	}
 	if a.cancel != nil {

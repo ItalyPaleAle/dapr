@@ -22,6 +22,7 @@ import (
 	"k8s.io/utils/clock"
 
 	diag "github.com/dapr/dapr/pkg/diagnostics"
+	"github.com/dapr/kit/ptr"
 )
 
 // ErrActorDisposed is the error when runtime tries to hold the lock of the disposed actor.
@@ -44,7 +45,7 @@ type actor struct {
 
 	// idleAt is the time after which this actor is considered to be idle.
 	// When the actor is locked, idleAt is updated by adding the idleTimeout to the current time.
-	idleAt time.Time
+	idleAt atomic.Pointer[time.Time]
 
 	// disposeLock guards disposed and disposeCh.
 	disposeLock sync.RWMutex
@@ -61,14 +62,17 @@ func newActor(actorType, actorID string, maxReentrancyDepth *int, idleTimeout ti
 	if cl == nil {
 		cl = &clock.RealClock{}
 	}
-	return &actor{
+
+	a := &actor{
 		actorType:   actorType,
 		actorID:     actorID,
 		actorLock:   NewActorLock(int32(*maxReentrancyDepth)),
 		clock:       cl,
 		idleTimeout: idleTimeout,
-		idleAt:      cl.Now().Add(idleTimeout),
 	}
+	a.idleAt.Store(ptr.Of(cl.Now().Add(idleTimeout)))
+
+	return a
 }
 
 // Key returns the key for this unique actor.
@@ -80,7 +84,7 @@ func (a *actor) Key() string {
 // ScheduledTime returns the time the actor becomes idle at.
 // This is implemented to comply with the queueable interface.
 func (a *actor) ScheduledTime() time.Time {
-	return a.idleAt
+	return *a.idleAt.Load()
 }
 
 // isBusy returns true when pending actor calls are ongoing.
@@ -129,7 +133,8 @@ func (a *actor) lock(reentrancyID *string) error {
 		a.unlock()
 		return ErrActorDisposed
 	}
-	a.idleAt = a.clock.Now().Add(a.idleTimeout)
+
+	a.idleAt.Store(ptr.Of(a.clock.Now().Add(a.idleTimeout)))
 	return nil
 }
 

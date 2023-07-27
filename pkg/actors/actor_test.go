@@ -39,7 +39,7 @@ func TestTurnBasedConcurrencyLocks(t *testing.T) {
 	// first lock
 	testActor.lock(nil)
 	assert.Equal(t, true, testActor.isBusy())
-	firstIdleAt := testActor.idleAt
+	firstIdleAt := *testActor.idleAt.Load()
 
 	waitCh := make(chan bool)
 
@@ -57,7 +57,7 @@ func TestTurnBasedConcurrencyLocks(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 	assert.Equal(t, int32(2), testActor.pendingActorCalls.Load())
 	assert.True(t, testActor.isBusy())
-	assert.Equal(t, firstIdleAt, testActor.idleAt)
+	assert.Equal(t, firstIdleAt, *testActor.idleAt.Load())
 
 	// unlock the first lock
 	testActor.unlock()
@@ -70,7 +70,7 @@ func TestTurnBasedConcurrencyLocks(t *testing.T) {
 
 	assert.Equal(t, int32(0), testActor.pendingActorCalls.Load())
 	assert.False(t, testActor.isBusy())
-	assert.True(t, testActor.idleAt.Sub(firstIdleAt) >= 10*time.Millisecond)
+	assert.True(t, testActor.idleAt.Load().Sub(firstIdleAt) >= 10*time.Millisecond)
 }
 
 func TestDisposedActor(t *testing.T) {
