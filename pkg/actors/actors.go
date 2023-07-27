@@ -193,10 +193,8 @@ func newActorsWithClock(opts ActorsOpts, clock clock.WithTicker) Actors {
 }
 
 func (a *actorsRuntime) idleProcessorExecuteFn(act *actor) {
-	// If the actor is still busy, we will increase its idle time and re-enqueue it
-	if act.isBusy() {
-		act.idleAt.Store(ptr.Of(a.clock.Now().Add(actorBusyReEnqueueInterval)))
-		a.idleActorProcessor.Enqueue(act)
+	// This function is outlined for testing
+	if !a.idleActorBusyCheck(act) {
 		return
 	}
 
@@ -205,6 +203,17 @@ func (a *actorsRuntime) idleProcessorExecuteFn(act *actor) {
 	if err != nil {
 		log.Errorf("Failed to deactivate actor %s: %v", act.Key(), err)
 	}
+}
+
+func (a *actorsRuntime) idleActorBusyCheck(act *actor) bool {
+	// If the actor is still busy, we will increase its idle time and re-enqueue it
+	if !act.isBusy() {
+		return true
+	}
+
+	act.idleAt.Store(ptr.Of(a.clock.Now().Add(actorBusyReEnqueueInterval)))
+	a.idleActorProcessor.Enqueue(act)
+	return false
 }
 
 func (a *actorsRuntime) isActorLocallyHosted(actorType string, actorID string) (isLocal bool, actorAddress string) {

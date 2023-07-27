@@ -307,6 +307,10 @@ func deactivateActorsCh(testActorsRuntime *actorsRuntime) <-chan string {
 
 	// Replace the processor with a mock one that returns deactivated actors in a channel
 	testActorsRuntime.idleActorProcessor = internal.NewProcessor[*actor](func(act *actor) {
+		if !testActorsRuntime.idleActorBusyCheck(act) {
+			return
+		}
+
 		key := act.Key()
 		testActorsRuntime.actorsTable.Delete(key)
 		ch <- constructCompositeKey(key)
@@ -327,11 +331,11 @@ func advanceTickers(t *testing.T, clock *clocktesting.FakeClock, step time.Durat
 	clock.Step(step)
 }
 
-func TestDeactivationTicker(t *testing.T) {
+func TestDeactivateIdleActors(t *testing.T) {
 	actorType, actorID := getTestActorTypeAndID()
 	actorKey := constructCompositeKey(actorType, actorID)
 
-	t.Run("actor is deactivated", func(t *testing.T) {
+	t.Run("idle actor is deactivated", func(t *testing.T) {
 		testActorsRuntime := newTestActorsRuntime()
 		testActorsRuntime.actorsConfig.ActorIdleTimeout = time.Second * 2
 		defer testActorsRuntime.Stop()
@@ -356,7 +360,7 @@ func TestDeactivationTicker(t *testing.T) {
 		assert.False(t, exists)
 	})
 
-	t.Run("actor is not deactivated", func(t *testing.T) {
+	t.Run("non-idle actor is not deactivated", func(t *testing.T) {
 		testActorsRuntime := newTestActorsRuntime()
 		testActorsRuntime.actorsConfig.ActorIdleTimeout = time.Second * 5
 		defer testActorsRuntime.Stop()
@@ -447,6 +451,59 @@ func TestDeactivationTicker(t *testing.T) {
 		advanceTickers(t, clock, 1*time.Second)
 		assert.Equal(t, []string{constructCompositeKey("a", "4")}, collectSignals())
 		assertActorExists(t, constructCompositeKey("a", "4"), false)
+	})
+
+	t.Run("actor is still busy", func(t *testing.T) {
+		testActorsRuntime := newTestActorsRuntime()
+		testActorsRuntime.actorsConfig.ActorIdleTimeout = time.Second * 2
+		defer testActorsRuntime.Stop()
+		clock := testActorsRuntime.clock.(*clocktesting.FakeClock)
+
+		ch := deactivateActorsCh(testActorsRuntime)
+
+		fakeCallAndActivateActor(testActorsRuntime, actorType, actorID, testActorsRuntime.clock)
+
+		actAny, ok := testActorsRuntime.actorsTable.Load(actorKey)
+		require.True(t, ok)
+		act, ok := actAny.(*actor)
+		require.True(t, ok)
+
+		// Get the idleAt timeout
+		idleAt := *act.idleAt.Load()
+		require.Equal(t, clock.Now().Add(2*time.Second), idleAt)
+
+		// Lock the actor so it's busy
+		act.lock(nil)
+
+		// Advance by 3s which should trigger the tick
+		// The actor should not be deactivated
+		clock.Step(3 * time.Second)
+		select {
+		case <-ch:
+			t.Errorf("Received unexpected signal")
+		case <-time.After(500 * time.Millisecond):
+			// all good
+		}
+		_, ok = testActorsRuntime.actorsTable.Load(actorKey)
+		require.True(t, ok)
+
+		// The actor's idleAt time should have increased
+		newIdleAt := *act.idleAt.Load()
+		require.Equal(t, clock.Now().Add(actorBusyReEnqueueInterval), newIdleAt)
+
+		// Unlock the actor
+		act.unlock()
+
+		// Advance by actorBusyReEnqueueInterval and ensure the actor now is deactivated
+		clock.Step(actorBusyReEnqueueInterval)
+		select {
+		case deactivatedKey := <-ch:
+			assert.Equal(t, actorKey, deactivatedKey)
+		case <-time.After(700 * time.Millisecond):
+			t.Errorf("Did not receive signal in time")
+		}
+		_, ok = testActorsRuntime.actorsTable.Load(actorKey)
+		require.False(t, ok)
 	})
 }
 
