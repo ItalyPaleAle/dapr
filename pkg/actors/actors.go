@@ -717,11 +717,10 @@ func (a *actorsRuntime) executeStateStoreTransaction(ctx context.Context, store 
 }
 
 func (a *actorsRuntime) IsActorHosted(ctx context.Context, req *ActorHostedRequest) bool {
-	key := constructCompositeKey(req.ActorType, req.ActorID)
 	policyDef := a.resiliency.BuiltInPolicy(resiliency.BuiltInActorNotFoundRetries)
 	policyRunner := resiliency.NewRunner[any](ctx, policyDef)
 	_, err := policyRunner(func(ctx context.Context) (any, error) {
-		_, exists := a.actorsTable.Load(key)
+		_, exists := a.actorsTable.Load(req.Key())
 		if !exists {
 			// Error message isn't used - we just need to have an error
 			return nil, errors.New("")

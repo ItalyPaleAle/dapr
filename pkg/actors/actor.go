@@ -71,6 +71,18 @@ func newActor(actorType, actorID string, maxReentrancyDepth *int, idleTimeout ti
 	}
 }
 
+// Key returns the key for this unique actor.
+// This is implemented to comply with the queueable interface.
+func (a *actor) Key() string {
+	return a.actorType + daprSeparator + a.actorID
+}
+
+// ScheduledTime returns the time the actor becomes idle at.
+// This is implemented to comply with the queueable interface.
+func (a *actor) ScheduledTime() time.Time {
+	return a.idleAt
+}
+
 // isBusy returns true when pending actor calls are ongoing.
 func (a *actor) isBusy() bool {
 	a.disposeLock.RLock()
