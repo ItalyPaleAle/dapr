@@ -61,6 +61,7 @@ import (
 	"github.com/dapr/dapr/pkg/encryption"
 	"github.com/dapr/dapr/pkg/expr"
 	"github.com/dapr/dapr/pkg/grpc/universalapi"
+	"github.com/dapr/dapr/pkg/http/endpoints"
 	"github.com/dapr/dapr/pkg/messages"
 	invokev1 "github.com/dapr/dapr/pkg/messaging/v1"
 	httpMiddleware "github.com/dapr/dapr/pkg/middleware/http"
@@ -147,7 +148,8 @@ func TestPubSubEndpoints(t *testing.T) {
 	fakeServer := newFakeHTTPServer()
 	testAPI := &api{
 		universal: &universalapi.UniversalAPI{
-			AppID: "fakeAPI",
+			AppID:     "fakeAPI",
+			CompStore: compstore.New(),
 		},
 		pubsubAdapter: &daprt.MockPubSubAdapter{
 			PublishFn: func(ctx context.Context, req *pubsub.PublishRequest) error {
@@ -166,15 +168,14 @@ func TestPubSubEndpoints(t *testing.T) {
 				return nil
 			},
 		},
-		compStore: compstore.New(),
 	}
 
 	mock := daprt.MockPubSub{}
 	mock.On("Features").Return([]pubsub.Feature{})
-	testAPI.compStore.AddPubSub("pubsubname", compstore.PubsubItem{Component: &mock})
-	testAPI.compStore.AddPubSub("errorpubsub", compstore.PubsubItem{Component: &mock})
-	testAPI.compStore.AddPubSub("errnotfound", compstore.PubsubItem{Component: &mock})
-	testAPI.compStore.AddPubSub("errnotallowed", compstore.PubsubItem{Component: &mock})
+	testAPI.universal.CompStore.AddPubSub("pubsubname", compstore.PubsubItem{Component: &mock})
+	testAPI.universal.CompStore.AddPubSub("errorpubsub", compstore.PubsubItem{Component: &mock})
+	testAPI.universal.CompStore.AddPubSub("errnotfound", compstore.PubsubItem{Component: &mock})
+	testAPI.universal.CompStore.AddPubSub("errnotallowed", compstore.PubsubItem{Component: &mock})
 
 	fakeServer.StartServer(testAPI.constructPubSubEndpoints(), nil)
 
@@ -317,7 +318,8 @@ func TestBulkPubSubEndpoints(t *testing.T) {
 	fakeServer := newFakeHTTPServer()
 	testAPI := &api{
 		universal: &universalapi.UniversalAPI{
-			AppID: "fakeAPI",
+			AppID:     "fakeAPI",
+			CompStore: compstore.New(),
 		},
 		pubsubAdapter: &daprt.MockPubSubAdapter{
 			BulkPublishFn: func(ctx context.Context, req *pubsub.BulkPublishRequest) (pubsub.BulkPublishResponse, error) {
@@ -344,15 +346,14 @@ func TestBulkPubSubEndpoints(t *testing.T) {
 				}
 			},
 		},
-		compStore: compstore.New(),
 	}
 
 	mock := daprt.MockPubSub{}
 	mock.On("Features").Return([]pubsub.Feature{})
-	testAPI.compStore.AddPubSub("pubsubname", compstore.PubsubItem{Component: &mock})
-	testAPI.compStore.AddPubSub("errorpubsub", compstore.PubsubItem{Component: &mock})
-	testAPI.compStore.AddPubSub("errnotfound", compstore.PubsubItem{Component: &mock})
-	testAPI.compStore.AddPubSub("errnotallowed", compstore.PubsubItem{Component: &mock})
+	testAPI.universal.CompStore.AddPubSub("pubsubname", compstore.PubsubItem{Component: &mock})
+	testAPI.universal.CompStore.AddPubSub("errorpubsub", compstore.PubsubItem{Component: &mock})
+	testAPI.universal.CompStore.AddPubSub("errnotfound", compstore.PubsubItem{Component: &mock})
+	testAPI.universal.CompStore.AddPubSub("errnotallowed", compstore.PubsubItem{Component: &mock})
 
 	fakeServer.StartServer(testAPI.constructPubSubEndpoints(), nil)
 
@@ -4066,7 +4067,7 @@ type fakeHTTPServerOptions struct {
 	apiAuth  bool
 }
 
-func (f *fakeHTTPServer) StartServer(endpoints []Endpoint, opts *fakeHTTPServerOptions) {
+func (f *fakeHTTPServer) StartServer(endpoints []endpoints.Endpoint, opts *fakeHTTPServerOptions) {
 	if opts == nil {
 		opts = &fakeHTTPServerOptions{}
 	}
@@ -4098,7 +4099,7 @@ func (f *fakeHTTPServer) StartServer(endpoints []Endpoint, opts *fakeHTTPServerO
 	}
 }
 
-func (f *fakeHTTPServer) getRouter(endpoints []Endpoint, apiAuth bool) chi.Router {
+func (f *fakeHTTPServer) getRouter(endpoints []endpoints.Endpoint, apiAuth bool) chi.Router {
 	srv := &server{}
 
 	r := srv.getRouter()
@@ -4110,7 +4111,7 @@ func (f *fakeHTTPServer) getRouter(endpoints []Endpoint, apiAuth bool) chi.Route
 	for _, e := range endpoints {
 		path := fmt.Sprintf("/%s/%s", e.Version, e.Route)
 
-		srv.handle(e, path, r, false, false)
+		srv.handle(e, path, r, false)
 	}
 	return r
 }
@@ -5015,7 +5016,7 @@ func TestV1SecretEndpoints(t *testing.T) {
 			Resiliency: res,
 		},
 	}
-	fakeServer.StartServer(testAPI.constructSecretEndpoints(), nil)
+	fakeServer.StartServer(testAPI.constructSecretsEndpoints(), nil)
 	storeName := "store1"
 	deniedStoreName := "store2"
 	restrictedStore := "store3"

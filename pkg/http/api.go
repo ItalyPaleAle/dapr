@@ -16,14 +16,11 @@ package http
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	nethttp "net/http"
-	"net/url"
-	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -33,7 +30,6 @@ import (
 	"github.com/valyala/fasthttp"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"github.com/dapr/components-contrib/bindings"
 	"github.com/dapr/components-contrib/configuration"
@@ -46,25 +42,25 @@ import (
 	stateLoader "github.com/dapr/dapr/pkg/components/state"
 	"github.com/dapr/dapr/pkg/config"
 	diag "github.com/dapr/dapr/pkg/diagnostics"
+	diagConsts "github.com/dapr/dapr/pkg/diagnostics/consts"
 	diagUtils "github.com/dapr/dapr/pkg/diagnostics/utils"
 	"github.com/dapr/dapr/pkg/encryption"
 	"github.com/dapr/dapr/pkg/grpc/universalapi"
+	"github.com/dapr/dapr/pkg/http/endpoints"
 	"github.com/dapr/dapr/pkg/messages"
 	"github.com/dapr/dapr/pkg/messaging"
 	invokev1 "github.com/dapr/dapr/pkg/messaging/v1"
 	runtimev1pb "github.com/dapr/dapr/pkg/proto/runtime/v1"
 	"github.com/dapr/dapr/pkg/resiliency"
-	"github.com/dapr/dapr/pkg/resiliency/breaker"
 	"github.com/dapr/dapr/pkg/runtime/compstore"
 	runtimePubsub "github.com/dapr/dapr/pkg/runtime/pubsub"
 	"github.com/dapr/dapr/utils"
-	"github.com/dapr/dapr/utils/responsewriter"
 )
 
 // API returns a list of HTTP endpoints for Dapr.
 type API interface {
-	APIEndpoints() []Endpoint
-	PublicEndpoints() []Endpoint
+	APIEndpoints() []endpoints.Endpoint
+	PublicEndpoints() []endpoints.Endpoint
 	MarkStatusAsReady()
 	MarkStatusAsOutboundReady()
 	SetAppChannel(appChannel channel.AppChannel)
@@ -74,8 +70,8 @@ type API interface {
 
 type api struct {
 	universal               *universalapi.UniversalAPI
-	endpoints               []Endpoint
-	publicEndpoints         []Endpoint
+	endpoints               []endpoints.Endpoint
+	publicEndpoints         []endpoints.Endpoint
 	directMessaging         messaging.DirectMessaging
 	appChannel              channel.AppChannel
 	httpEndpointsAppChannel channel.HTTPEndpointAppChannel
@@ -86,7 +82,6 @@ type api struct {
 	outboundReadyStatus     bool
 	tracingSpec             config.TracingSpec
 	maxRequestBodySize      int64 // In bytes
-	compStore               *compstore.ComponentStore
 }
 
 const (
@@ -147,7 +142,6 @@ func NewAPI(opts APIOpts) API {
 		sendToOutputBindingFn:   opts.SendToOutputBindingFn,
 		tracingSpec:             opts.TracingSpec,
 		maxRequestBodySize:      opts.MaxRequestBodySize,
-		compStore:               opts.CompStore,
 		universal: &universalapi.UniversalAPI{
 			AppID:                      opts.AppID,
 			Logger:                     log,
@@ -165,7 +159,7 @@ func NewAPI(opts APIOpts) API {
 	healthEndpoints := api.constructHealthzEndpoints()
 
 	api.endpoints = append(api.endpoints, api.constructStateEndpoints()...)
-	api.endpoints = append(api.endpoints, api.constructSecretEndpoints()...)
+	api.endpoints = append(api.endpoints, api.constructSecretsEndpoints()...)
 	api.endpoints = append(api.endpoints, api.constructPubSubEndpoints()...)
 	api.endpoints = append(api.endpoints, api.constructActorEndpoints()...)
 	api.endpoints = append(api.endpoints, api.constructDirectMessagingEndpoints()...)
@@ -186,12 +180,12 @@ func NewAPI(opts APIOpts) API {
 }
 
 // APIEndpoints returns the list of registered endpoints.
-func (a *api) APIEndpoints() []Endpoint {
+func (a *api) APIEndpoints() []endpoints.Endpoint {
 	return a.endpoints
 }
 
 // PublicEndpoints returns the list of registered endpoints.
-func (a *api) PublicEndpoints() []Endpoint {
+func (a *api) PublicEndpoints() []endpoints.Endpoint {
 	return a.publicEndpoints
 }
 
@@ -205,186 +199,355 @@ func (a *api) MarkStatusAsOutboundReady() {
 	a.outboundReadyStatus = true
 }
 
-func (a *api) constructStateEndpoints() []Endpoint {
-	return []Endpoint{
+var endpointGroupStateV1 = &endpoints.EndpointGroup{
+	Name:                 endpoints.EndpointGroupState,
+	Version:              endpoints.EndpointGroupVersion1,
+	AppendSpanAttributes: appendStateSpanAttributes,
+}
+
+func appendStateSpanAttributes(r *nethttp.Request, m map[string]string) {
+	m[diagConsts.DBSystemSpanAttributeKey] = diagConsts.StateBuildingBlockType
+	m[diagConsts.DBConnectionStringSpanAttributeKey] = diagConsts.StateBuildingBlockType
+	m[diagConsts.DBStatementSpanAttributeKey] = r.Method + " " + r.URL.Path
+	m[diagConsts.DBNameSpanAttributeKey] = chi.URLParam(r, storeNameParam)
+}
+
+func (a *api) constructStateEndpoints() []endpoints.Endpoint {
+	return []endpoints.Endpoint{
 		{
 			Methods:         []string{nethttp.MethodGet},
 			Route:           "state/{storeName}/{key}",
 			Version:         apiVersionV1,
+			Group:           endpointGroupStateV1,
 			FastHTTPHandler: a.onGetState,
+			Settings: endpoints.EndpointSettings{
+				Name: "GetState",
+			},
 		},
 		{
 			Methods:         []string{nethttp.MethodPost, nethttp.MethodPut},
 			Route:           "state/{storeName}",
 			Version:         apiVersionV1,
+			Group:           endpointGroupStateV1,
 			FastHTTPHandler: a.onPostState,
+			Settings: endpoints.EndpointSettings{
+				Name: "SaveState",
+			},
 		},
 		{
 			Methods:         []string{nethttp.MethodDelete},
 			Route:           "state/{storeName}/{key}",
 			Version:         apiVersionV1,
+			Group:           endpointGroupStateV1,
 			FastHTTPHandler: a.onDeleteState,
+			Settings: endpoints.EndpointSettings{
+				Name: "DeleteState",
+			},
 		},
 		{
 			Methods:         []string{nethttp.MethodPost, nethttp.MethodPut},
 			Route:           "state/{storeName}/bulk",
 			Version:         apiVersionV1,
+			Group:           endpointGroupStateV1,
 			FastHTTPHandler: a.onBulkGetState,
+			Settings: endpoints.EndpointSettings{
+				Name: "GetBulkState",
+			},
 		},
 		{
 			Methods:         []string{nethttp.MethodPost, nethttp.MethodPut},
 			Route:           "state/{storeName}/transaction",
 			Version:         apiVersionV1,
+			Group:           endpointGroupStateV1,
 			FastHTTPHandler: a.onPostStateTransaction,
+			Settings: endpoints.EndpointSettings{
+				Name: "ExecuteStateTransaction",
+			},
 		},
 		{
 			Methods: []string{nethttp.MethodPost, nethttp.MethodPut},
 			Route:   "state/{storeName}/query",
 			Version: apiVersionV1alpha1,
+			Group: &endpoints.EndpointGroup{
+				Name:                 endpoints.EndpointGroupState,
+				Version:              endpoints.EndpointGroupVersion1alpha1,
+				AppendSpanAttributes: appendStateSpanAttributes,
+			},
 			Handler: a.onQueryStateHandler(),
+			Settings: endpoints.EndpointSettings{
+				Name: "QueryStateAlpha1",
+			},
 		},
 	}
 }
 
-func (a *api) constructPubSubEndpoints() []Endpoint {
-	return []Endpoint{
+func appendPubSubSpanAttributes(r *nethttp.Request, m map[string]string) {
+	m[diagConsts.MessagingSystemSpanAttributeKey] = "pubsub"
+	m[diagConsts.MessagingDestinationSpanAttributeKey] = chi.URLParam(r, "topic")
+	m[diagConsts.MessagingDestinationKindSpanAttributeKey] = diagConsts.MessagingDestinationTopicKind
+}
+
+func (a *api) constructPubSubEndpoints() []endpoints.Endpoint {
+	return []endpoints.Endpoint{
 		{
-			Methods:         []string{nethttp.MethodPost, nethttp.MethodPut},
-			Route:           "publish/{pubsubname}/*",
-			Version:         apiVersionV1,
+			Methods: []string{nethttp.MethodPost, nethttp.MethodPut},
+			Route:   "publish/{pubsubname}/*",
+			Version: apiVersionV1,
+			Group: &endpoints.EndpointGroup{
+				Name:                 endpoints.EndpointGroupPubsub,
+				Version:              endpoints.EndpointGroupVersion1,
+				AppendSpanAttributes: appendPubSubSpanAttributes,
+			},
 			FastHTTPHandler: a.onPublish,
+			Settings: endpoints.EndpointSettings{
+				Name: "PublishEvent",
+			},
 		},
 		{
-			Methods:         []string{nethttp.MethodPost, nethttp.MethodPut},
-			Route:           "publish/bulk/{pubsubname}/*",
-			Version:         apiVersionV1alpha1,
+			Methods: []string{nethttp.MethodPost, nethttp.MethodPut},
+			Route:   "publish/bulk/{pubsubname}/*",
+			Version: apiVersionV1alpha1,
+			Group: &endpoints.EndpointGroup{
+				Name:                 endpoints.EndpointGroupPubsub,
+				Version:              endpoints.EndpointGroupVersion1alpha1,
+				AppendSpanAttributes: appendPubSubSpanAttributes,
+			},
 			FastHTTPHandler: a.onBulkPublish,
+			Settings: endpoints.EndpointSettings{
+				Name: "BulkPublishEvent",
+			},
 		},
 	}
 }
 
-func (a *api) constructBindingsEndpoints() []Endpoint {
-	return []Endpoint{
+func appendBindingsSpanAttributes(r *nethttp.Request, m map[string]string) {
+	m[diagConsts.DBSystemSpanAttributeKey] = diagConsts.BindingBuildingBlockType
+	m[diagConsts.DBConnectionStringSpanAttributeKey] = diagConsts.BindingBuildingBlockType
+	m[diagConsts.DBStatementSpanAttributeKey] = r.Method + " " + r.URL.Path
+	m[diagConsts.DBNameSpanAttributeKey] = chi.URLParam(r, nameParam)
+}
+
+func (a *api) constructBindingsEndpoints() []endpoints.Endpoint {
+	return []endpoints.Endpoint{
 		{
-			Methods:         []string{nethttp.MethodPost, nethttp.MethodPut},
-			Route:           "bindings/{name}",
-			Version:         apiVersionV1,
+			Methods: []string{nethttp.MethodPost, nethttp.MethodPut},
+			Route:   "bindings/{name}",
+			Version: apiVersionV1,
+			Group: &endpoints.EndpointGroup{
+				Name:                 endpoints.EndpointGroupBindings,
+				Version:              endpoints.EndpointGroupVersion1,
+				AppendSpanAttributes: appendBindingsSpanAttributes,
+			},
 			FastHTTPHandler: a.onOutputBindingMessage,
+			Settings: endpoints.EndpointSettings{
+				Name: "InvokeBinding",
+			},
 		},
 	}
 }
 
-func (a *api) constructDirectMessagingEndpoints() []Endpoint {
-	return []Endpoint{
-		{
-			// No method is defined here to match any method
-			Methods: []string{},
-			Route:   "invoke/*",
-			// This is the fallback route for when no other method is matched by the router
-			IsFallback:            true,
-			Version:               apiVersionV1,
-			KeepWildcardUnescaped: true,
-			Handler:               a.onDirectMessage,
-		},
-	}
+var endpointGroupActorV1State = &endpoints.EndpointGroup{
+	Name:                 endpoints.EndpointGroupActors,
+	Version:              endpoints.EndpointGroupVersion1,
+	AppendSpanAttributes: appendActorStateSpanAttributesFn,
 }
 
-func (a *api) constructActorEndpoints() []Endpoint {
-	return []Endpoint{
+// For timers and reminders
+var endpointGroupActorV1Misc = &endpoints.EndpointGroup{
+	Name:                 endpoints.EndpointGroupActors,
+	Version:              endpoints.EndpointGroupVersion1,
+	AppendSpanAttributes: nil, // TODO
+}
+
+func appendActorStateSpanAttributesFn(r *nethttp.Request, m map[string]string) {
+	m[diagConsts.DaprAPIActorTypeID] = chi.URLParam(r, actorTypeParam) + "." + chi.URLParam(r, actorIDParam)
+	m[diagConsts.DBSystemSpanAttributeKey] = diagConsts.StateBuildingBlockType
+	m[diagConsts.DBConnectionStringSpanAttributeKey] = diagConsts.StateBuildingBlockType
+	m[diagConsts.DBStatementSpanAttributeKey] = r.Method + " " + r.URL.Path
+	m[diagConsts.DBNameSpanAttributeKey] = "actor"
+}
+
+func appendActorInvocationSpanAttributesFn(r *nethttp.Request, m map[string]string) {
+	actorType := chi.URLParam(r, actorTypeParam)
+	actorTypeID := actorType + "." + chi.URLParam(r, actorIDParam)
+	m[diagConsts.DaprAPIActorTypeID] = actorTypeID
+	m[diagConsts.GrpcServiceSpanAttributeKey] = "ServiceInvocation"
+	m[diagConsts.NetPeerNameSpanAttributeKey] = actorTypeID
+	m[diagConsts.DaprAPISpanNameInternal] = "CallActor/" + actorType + "/" + chi.URLParam(r, "method")
+}
+
+func (a *api) constructActorEndpoints() []endpoints.Endpoint {
+	return []endpoints.Endpoint{
 		{
 			Methods:         []string{nethttp.MethodPost, nethttp.MethodPut},
 			Route:           "actors/{actorType}/{actorId}/state",
 			Version:         apiVersionV1,
+			Group:           endpointGroupActorV1State,
 			FastHTTPHandler: a.onActorStateTransaction,
+			Settings: endpoints.EndpointSettings{
+				Name: "ExecuteActorStateTransaction",
+			},
 		},
 		{
-			Methods:         []string{nethttp.MethodGet, nethttp.MethodPost, nethttp.MethodDelete, nethttp.MethodPut},
-			Route:           "actors/{actorType}/{actorId}/method/{method}",
-			Version:         apiVersionV1,
+			Methods: []string{nethttp.MethodGet, nethttp.MethodPost, nethttp.MethodDelete, nethttp.MethodPut},
+			Route:   "actors/{actorType}/{actorId}/method/{method}",
+			Version: apiVersionV1,
+			Group: &endpoints.EndpointGroup{
+				Name:                 endpoints.EndpointGroupActors,
+				Version:              endpoints.EndpointGroupVersion1,
+				AppendSpanAttributes: appendActorInvocationSpanAttributesFn,
+			},
 			FastHTTPHandler: a.onDirectActorMessage,
+			Settings: endpoints.EndpointSettings{
+				Name: "InvokeActor",
+			},
 		},
 		{
 			Methods:         []string{nethttp.MethodGet},
 			Route:           "actors/{actorType}/{actorId}/state/{key}",
 			Version:         apiVersionV1,
+			Group:           endpointGroupActorV1State,
 			FastHTTPHandler: a.onGetActorState,
+			Settings: endpoints.EndpointSettings{
+				Name: "GetActorState",
+			},
 		},
 		{
 			Methods:         []string{nethttp.MethodPost, nethttp.MethodPut},
 			Route:           "actors/{actorType}/{actorId}/reminders/{name}",
 			Version:         apiVersionV1,
+			Group:           endpointGroupActorV1Misc,
 			FastHTTPHandler: a.onCreateActorReminder,
+			Settings: endpoints.EndpointSettings{
+				Name: "RegisterActorReminder",
+			},
 		},
 		{
 			Methods:         []string{nethttp.MethodPost, nethttp.MethodPut},
 			Route:           "actors/{actorType}/{actorId}/timers/{name}",
 			Version:         apiVersionV1,
+			Group:           endpointGroupActorV1Misc,
 			FastHTTPHandler: a.onCreateActorTimer,
+			Settings: endpoints.EndpointSettings{
+				Name: "RegisterActorTimer",
+			},
 		},
 		{
 			Methods:         []string{nethttp.MethodDelete},
 			Route:           "actors/{actorType}/{actorId}/reminders/{name}",
 			Version:         apiVersionV1,
+			Group:           endpointGroupActorV1Misc,
 			FastHTTPHandler: a.onDeleteActorReminder,
+			Settings: endpoints.EndpointSettings{
+				Name: "UnregisterActorReminder",
+			},
 		},
 		{
 			Methods:         []string{nethttp.MethodDelete},
 			Route:           "actors/{actorType}/{actorId}/timers/{name}",
 			Version:         apiVersionV1,
+			Group:           endpointGroupActorV1Misc,
 			FastHTTPHandler: a.onDeleteActorTimer,
+			Settings: endpoints.EndpointSettings{
+				Name: "UnregisterActorTimer",
+			},
 		},
 		{
 			Methods:         []string{nethttp.MethodGet},
 			Route:           "actors/{actorType}/{actorId}/reminders/{name}",
 			Version:         apiVersionV1,
+			Group:           endpointGroupActorV1Misc,
 			FastHTTPHandler: a.onGetActorReminder,
+			Settings: endpoints.EndpointSettings{
+				Name: "GetActorReminder",
+			},
 		},
 		{
 			Methods:         []string{nethttp.MethodPatch},
 			Route:           "actors/{actorType}/{actorId}/reminders/{name}",
 			Version:         apiVersionV1,
+			Group:           endpointGroupActorV1Misc,
 			FastHTTPHandler: a.onRenameActorReminder,
+			Settings: endpoints.EndpointSettings{
+				Name: "RenameActorReminder",
+			},
 		},
 	}
 }
 
-func (a *api) constructConfigurationEndpoints() []Endpoint {
-	return []Endpoint{
+var endpointGroupConfigurationV1Alpha1 = &endpoints.EndpointGroup{
+	Name:                 endpoints.EndpointGroupConfiguration,
+	Version:              endpoints.EndpointGroupVersion1alpha1,
+	AppendSpanAttributes: nil, // TODO
+}
+
+var endpointGroupConfigurationV1 = &endpoints.EndpointGroup{
+	Name:                 endpoints.EndpointGroupConfiguration,
+	Version:              endpoints.EndpointGroupVersion1,
+	AppendSpanAttributes: nil, // TODO
+}
+
+func (a *api) constructConfigurationEndpoints() []endpoints.Endpoint {
+	return []endpoints.Endpoint{
 		{
 			Methods:         []string{nethttp.MethodGet},
 			Route:           "configuration/{storeName}",
 			Version:         apiVersionV1alpha1,
+			Group:           endpointGroupConfigurationV1Alpha1,
 			FastHTTPHandler: a.onGetConfiguration,
+			Settings: endpoints.EndpointSettings{
+				Name: "GetConfiguration",
+			},
 		},
 		{
 			Methods:         []string{nethttp.MethodGet},
 			Route:           "configuration/{storeName}",
 			Version:         apiVersionV1,
+			Group:           endpointGroupConfigurationV1,
 			FastHTTPHandler: a.onGetConfiguration,
+			Settings: endpoints.EndpointSettings{
+				Name: "GetConfiguration",
+			},
 		},
 		{
 			Methods:         []string{nethttp.MethodGet},
 			Route:           "configuration/{storeName}/subscribe",
 			Version:         apiVersionV1alpha1,
+			Group:           endpointGroupConfigurationV1Alpha1,
 			FastHTTPHandler: a.onSubscribeConfiguration,
+			Settings: endpoints.EndpointSettings{
+				Name: "SubscribeConfiguration",
+			},
 		},
 		{
 			Methods:         []string{nethttp.MethodGet},
 			Route:           "configuration/{storeName}/subscribe",
 			Version:         apiVersionV1,
+			Group:           endpointGroupConfigurationV1,
 			FastHTTPHandler: a.onSubscribeConfiguration,
+			Settings: endpoints.EndpointSettings{
+				Name: "SubscribeConfiguration",
+			},
 		},
 		{
 			Methods:         []string{nethttp.MethodGet},
 			Route:           "configuration/{storeName}/{configurationSubscribeID}/unsubscribe",
 			Version:         apiVersionV1alpha1,
+			Group:           endpointGroupConfigurationV1Alpha1,
 			FastHTTPHandler: a.onUnsubscribeConfiguration,
+			Settings: endpoints.EndpointSettings{
+				Name: "UnsubscribeConfiguration",
+			},
 		},
 		{
 			Methods:         []string{nethttp.MethodGet},
 			Route:           "configuration/{storeName}/{configurationSubscribeID}/unsubscribe",
 			Version:         apiVersionV1,
+			Group:           endpointGroupConfigurationV1,
 			FastHTTPHandler: a.onUnsubscribeConfiguration,
+			Settings: endpoints.EndpointSettings{
+				Name: "UnsubscribeConfiguration",
+			},
 		},
 	}
 }
@@ -1058,245 +1221,6 @@ func (a *api) etagError(err error) (bool, int, string) {
 
 func (a *api) getStateStoreName(reqCtx *fasthttp.RequestCtx) string {
 	return reqCtx.UserValue(storeNameParam).(string)
-}
-
-type invokeError struct {
-	statusCode int
-	msg        []byte
-}
-
-func (ie invokeError) Error() string {
-	return fmt.Sprintf("invokeError (statusCode='%d') msg='%v'", ie.statusCode, string(ie.msg))
-}
-
-func (a *api) isHTTPEndpoint(appID string) bool {
-	endpoint, ok := a.universal.CompStore.GetHTTPEndpoint(appID)
-	return ok && endpoint.Name == appID
-}
-
-// getBaseURL takes an app id and checks if the app id is an HTTP endpoint CRD.
-// It returns the baseURL if found.
-func (a *api) getBaseURL(targetAppID string) string {
-	endpoint, ok := a.universal.CompStore.GetHTTPEndpoint(targetAppID)
-	if ok && endpoint.Name == targetAppID {
-		return endpoint.Spec.BaseURL
-	}
-	return ""
-}
-
-func (a *api) onDirectMessage(w nethttp.ResponseWriter, r *nethttp.Request) {
-	targetID, invokeMethodName := findTargetIDAndMethod(r.URL.String(), r.Header)
-	if targetID == "" {
-		respondWithError(w, messages.ErrDirectInvokeNoAppID)
-		return
-	}
-
-	// Store target and method as values in the context so they can be picked up by the tracing library
-	rw := responsewriter.EnsureResponseWriter(w)
-	rw.SetUserValue("id", targetID)
-	rw.SetUserValue("method", invokeMethodName)
-
-	verb := strings.ToUpper(r.Method)
-	if a.directMessaging == nil {
-		respondWithError(w, messages.ErrDirectInvokeNotReady)
-		return
-	}
-
-	var policyDef *resiliency.PolicyDefinition
-	switch {
-	case strings.HasPrefix(targetID, "http://") || strings.HasPrefix(targetID, "https://"):
-		policyDef = a.universal.Resiliency.EndpointPolicy(targetID, targetID+"/"+invokeMethodName)
-
-	case a.isHTTPEndpoint(targetID):
-		// http endpoint CRD resource is detected being used for service invocation
-		baseURL := a.getBaseURL(targetID)
-		policyDef = a.universal.Resiliency.EndpointPolicy(targetID, targetID+":"+baseURL)
-
-	default:
-		// regular service to service invocation
-		policyDef = a.universal.Resiliency.EndpointPolicy(targetID, targetID+":"+invokeMethodName)
-	}
-
-	req := invokev1.NewInvokeMethodRequest(invokeMethodName).
-		WithHTTPExtension(verb, r.URL.RawQuery).
-		WithRawData(r.Body).
-		WithContentType(r.Header.Get("content-type")).
-		// Save headers to internal metadata
-		WithHTTPHeaders(r.Header)
-	if policyDef != nil {
-		req.WithReplay(policyDef.HasRetries())
-	}
-	defer req.Close()
-
-	policyRunner := resiliency.NewRunnerWithOptions(
-		r.Context(), policyDef,
-		resiliency.RunnerOpts[*invokev1.InvokeMethodResponse]{
-			Disposer: resiliency.DisposerCloser[*invokev1.InvokeMethodResponse],
-		},
-	)
-	// Since we don't want to return the actual error, we have to extract several things in order to construct our response.
-	resp, err := policyRunner(func(ctx context.Context) (*invokev1.InvokeMethodResponse, error) {
-		rResp, rErr := a.directMessaging.Invoke(ctx, targetID, req)
-		if rErr != nil {
-			// Allowlist policies that are applied on the callee side can return a Permission Denied error.
-			// For everything else, treat it as a gRPC transport error
-			apiErr := messages.ErrDirectInvoke.WithFormat(targetID, rErr)
-			invokeErr := invokeError{
-				statusCode: apiErr.HTTPCode(),
-				msg:        apiErr.JSONErrorValue(),
-			}
-
-			if status.Code(rErr) == codes.PermissionDenied {
-				invokeErr.statusCode = invokev1.HTTPStatusFromCode(codes.PermissionDenied)
-			}
-			return rResp, invokeErr
-		}
-
-		// Construct response if not HTTP
-		resStatus := rResp.Status()
-		if !rResp.IsHTTPResponse() {
-			statusCode := int32(invokev1.HTTPStatusFromCode(codes.Code(resStatus.Code)))
-			if statusCode != nethttp.StatusOK {
-				// Close the response to replace the body
-				_ = rResp.Close()
-				var body []byte
-				body, rErr = invokev1.ProtobufToJSON(resStatus)
-				rResp.WithRawDataBytes(body)
-				resStatus.Code = statusCode
-				if rErr != nil {
-					return rResp, invokeError{
-						statusCode: nethttp.StatusInternalServerError,
-						msg:        NewErrorResponse("ERR_MALFORMED_RESPONSE", rErr.Error()).JSONErrorValue(),
-					}
-				}
-			} else {
-				resStatus.Code = statusCode
-			}
-		} else if resStatus.Code < 200 || resStatus.Code > 399 {
-			// We are not returning an `invokeError` here on purpose.
-			// Returning an error that is not an `invokeError` will cause Resiliency to retry the request (if retries are enabled), but if the request continues to fail, the response is sent to the user with whatever status code the app returned so the "received non-successful status code" is "swallowed" (will appear in logs but won't be returned to the app).
-			return rResp, fmt.Errorf("received non-successful status code: %d", resStatus.Code)
-		}
-		return rResp, nil
-	})
-
-	// Special case for timeouts/circuit breakers since they won't go through the rest of the logic.
-	if errors.Is(err, context.DeadlineExceeded) || breaker.IsErrorPermanent(err) {
-		respondWithError(w, messages.ErrDirectInvoke.WithFormat(targetID, err))
-		return
-	}
-
-	if resp != nil {
-		headers := resp.Headers()
-		if len(headers) > 0 {
-			invokev1.InternalMetadataToHTTPHeader(r.Context(), headers, w.Header().Add)
-		}
-	}
-
-	invokeErr := invokeError{}
-	if errors.As(err, &invokeErr) {
-		respondWithData(w, invokeErr.statusCode, invokeErr.msg)
-		if resp != nil {
-			_ = resp.Close()
-		}
-		return
-	}
-
-	if resp == nil {
-		respondWithError(w, messages.ErrDirectInvoke.WithFormat(targetID, "response object is nil"))
-		return
-	}
-	defer resp.Close()
-
-	statusCode := int(resp.Status().Code)
-
-	if ct := resp.ContentType(); ct != "" {
-		w.Header().Set("content-type", ct)
-	}
-
-	w.WriteHeader(statusCode)
-
-	_, err = io.Copy(w, resp.RawData())
-	if err != nil {
-		respondWithError(w, messages.ErrDirectInvoke.WithFormat(targetID, err))
-		return
-	}
-}
-
-// findTargetIDAndMethod finds ID of the target service and method from the following three places:
-// 1. HTTP header 'dapr-app-id' (path is method)
-// 2. Basic auth header: `http://dapr-app-id:<service-id>@localhost:3500/<method>`
-// 3. URL parameter: `http://localhost:3500/v1.0/invoke/<app-id>/method/<method>`
-func findTargetIDAndMethod(reqPath string, headers nethttp.Header) (targetID string, method string) {
-	if appID := headers.Get(daprAppID); appID != "" {
-		return appID, strings.TrimPrefix(path.Clean(reqPath), "/")
-	}
-
-	if auth := headers.Get(fasthttp.HeaderAuthorization); strings.HasPrefix(auth, "Basic ") {
-		if s, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(auth, "Basic ")); err == nil {
-			pair := strings.Split(string(s), ":")
-			if len(pair) == 2 && pair[0] == daprAppID {
-				return pair[1], strings.TrimPrefix(path.Clean(reqPath), "/")
-			}
-		}
-	}
-
-	// If we're here, the handler was probably invoked with /v1.0/invoke/ (or the invocation is invalid, missing the app id provided as header or Basic auth)
-	// However, we are not relying on wildcardParam because the URL may have been sanitized to remove `//``, so `http://` would have been turned into `http:/`
-	// First, check to make sure that the path has the prefix
-	if idx := pathHasPrefix(reqPath, apiVersionV1, "invoke"); idx > 0 {
-		reqPath = reqPath[idx:]
-
-		// Scan to find app ID and method
-		// Matches `<appid>/method/<method>`.
-		// Examples:
-		// - `appid/method/mymethod`
-		// - `http://example.com/method/mymethod`
-		// - `https://example.com/method/mymethod`
-		// - `http%3A%2F%2Fexample.com/method/mymethod`
-		if idx = strings.Index(reqPath, "/method/"); idx > 0 {
-			targetID = reqPath[:idx]
-			method = reqPath[(idx + len("/method/")):]
-			if t, _ := url.QueryUnescape(targetID); t != "" {
-				targetID = t
-			}
-			return
-		}
-	}
-
-	return "", ""
-}
-
-// Returns true if a path has the parts as prefix (and a trailing slash), and returns the index of the first byte after the prefix (and after any trailing slashes).
-func pathHasPrefix(path string, prefixParts ...string) int {
-	pl := len(path)
-	ppl := len(prefixParts)
-	if pl == 0 {
-		return -1
-	}
-
-	var i, start, found int
-	for i = 0; i < pl; i++ {
-		if path[i] != '/' {
-			if found >= ppl {
-				return i
-			}
-			continue
-		}
-
-		if i-start > 0 {
-			if path[start:i] == prefixParts[found] {
-				found++
-			} else {
-				return -1
-			}
-		}
-		start = i + 1
-	}
-	if found >= ppl {
-		return i
-	}
-	return -1
 }
 
 func (a *api) onCreateActorReminder(reqCtx *fasthttp.RequestCtx) {
@@ -1991,7 +1915,7 @@ func (a *api) validateAndGetPubsubAndTopic(reqCtx *fasthttp.RequestCtx) (pubsub.
 		return nil, "", "", nethttp.StatusNotFound, &msg
 	}
 
-	thepubsub, ok := a.compStore.GetPubSub(pubsubName)
+	thepubsub, ok := a.universal.CompStore.GetPubSub(pubsubName)
 	if !ok {
 		msg := NewErrorResponse("ERR_PUBSUB_NOT_FOUND", fmt.Sprintf(messages.ErrPubsubNotFound, pubsubName))
 
