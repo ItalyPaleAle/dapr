@@ -2161,7 +2161,6 @@ func TestActorReentrancyConfig(t *testing.T) {
 	fullConfig := `{
 		"entities":["actorType1", "actorType2"],
 		"actorIdleTimeout": "1h",
-		"actorScanInterval": "30s",
 		"drainOngoingCallTimeout": "30s",
 		"drainRebalancedActors": true,
 		"reentrancy": {
@@ -2174,7 +2173,6 @@ func TestActorReentrancyConfig(t *testing.T) {
 	minimumConfig := `{
 		"entities":["actorType1", "actorType2"],
 		"actorIdleTimeout": "1h",
-		"actorScanInterval": "30s",
 		"drainOngoingCallTimeout": "30s",
 		"drainRebalancedActors": true,
 		"reentrancy": {
@@ -2185,7 +2183,6 @@ func TestActorReentrancyConfig(t *testing.T) {
 	emptyConfig := `{
 		"entities":["actorType1", "actorType2"],
 		"actorIdleTimeout": "1h",
-		"actorScanInterval": "30s",
 		"drainOngoingCallTimeout": "30s",
 		"drainRebalancedActors": true
 	  }`
