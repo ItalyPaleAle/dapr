@@ -27,6 +27,7 @@ import (
 	"github.com/microsoft/durabletask-go/api"
 	"github.com/microsoft/durabletask-go/backend"
 
+	"github.com/dapr/components-contrib/state"
 	"github.com/dapr/dapr/pkg/actors"
 	invokev1 "github.com/dapr/dapr/pkg/messaging/v1"
 )
@@ -191,7 +192,7 @@ func (wf *workflowActor) createWorkflowInstance(ctx context.Context, actorID str
 	}
 
 	state.AddToInbox(startEvent)
-	return wf.saveInternalState(ctx, actorID, state)
+	return wf.saveInternalState(ctx, actorID, state, false)
 }
 
 func (wf *workflowActor) getWorkflowMetadata(ctx context.Context, actorID string) (*api.OrchestrationMetadata, error) {
@@ -228,34 +229,30 @@ func (wf *workflowActor) getWorkflowMetadata(ctx context.Context, actorID string
 
 // This method purges all the completed activity data from a workflow associated with the given actorID
 func (wf *workflowActor) purgeWorkflowState(ctx context.Context, actorID string) error {
-	state, err := wf.loadInternalState(ctx, actorID)
+	ws, err := wf.loadInternalState(ctx, actorID)
 	if err != nil {
 		return err
 	}
-	if state == nil {
+	if ws == nil {
 		return api.ErrInstanceNotFound
 	}
 
-	runtimeState := getRuntimeState(actorID, state)
+	runtimeState := getRuntimeState(actorID, ws)
 	if !runtimeState.IsCompleted() {
 		return api.ErrNotCompleted
 	}
 
-	err = wf.removeCompletedStateData(ctx, state, actorID)
+	store, err := wf.getWorkflowStateStore()
 	if err != nil {
 		return err
+	}
+	err = store.DeleteWorkflowState(ctx, state.DeleteWorkflowStateRequest{
+		ActorID: actorID,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to perform state operation: %w", err)
 	}
 
-	// This will create a request to purge everything
-	req, err := state.GetPurgeRequest(actorID)
-	if err != nil {
-		return err
-	}
-	// This will do the purging
-	err = wf.actors.TransactionalStateOperation(ctx, req)
-	if err != nil {
-		return err
-	}
 	wf.states.Delete(actorID)
 	return nil
 }
@@ -278,7 +275,7 @@ func (wf *workflowActor) addWorkflowEvent(ctx context.Context, actorID string, h
 	if _, err := wf.createReliableReminder(ctx, actorID, "new-event", nil, 0); err != nil {
 		return err
 	}
-	return wf.saveInternalState(ctx, actorID, state)
+	return wf.saveInternalState(ctx, actorID, state, false)
 }
 
 func (wf *workflowActor) runWorkflow(ctx context.Context, actorID string, reminderName string, reminderData []byte) error {
@@ -490,7 +487,21 @@ func (wf *workflowActor) runWorkflow(ctx context.Context, actorID string, remind
 	state.ApplyRuntimeStateChanges(runtimeState)
 	state.ClearInbox()
 
-	return wf.saveInternalState(ctx, actorID, state)
+	return wf.saveInternalState(ctx, actorID, state, runtimeState.ContinuedAsNew())
+}
+
+func (wf *workflowActor) getWorkflowStateStore() (state.WorkflowStateStore, error) {
+	store := wf.actors.GetStateStore()
+	if store == nil {
+		return nil, errors.New("no state store configured")
+	}
+
+	storeWf, ok := store.(state.WorkflowStateStore)
+	if !ok {
+		return nil, errors.New("state store does not implement workflow state store")
+	}
+
+	return storeWf, nil
 }
 
 func (wf *workflowActor) loadInternalState(ctx context.Context, actorID string) (*workflowState, error) {
@@ -502,36 +513,65 @@ func (wf *workflowActor) loadInternalState(ctx context.Context, actorID string) 
 
 	// state is not cached, so try to load it from the state store
 	wfLogger.Debugf("%s: loading workflow state", actorID)
-	state, err := LoadWorkflowState(ctx, wf.actors, actorID, wf.config)
+
+	store, err := wf.getWorkflowStateStore()
 	if err != nil {
 		return nil, err
 	}
-	if state == nil {
+	res, err := store.GetWorkflowState(ctx, state.GetWorkflowStateRequest{ActorID: actorID})
+	if err != nil {
+		return nil, err
+	}
+	if res == nil {
 		// No such state exists in the state store
 		return nil, nil
 	}
+
+	// Parse the response
+	state := &workflowState{
+		Generation: res.Generation,
+		History:    make([]*backend.HistoryEvent, len(res.History)),
+		Inbox:      make([]*backend.HistoryEvent, len(res.Inbox)),
+	}
+	if res.CustomStatus != nil {
+		state.CustomStatus = *res.CustomStatus
+	}
+	for i, v := range res.History {
+		state.History[i], err = backend.UnmarshalHistoryEvent(v)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal history event %d: %w", i, err)
+		}
+	}
+	for i, v := range res.Inbox {
+		state.Inbox[i], err = backend.UnmarshalHistoryEvent(v)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal inbox event %d: %w", i, err)
+		}
+	}
+
 	return state, nil
 }
 
-func (wf *workflowActor) saveInternalState(ctx context.Context, actorID string, state *workflowState) error {
+func (wf *workflowActor) saveInternalState(ctx context.Context, actorID string, ws *workflowState, continuedAsNew bool) error {
 	if !wf.cachingDisabled {
 		// update cached state
-		wf.states.Store(actorID, state)
+		wf.states.Store(actorID, ws)
 	}
 
-	// generate and run a state store operation that saves all changes
-	req, err := state.GetSaveRequest(actorID)
+	wfLogger.Debugf("%s: saving to actor state store", actorID)
+
+	store, err := wf.getWorkflowStateStore()
 	if err != nil {
 		return err
 	}
 
-	wfLogger.Debugf("%s: saving %d keys to actor state store", actorID, len(req.Operations))
-	if err = wf.actors.TransactionalStateOperation(ctx, req); err != nil {
-		return err
-	}
+	// Generate and run a state store operation that saves all changes
+	req, err := ws.GetSaveRequest(actorID, continuedAsNew)
+
+	store.SetWorkflowState(ctx, req)
 
 	// ResetChangeTracking should always be called after a save operation succeeds
-	state.ResetChangeTracking()
+	ws.ResetChangeTracking()
 	return nil
 }
 

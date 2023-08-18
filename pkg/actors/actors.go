@@ -93,6 +93,7 @@ type Actors interface {
 	IsActorHosted(ctx context.Context, req *ActorHostedRequest) bool
 	GetActiveActorsCount(ctx context.Context) []*runtimev1pb.ActiveActorsCount
 	RegisterInternalActor(ctx context.Context, actorType string, actor InternalActor) error
+	GetStateStore() state.Store
 }
 
 // GRPCConnectionFn is the type of the function that returns a gRPC connection
@@ -1054,4 +1055,12 @@ func (a *actorsRuntime) stateStore() (internal.TransactionalStateStore, error) {
 	}
 
 	return store, nil
+}
+
+func (a *actorsRuntime) GetStateStore() state.Store {
+	store, ok := a.compStore.GetStateStore(a.storeName)
+	if !ok {
+		store = nil
+	}
+	return store
 }
