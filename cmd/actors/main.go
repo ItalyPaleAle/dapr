@@ -18,8 +18,8 @@ import (
 	"fmt"
 
 	"github.com/dapr/dapr/cmd/actors/options"
-	"github.com/dapr/dapr/pkg/actorssvc/config"
 	"github.com/dapr/dapr/pkg/actorssvc/monitoring"
+	"github.com/dapr/dapr/pkg/actorssvc/server"
 	"github.com/dapr/dapr/pkg/buildinfo"
 	"github.com/dapr/dapr/pkg/concurrency"
 	"github.com/dapr/dapr/pkg/health"
@@ -45,11 +45,6 @@ func main() {
 	metricsExporter := metrics.NewExporterWithOptions(log, metrics.DefaultMetricNamespace, opts.Metrics)
 
 	if err := monitoring.InitMetrics(); err != nil {
-		log.Fatal(err)
-	}
-
-	cfg, err := config.FromConfigName(opts.ConfigName)
-	if err != nil {
 		log.Fatal(err)
 	}
 
@@ -79,9 +74,10 @@ func main() {
 			if serr != nil {
 				return serr
 			}
-			// Start server here
-			_ = sec
-			return nil
+			return server.Start(ctx, server.Options{
+				Port:     opts.Port,
+				Security: sec,
+			})
 		},
 		// Healthz server
 		func(ctx context.Context) error {

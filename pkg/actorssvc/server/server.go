@@ -27,10 +27,9 @@ import (
 
 var log = logger.NewLogger("dapr.actorssvc.server")
 
-// Options is the configuration for the server.
 type Options struct {
-	// Port is the port that the server will listen on.
-	Port     int
+	Port int
+
 	Security security.Handler
 }
 
@@ -45,9 +44,7 @@ func Start(ctx context.Context, opts Options) error {
 		return fmt.Errorf("could not listen on port %d: %w", opts.Port, err)
 	}
 
-	// No client auth because we auth based on the client SignCertificateRequest.
 	srv := grpc.NewServer(opts.Security.GRPCServerOptionNoClientAuth())
-
 	s := &server{}
 	actorsv1pb.RegisterActorsServer(srv, s)
 
@@ -65,4 +62,43 @@ func Start(ctx context.Context, opts Options) error {
 	log.Info("Shutting down gRPC server")
 	srv.GracefulStop()
 	return <-errCh
+}
+
+// ConnectHost is used by the Dapr sidecar to register itself as an actor host.
+// It remains active as a long-lived bi-di stream to allow for the Actors service
+// to communicate with the sidecar.
+func (s *server) ConnectHost(actorsv1pb.Actors_ConnectHostServer) error {
+	panic("unimplemented")
+}
+
+// ReminderCompleted is used by the sidecar to acknowledge that a reminder has been executed successfully.
+func (s *server) ReminderCompleted(context.Context, *actorsv1pb.ReminderCompletedRequest) (*actorsv1pb.ReminderCompletedResponse, error) {
+	panic("unimplemented")
+}
+
+// LookupActor returns the address of an actor.
+// If the actor is not active yet, it returns the address of an actor host capable of hosting it.
+func (s *server) LookupActor(context.Context, *actorsv1pb.LookupActorRequest) (*actorsv1pb.LookupActorResponse, error) {
+	panic("unimplemented")
+}
+
+// ReportActorDeactivation is sent to report an actor that has been deactivated.
+func (s *server) ReportActorDeactivation(context.Context, *actorsv1pb.ReportActorDeactivationRequest) (*actorsv1pb.ReportActorDeactivationResponse, error) {
+	panic("unimplemented")
+}
+
+// CreateReminder creates a new reminder.
+// If a reminder with the same ID (actor type, actor ID, name) already exists, it's replaced.
+func (s *server) CreateReminder(context.Context, *actorsv1pb.CreateReminderRequest) (*actorsv1pb.CreateReminderResponse, error) {
+	panic("unimplemented")
+}
+
+// GetReminder returns details about an existing reminder.
+func (s *server) GetReminder(context.Context, *actorsv1pb.GetReminderRequest) (*actorsv1pb.GetReminderResponse, error) {
+	panic("unimplemented")
+}
+
+// DeleteReminder removes an existing reminder before it fires.
+func (s *server) DeleteReminder(context.Context, *actorsv1pb.DeleteReminderRequest) (*actorsv1pb.DeleteReminderResponse, error) {
+	panic("unimplemented")
 }
