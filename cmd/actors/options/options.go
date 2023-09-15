@@ -14,8 +14,10 @@ limitations under the License.
 package options
 
 import (
-	"flag"
 	"fmt"
+	"os"
+
+	"github.com/spf13/pflag"
 
 	"github.com/dapr/dapr/pkg/actorssvc/config"
 	"github.com/dapr/dapr/pkg/metrics"
@@ -24,15 +26,12 @@ import (
 	"github.com/dapr/kit/logger"
 )
 
-const (
-	// defaultDaprSystemConfigName is the default resource object name for Dapr System Config.
-	defaultDaprSystemConfigName = "daprsystem"
-)
-
 type Options struct {
-	ConfigName  string
 	Port        int
 	HealthzPort int
+
+	DBName string
+	DBOpts []string
 
 	MTLSEnabled      bool
 	TrustDomain      string
@@ -46,22 +45,32 @@ type Options struct {
 func New() *Options {
 	var opts Options
 
-	flag.StringVar(&opts.ConfigName, "config", defaultDaprSystemConfigName, "Path to config file, or name of a configuration object")
-	flag.IntVar(&opts.Port, "port", config.DefaultPort, "The port for the sentry server to listen on")
-	flag.IntVar(&opts.HealthzPort, "healthz-port", 8080, "The port for the healthz server to listen on")
+	fs := pflag.FlagSet{}
 
-	flag.BoolVar(&opts.MTLSEnabled, "enable-mtls", false, "Enable mTLS")
-	flag.StringVar(&opts.TrustDomain, "trust-domain", "localhost", "Trust domain for the Dapr control plane (for mTLS)")
-	flag.StringVar(&opts.TrustAnchorsFile, "trust-anchors-file", securityConsts.ControlPlaneDefaultTrustAnchorsPath, "Filepath to the trust anchors for the Dapr control plane (for mTLS)")
-	flag.StringVar(&opts.SentryAddress, "sentry-address", fmt.Sprintf("dapr-sentry.%s.svc:443", security.CurrentNamespace()), "Address of the Sentry service (for mTLS)")
+	fs.IntVar(&opts.Port, "port", config.DefaultPort, "The port for the sentry server to listen on")
+	fs.IntVar(&opts.HealthzPort, "healthz-port", 8080, "The port for the healthz server to listen on")
+
+	fs.StringVar(&opts.DBName, "db", "", "Name of the database driver")
+	fs.StringArrayVar(&opts.DBOpts, "db-opt", nil, "Option for the database driver, in the format 'key=value'; can be repeated")
+
+	fs.BoolVar(&opts.MTLSEnabled, "enable-mtls", false, "Enable mTLS")
+	fs.StringVar(&opts.TrustDomain, "trust-domain", "localhost", "Trust domain for the Dapr control plane (for mTLS)")
+	fs.StringVar(&opts.TrustAnchorsFile, "trust-anchors-file", securityConsts.ControlPlaneDefaultTrustAnchorsPath, "Filepath to the trust anchors for the Dapr control plane (for mTLS)")
+	fs.StringVar(&opts.SentryAddress, "sentry-address", fmt.Sprintf("dapr-sentry.%s.svc:443", security.CurrentNamespace()), "Address of the Sentry service (for mTLS)")
 
 	opts.Logger = logger.DefaultOptions()
-	opts.Logger.AttachCmdFlags(flag.StringVar, flag.BoolVar)
+	opts.Logger.AttachCmdFlags(fs.StringVar, fs.BoolVar)
 
 	opts.Metrics = metrics.DefaultMetricOptions()
-	opts.Metrics.AttachCmdFlags(flag.StringVar, flag.BoolVar)
+	opts.Metrics.AttachCmdFlags(fs.StringVar, fs.BoolVar)
 
-	flag.Parse()
+	fs.SortFlags = false
+	fs.Parse(os.Args[1:])
+
+	if opts.DBName == "" {
+		fmt.Println("Required flag '--db' was not provided")
+		os.Exit(2)
+	}
 
 	return &opts
 }
