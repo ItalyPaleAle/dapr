@@ -63,19 +63,25 @@ message ConnectHostClientStream {
 // It includes information on the current sidecar's actor hosting capabilities.
 message RegisterActorHost {
     // Address, including port (required on first message)
+    // Cannot be updated
     string address = 1;
     // Dapr App ID (required on first message)
+    // Format is 'namespace/app-id'
+    // Cannot be updated
     string app_id = 2;
     // List of supported actor types (required on first message)
-    repeated string entities = 3;
-    // Used for namespacing actors (also in self-hosted mode)
-    // Can be empty
-    string namespace = 4;
-    // Name of the pod if running on Kubernetes 
-    // Can be empty
-    string pod = 5;
+    repeated ActorHostType actor_types = 3;
     // Version of the Actor APIs supported by the Dapr runtime
-    uint32 api_level = 6;
+    // Cannot be updated
+    uint32 api_level = 4;
+}
+
+// ActorHostType references a supported actor type.
+message ActorHostType {
+    // Actor type name
+    string actor_type = 1;
+    // Actor idle timeout, in seconds
+    uint32 idle_timeout = 2;
 }
 
 // ConnectHostServerStream is sent by the Actors service to the Dapr sidecar.
@@ -128,10 +134,13 @@ message LookupActorRequest {
 }
 
 message LookupActorResponse {
-    // Dapr App ID
+    // Dapr App ID of the host
     string app_id = 1;
-    // Address, including port
+    // Host address (including port)
     string address = 2;
+    // Actor idle timeout, in seconds
+    // (Note that this is the absolute idle timeout, and not the remaining lifetime of the actor)
+    uint32 idle_timeout = 3;
 }
 
 message ReportActorDeactivationRequest {

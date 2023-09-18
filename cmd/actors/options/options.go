@@ -19,12 +19,14 @@ import (
 
 	"github.com/spf13/pflag"
 
-	"github.com/dapr/dapr/pkg/actorssvc/config"
 	"github.com/dapr/dapr/pkg/metrics"
 	"github.com/dapr/dapr/pkg/security"
 	securityConsts "github.com/dapr/dapr/pkg/security/consts"
 	"github.com/dapr/kit/logger"
 )
+
+// DefaultPort is the default port for the actors service to listen on
+const DefaultPort = 51101
 
 type Options struct {
 	Port        int
@@ -47,7 +49,7 @@ func New() *Options {
 
 	fs := pflag.FlagSet{}
 
-	fs.IntVar(&opts.Port, "port", config.DefaultPort, "The port for the sentry server to listen on")
+	fs.IntVar(&opts.Port, "port", DefaultPort, "The port for the sentry server to listen on")
 	fs.IntVar(&opts.HealthzPort, "healthz-port", 8080, "The port for the healthz server to listen on")
 
 	fs.StringVar(&opts.DBName, "db", "", "Name of the database driver")
