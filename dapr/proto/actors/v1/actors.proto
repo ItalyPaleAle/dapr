@@ -62,18 +62,18 @@ message ConnectHostClientStream {
 // RegisterActorHost is sent by the Dapr sidecar to the Actors service.
 // It includes information on the current sidecar's actor hosting capabilities.
 message RegisterActorHost {
-    // Address, including port (required on first message)
-    // Cannot be updated
+    // Address, including port
+    // Required on the first message; cannot be updated
     string address = 1;
-    // Dapr App ID (required on first message)
-    // Format is 'namespace/app-id'
-    // Cannot be updated
+    // Dapr App ID
+    // Format is 'namespace/app-id' or just 'app-id'
+    // Required on the first message; cannot be updated
     string app_id = 2;
-    // List of supported actor types (required on first message)
-    repeated ActorHostType actor_types = 3;
     // Version of the Actor APIs supported by the Dapr runtime
-    // Cannot be updated
-    uint32 api_level = 4;
+    // Required on the first message; cannot be updated
+    uint32 api_level = 3;
+    // List of supported actor types.
+    repeated ActorHostType actor_types = 4;
 }
 
 // ActorHostType references a supported actor type.
