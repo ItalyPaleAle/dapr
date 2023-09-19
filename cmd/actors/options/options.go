@@ -32,8 +32,8 @@ type Options struct {
 	Port        int
 	HealthzPort int
 
-	DBName string
-	DBOpts []string
+	StoreName string
+	StoreOpts []string
 
 	MTLSEnabled      bool
 	TrustDomain      string
@@ -52,8 +52,8 @@ func New() *Options {
 	fs.IntVar(&opts.Port, "port", DefaultPort, "The port for the sentry server to listen on")
 	fs.IntVar(&opts.HealthzPort, "healthz-port", 8080, "The port for the healthz server to listen on")
 
-	fs.StringVar(&opts.DBName, "db", "", "Name of the database driver")
-	fs.StringArrayVar(&opts.DBOpts, "db-opt", nil, "Option for the database driver, in the format 'key=value'; can be repeated")
+	fs.StringVar(&opts.StoreName, "store", "", "Name of the store driver")
+	fs.StringArrayVar(&opts.StoreOpts, "store-opt", nil, "Option for the store driver, in the format 'key=value'; can be repeated")
 
 	fs.BoolVar(&opts.MTLSEnabled, "enable-mtls", false, "Enable mTLS")
 	fs.StringVar(&opts.TrustDomain, "trust-domain", "localhost", "Trust domain for the Dapr control plane (for mTLS)")
@@ -69,8 +69,8 @@ func New() *Options {
 	fs.SortFlags = false
 	fs.Parse(os.Args[1:])
 
-	if opts.DBName == "" {
-		fmt.Println("Required flag '--db' was not provided")
+	if opts.StoreName == "" {
+		fmt.Println("Required flag '--store' was not provided")
 		os.Exit(2)
 	}
 

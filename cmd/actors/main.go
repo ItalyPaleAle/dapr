@@ -17,9 +17,13 @@ import (
 	"context"
 	"fmt"
 
+	// Register all stores
+	_ "github.com/dapr/dapr/cmd/actors/stores"
+
 	"github.com/dapr/dapr/cmd/actors/options"
 	"github.com/dapr/dapr/pkg/actorssvc/monitoring"
 	"github.com/dapr/dapr/pkg/actorssvc/server"
+	loader "github.com/dapr/dapr/pkg/actorssvc/store"
 	"github.com/dapr/dapr/pkg/buildinfo"
 	"github.com/dapr/dapr/pkg/concurrency"
 	"github.com/dapr/dapr/pkg/health"
@@ -29,7 +33,10 @@ import (
 	"github.com/dapr/kit/logger"
 )
 
-var log = logger.NewLogger("dapr.actorssvc")
+var (
+	log        = logger.NewLogger("dapr.actorssvc")
+	logContrib = logger.NewLogger("dapr.contrib")
+)
 
 func main() {
 	opts := options.New()
@@ -42,9 +49,11 @@ func main() {
 	log.Infof("Starting Dapr Actors service -- version %s -- commit %s", buildinfo.Version(), buildinfo.Commit())
 	log.Infof("Log level set to: %s", opts.Logger.OutputLevel)
 
-	metricsExporter := metrics.NewExporterWithOptions(log, metrics.DefaultMetricNamespace, opts.Metrics)
+	loader.DefaultRegistry.Logger = logContrib
 
-	if err := monitoring.InitMetrics(); err != nil {
+	metricsExporter := metrics.NewExporterWithOptions(log, metrics.DefaultMetricNamespace, opts.Metrics)
+	err := monitoring.InitMetrics()
+	if err != nil {
 		log.Fatal(err)
 	}
 
@@ -75,8 +84,10 @@ func main() {
 				return serr
 			}
 			return server.Start(ctx, server.Options{
-				Port:     opts.Port,
-				Security: sec,
+				Port:      opts.Port,
+				StoreName: opts.StoreName,
+				StoreOpts: opts.StoreOpts,
+				Security:  sec,
 			})
 		},
 		// Healthz server
