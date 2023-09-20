@@ -111,7 +111,12 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 		}
 	}()
 
+	unregisterOnClose := true
 	defer func() {
+		if !unregisterOnClose {
+			return
+		}
+
 		// Use a background context here because the client may have already disconnected
 		log.Debugf("Uregistering actor host '%s'", actorHostID)
 		err = s.store.RemoveActorHost(context.Background(), actorHostID)
@@ -162,6 +167,8 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 		case <-stream.Context().Done():
 			// Normally, context cancelation indicates that the server is shutting down
 			// We consider this equivalent to the client disconnecting
+			// In this case, however, we do not unregister the actor host when this method returns, because the host will likely reconnect shortly after to resume
+			unregisterOnClose = false
 			log.Debugf("Actor host '%s' has disconnected", actorHostID)
 			return nil
 
