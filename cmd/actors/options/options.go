@@ -16,6 +16,7 @@ package options
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/spf13/pflag"
 
@@ -25,8 +26,14 @@ import (
 	"github.com/dapr/kit/logger"
 )
 
-// DefaultPort is the default port for the actors service to listen on
-const DefaultPort = 51101
+const (
+	// DefaultPort is the default port for the actors service to listen on.
+	DefaultPort = 51101
+	// DefaultHealthzPort is the default port for the healthz server to listen on.
+	DefaultHealthzPort = 8080
+	// DefaultHostHealthCheckInterval is the default interval for performing health-checks on actor hosts.
+	DefaultHostHealthCheckInterval = 10 * time.Second
+)
 
 type Options struct {
 	Port        int
@@ -40,6 +47,8 @@ type Options struct {
 	TrustAnchorsFile string
 	SentryAddress    string
 
+	HostHealthCheckInterval time.Duration
+
 	Logger  logger.Options
 	Metrics *metrics.Options
 }
@@ -50,10 +59,12 @@ func New() *Options {
 	fs := pflag.FlagSet{}
 
 	fs.IntVar(&opts.Port, "port", DefaultPort, "The port for the sentry server to listen on")
-	fs.IntVar(&opts.HealthzPort, "healthz-port", 8080, "The port for the healthz server to listen on")
+	fs.IntVar(&opts.HealthzPort, "healthz-port", DefaultHealthzPort, "The port for the healthz server to listen on")
 
 	fs.StringVar(&opts.StoreName, "store", "", "Name of the store driver")
 	fs.StringArrayVar(&opts.StoreOpts, "store-opt", nil, "Option for the store driver, in the format 'key=value'; can be repeated")
+
+	fs.DurationVar(&opts.HostHealthCheckInterval, "host-healthcheck-interval", DefaultHostHealthCheckInterval, "Interval for performing health checks on actor hosts, as a duration")
 
 	fs.BoolVar(&opts.MTLSEnabled, "enable-mtls", false, "Enable mTLS")
 	fs.StringVar(&opts.TrustDomain, "trust-domain", "localhost", "Trust domain for the Dapr control plane (for mTLS)")
@@ -70,7 +81,11 @@ func New() *Options {
 	fs.Parse(os.Args[1:])
 
 	if opts.StoreName == "" {
-		fmt.Println("Required flag '--store' was not provided")
+		fmt.Println("Required flag '--store' is missing")
+		os.Exit(2)
+	}
+	if opts.HostHealthCheckInterval < time.Second {
+		fmt.Println("Flag '--host-healthcheck-interval' must be at least '1s'")
 		os.Exit(2)
 	}
 

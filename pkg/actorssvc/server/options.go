@@ -15,6 +15,7 @@ package server
 
 import (
 	"strings"
+	"time"
 
 	"github.com/dapr/components-contrib/actorstore"
 	"github.com/dapr/components-contrib/metadata"
@@ -27,6 +28,8 @@ type Options struct {
 
 	StoreName string
 	StoreOpts []string
+
+	HostHealthCheckInterval time.Duration
 
 	Security security.Handler
 }
@@ -48,6 +51,9 @@ func (o Options) GetActorStoreMetadata() actorstore.Metadata {
 	return actorstore.Metadata{
 		Base: metadata.Base{
 			Properties: o.GetActorStoreOptions(),
+		},
+		Configuration: actorstore.ActorsConfiguration{
+			HostHealthCheckInterval: o.HostHealthCheckInterval,
 		},
 	}
 }
