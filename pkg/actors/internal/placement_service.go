@@ -16,6 +16,7 @@ package internal
 import (
 	"context"
 	"io"
+	"time"
 )
 
 // PlacementService allows for interacting with the actor placement service.
@@ -24,6 +25,7 @@ type PlacementService interface {
 
 	Start(context.Context) error
 	WaitUntilReady(ctx context.Context) error
-	LookupActor(actorType, actorID string) (host string, appID string)
-	AddHostedActorType(actorType string) error
+	LookupActor(ctx context.Context, actorType, actorID string) (host string, appID string, err error)
+	AddHostedActorType(actorType string, idleTimeout time.Duration) error
+	ReportActorDeactivation(ctx context.Context, actorType, actorID string) error
 }

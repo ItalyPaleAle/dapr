@@ -197,8 +197,8 @@ func newActorsWithClock(opts ActorsOpts, clock clock.WithTicker) ActorRuntime {
 	return a
 }
 
-func (a *actorsRuntime) isActorLocallyHosted(actorType string, actorID string) (isLocal bool, actorAddress string) {
-	targetActorAddress, _ := a.placement.LookupActor(actorType, actorID)
+func (a *actorsRuntime) isActorLocallyHosted(ctx context.Context, actorType string, actorID string) (isLocal bool, actorAddress string) {
+	targetActorAddress, _, _ := a.placement.LookupActor(ctx, actorType, actorID)
 	if targetActorAddress == "" {
 		log.Warn("Did not find address for actor with actorType %s and actorID %s", actorType, actorID)
 		return false, ""
@@ -338,6 +338,12 @@ func (a *actorsRuntime) deactivateActor(actorType, actorID string) error {
 	diag.DefaultMonitoring.ActorDeactivated(actorType)
 	log.Debugf("Deactivated actor type=%s, id=%s", actorType, actorID)
 
+	// This uses a background context as it should be unrelated from the caller's context - once the actor is deactivated, it should be reported
+	err = a.placement.ReportActorDeactivation(context.Background(), actorType, actorID)
+	if err != nil {
+		return fmt.Errorf("failed to report actor deactivation: %w", err)
+	}
+
 	return nil
 }
 
@@ -404,9 +410,12 @@ func (a *actorsRuntime) Call(ctx context.Context, req *invokev1.InvokeMethodRequ
 	policyDef := a.resiliency.BuiltInPolicy(resiliency.BuiltInActorNotFoundRetries)
 	policyRunner := resiliency.NewRunner[*lookupActorRes](ctx, policyDef)
 	lar, err := policyRunner(func(ctx context.Context) (*lookupActorRes, error) {
-		rAddr, rAppID := a.placement.LookupActor(actor.GetActorType(), actor.GetActorId())
-		if rAddr == "" {
-			return nil, fmt.Errorf("error finding address for actor type %s with id %s", actor.GetActorType(), actor.GetActorId())
+		rAddr, rAppID, rErr := a.placement.LookupActor(ctx, actor.GetActorType(), actor.GetActorId())
+		if rErr == nil && rAddr == "" {
+			rErr = errors.New("empty response")
+		}
+		if rErr != nil {
+			return nil, fmt.Errorf("error finding address for actor type %s with id %s: %w", actor.GetActorType(), actor.GetActorId(), rErr)
 		}
 		return &lookupActorRes{
 			targetActorAddress: rAddr,
@@ -780,7 +789,7 @@ func (a *actorsRuntime) drainRebalancedActors() {
 			// for each actor, deactivate if no longer hosted locally
 			actorKey := key.(string)
 			actorType, actorID := a.getActorTypeAndIDFromKey(actorKey)
-			address, _ := a.placement.LookupActor(actorType, actorID)
+			address, _, _ := a.placement.LookupActor(context.TODO(), actorType, actorID)
 			if address != "" && !a.isActorLocal(address, a.actorsConfig.Config.HostAddress, a.actorsConfig.Config.Port) {
 				// actor has been moved to a different host, deactivate when calls are done cancel any reminders
 				// each item in reminders contain a struct with some metadata + the actual reminder struct
@@ -980,7 +989,7 @@ func (a *actorsRuntime) RegisterInternalActor(ctx context.Context, actorType str
 		actor.SetActorRuntime(a)
 		a.actorsConfig.Config.HostedActorTypes.AddActorType(actorType, actorIdleTimeout)
 		if a.placement != nil {
-			if err := a.placement.AddHostedActorType(actorType); err != nil {
+			if err := a.placement.AddHostedActorType(actorType, actorIdleTimeout); err != nil {
 				return fmt.Errorf("error updating hosted actor types: %s", err)
 			}
 		}

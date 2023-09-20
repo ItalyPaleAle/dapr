@@ -51,7 +51,7 @@ func fakeStore() state.Store {
 
 type mockPlacement struct{}
 
-func (p *mockPlacement) AddHostedActorType(actorType string) error {
+func (p *mockPlacement) AddHostedActorType(string, time.Duration) error {
 	return nil
 }
 
@@ -60,8 +60,8 @@ func NewMockPlacement() actors.PlacementService {
 }
 
 // LookupActor implements internal.PlacementService
-func (*mockPlacement) LookupActor(actorType string, actorID string) (name string, appID string) {
-	return "localhost", testAppID
+func (*mockPlacement) LookupActor(ctx context.Context, actorType string, actorID string) (host string, appID string, err error) {
+	return "localhost", testAppID, nil
 }
 
 // Start implements internal.PlacementService
@@ -76,6 +76,10 @@ func (*mockPlacement) Close() error {
 
 // WaitUntilReady implements internal.PlacementService
 func (*mockPlacement) WaitUntilReady(ctx context.Context) error {
+	return nil
+}
+
+func (*mockPlacement) ReportActorDeactivation(ctx context.Context, actorType, actorID string) error {
 	return nil
 }
 

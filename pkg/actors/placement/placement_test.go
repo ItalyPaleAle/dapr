@@ -303,7 +303,8 @@ func TestLookupActor(t *testing.T) {
 	}).(*actorPlacement)
 
 	t.Run("Placementtable is unset", func(t *testing.T) {
-		name, appID := testPlacement.LookupActor("actorOne", "test")
+		name, appID, err := testPlacement.LookupActor(context.Background(), "actorOne", "test")
+		require.NoError(t, err)
 		assert.Empty(t, name)
 		assert.Empty(t, appID)
 	})
@@ -322,12 +323,14 @@ func TestLookupActor(t *testing.T) {
 		testPlacement.placementTables.Entries[testActorType] = actorOneHashing
 
 		// existing actor type
-		name, appID := testPlacement.LookupActor(testActorType, "id0")
+		name, appID, err := testPlacement.LookupActor(context.Background(), testActorType, "id0")
+		require.NoError(t, err)
 		assert.Equal(t, testPlacement.runtimeHostName, name)
 		assert.Equal(t, testPlacement.appID, appID)
 
 		// non existing actor type
-		name, appID = testPlacement.LookupActor("nonExistingActorType", "id0")
+		name, appID, err = testPlacement.LookupActor(context.Background(), "nonExistingActorType", "id0")
+		require.NoError(t, err)
 		assert.Empty(t, name)
 		assert.Empty(t, appID)
 	})

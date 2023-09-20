@@ -15,6 +15,7 @@ package placement
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -132,7 +133,7 @@ func NewActorPlacement(opts ActorPlacementOpts) internal.PlacementService {
 
 // Register an actor type by adding it to the list of known actor types (if it's not already registered)
 // The placement tables will get updated when the next heartbeat fires
-func (p *actorPlacement) AddHostedActorType(actorType string) error {
+func (p *actorPlacement) AddHostedActorType(actorType string, idleTimeout time.Duration) error {
 	for _, t := range p.actorTypes {
 		if t == actorType {
 			return fmt.Errorf("actor type %s already registered", actorType)
@@ -288,23 +289,23 @@ func (p *actorPlacement) WaitUntilReady(ctx context.Context) error {
 }
 
 // LookupActor resolves to actor service instance address using consistent hashing table.
-func (p *actorPlacement) LookupActor(actorType, actorID string) (string, string) {
+func (p *actorPlacement) LookupActor(ctx context.Context, actorType, actorID string) (string, string, error) {
 	p.placementTableLock.RLock()
 	defer p.placementTableLock.RUnlock()
 
 	if p.placementTables == nil {
-		return "", ""
+		return "", "", errors.New("placement tables are not set")
 	}
 
 	t := p.placementTables.Entries[actorType]
 	if t == nil {
-		return "", ""
+		return "", "", nil
 	}
 	host, err := t.GetHost(actorID)
 	if err != nil || host == nil {
-		return "", ""
+		return "", "", nil
 	}
-	return host.Name, host.AppID
+	return host.Name, host.AppID, nil
 }
 
 //nolint:nosnakecase
@@ -438,6 +439,11 @@ func (p *actorPlacement) updatePlacements(in *v1pb.PlacementTables) {
 	p.afterTableUpdateFn()
 
 	log.Infof("Placement tables updated, version: %s", in.GetVersion())
+}
+
+func (p *actorPlacement) ReportActorDeactivation(ctx context.Context, actorType, actorID string) error {
+	// Nop in this implementation
+	return nil
 }
 
 // addDNSResolverPrefix add the `dns://` prefix to the given addresses
