@@ -48,7 +48,7 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 		log.Errorf("Failed to register actor host: %v", err)
 		return fmt.Errorf("failed to register actor host: %w", err)
 	}
-	log.Debugf("Registered actor host: id='%s' appID='%s' address='%s'", actorHostID, msg.AppId, msg.Address)
+	log.Debugf("Registered actor host: id='%s' appID='%s' address='%s' actorTypes=%v", actorHostID, msg.AppId, msg.Address, msg.GetActorTypes())
 
 	// Send the relevant configuration to the actor host
 	err = stream.Send(s.opts.GetActorHostConfigurationMessage())
@@ -121,7 +121,12 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 		log.Debugf("Uregistering actor host '%s'", actorHostID)
 		err = s.store.RemoveActorHost(context.Background(), actorHostID)
 		if err != nil {
-			log.Errorf("Failed to un-register actor host: %v", err)
+			// Ignore "ErrActorHostNotFound" errors because it may be due to a race condition with removing the host
+			if errors.Is(err, actorstore.ErrActorHostNotFound) {
+				log.Debugf("Tried to un-register actor host '%s' that was already removed: %v", actorHostID, err)
+			} else {
+				log.Errorf("Failed to un-register actor host '%s': %v", actorHostID, err)
+			}
 		}
 	}()
 
@@ -232,8 +237,27 @@ func (s *server) connectHostReceiveFirstMessage(stream actorsv1pb.Actors_Connect
 
 // LookupActor returns the address of an actor.
 // If the actor is not active yet, it returns the address of an actor host capable of hosting it.
-func (s *server) LookupActor(context.Context, *actorsv1pb.LookupActorRequest) (*actorsv1pb.LookupActorResponse, error) {
-	panic("unimplemented")
+func (s *server) LookupActor(ctx context.Context, req *actorsv1pb.LookupActorRequest) (*actorsv1pb.LookupActorResponse, error) {
+	err := req.GetActor().Validate()
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "Invalid actor reference: %v", err)
+	}
+
+	lar, err := s.store.LookupActor(ctx, req.Actor.ToInternalActorRef())
+	if err != nil {
+		if errors.Is(err, actorstore.ErrNoActorHost) {
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
+		}
+
+		log.Errorf("Failed to perform actor lookup: %v", err)
+		return nil, status.Errorf(codes.Internal, "failed to perform actor lookup: %v", err)
+	}
+
+	return &actorsv1pb.LookupActorResponse{
+		AppId:       lar.AppID,
+		Address:     lar.Address,
+		IdleTimeout: lar.IdleTimeout,
+	}, nil
 }
 
 // ReportActorDeactivation is sent to report an actor that has been deactivated.
@@ -250,7 +274,7 @@ func (s *server) ReportActorDeactivation(ctx context.Context, req *actorsv1pb.Re
 		}
 
 		log.Errorf("Failed to remove actor from database: %v", err)
-		return nil, fmt.Errorf("failed to remove actor from database: %w", err)
+		return nil, status.Errorf(codes.Internal, "failed to remove actor from database: %v", err)
 	}
 
 	return &actorsv1pb.ReportActorDeactivationResponse{}, nil
