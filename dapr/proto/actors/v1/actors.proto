@@ -1,0 +1,206 @@
+/*
+Copyright 2023 The Dapr Authors
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+    http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+syntax = "proto3";
+
+package dapr.proto.actors.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/dapr/dapr/pkg/proto/actors/v1;actors";
+
+service Actors {
+    // ConnectHost is used by the Dapr sidecar to register itself as an actor host.
+    // It remains active as a long-lived bi-di stream to allow for the Actors service
+    // to communicate with the sidecar, including for health-checks.
+    rpc ConnectHost(stream ConnectHostClientStream) returns (stream ConnectHostServerStream) {}
+
+    // ReminderCompleted is used by the sidecar to acknowledge that a reminder has been executed successfully.
+    rpc ReminderCompleted(ReminderCompletedRequest) returns (ReminderCompletedResponse) {}
+
+    // LookupActor returns the address of an actor.
+    // If the actor is not active yet, it returns the address of an actor host capable of hosting it.
+    rpc LookupActor(LookupActorRequest) returns (LookupActorResponse) {}
+
+    // ReportActorDeactivation is sent to report an actor that has been deactivated.
+    rpc ReportActorDeactivation(ReportActorDeactivationRequest) returns (ReportActorDeactivationResponse) {}
+
+    // CreateReminder creates a new reminder.
+    // If a reminder with the same ID (actor type, actor ID, name) already exists, it's replaced.
+    rpc CreateReminder(CreateReminderRequest) returns (CreateReminderResponse) {}
+
+    // GetReminder returns details about an existing reminder.
+    rpc GetReminder(GetReminderRequest) returns (GetReminderResponse) {}
+
+    // DeleteReminder removes an existing reminder before it fires.
+    rpc DeleteReminder(DeleteReminderRequest) returns (DeleteReminderResponse) {}
+}
+
+// ConnectHostClientStream is sent by the Dapr sidecar to the Actors service.
+// The first message in the stream must contain the required fields; subsequent messages could be empty, but including fields is allowed to provide updates.
+message ConnectHostClientStream {
+    // Message to include.
+    // This is optional, and no message indicates a simple ping (for health checks).
+    // However, the first message sent must include a RegisterActorHost.
+    oneof message {
+        // The first message sent in ConnectHost by the sidecar must contain RegisterActorHost.
+        // The sidecar can re-send this message at any time to update its registration.
+        RegisterActorHost register_actor_host = 1;
+    }
+}
+
+// RegisterActorHost is sent by the Dapr sidecar to the Actors service.
+// It includes information on the current sidecar's actor hosting capabilities.
+message RegisterActorHost {
+    // Address, including port
+    // Required on the first message; cannot be updated
+    string address = 1;
+    // Dapr App ID
+    // Format is 'namespace/app-id' or just 'app-id'
+    // Required on the first message; cannot be updated
+    string app_id = 2;
+    // Version of the Actor APIs supported by the Dapr runtime
+    // Required on the first message; cannot be updated
+    uint32 api_level = 3;
+    // List of supported actor types.
+    repeated ActorHostType actor_types = 4;
+}
+
+// ActorHostType references a supported actor type.
+message ActorHostType {
+    // Actor type name
+    string actor_type = 1;
+    // Actor idle timeout, in seconds
+    uint32 idle_timeout = 2;
+}
+
+// ConnectHostServerStream is sent by the Actors service to the Dapr sidecar.
+// The message could be empty, in which case it acts as a response to a "ping" message.
+message ConnectHostServerStream {
+    // Message to include.
+    // This is optional, and no message indicates a simple ping.
+    oneof message {
+        // Send certain configuration options for the actor subsystem to the actor host.
+        // This is normally sent in response to the first message from the actor host, but can be sent as update at any time.
+        ActorHostConfiguration actor_host_configuration = 1;
+        // Start the execution of a reminder.
+        ExecuteReminder execute_reminder = 2;
+        // Deactivate an actor
+        DeactivateActor deactivate_actor = 3;
+    }
+}
+
+// ActorHostConfiguration is one of the messages that cna be sent by ConnectHostServerStream.
+// It contains certain configuration options for the actor subsystem.
+// This is normally sent in response to the first message from the actor host, but can be sent as update at any time.
+message ActorHostConfiguration {
+    // Maximum interval for the actor host to send pings to the actors service.
+    uint32 health_check_interval = 1;
+}
+
+// ExecuteReminder is one of the messages that cna be sent by ConnectHostServerStream.
+// It is sent to tell the sidecar to execute a reminder.
+// The sidecar is expected to respond right away, and then acknowledge that the reminder
+// has been completely executed with ReminderCompleted.
+message ExecuteReminder {
+    // Reference for the execution, which must be sent back in the ReminderComplete request.
+    string ref = 1; 
+    // Reminder that is to be executed
+    Reminder reminder = 2;
+}
+
+message ActorRef {
+  string actor_type = 1;
+  string actor_id = 2;
+}
+
+// ExecuteReminder is one of the messages that cna be sent by ConnectHostServerStream.
+// It is sent to tell the sidecar to deactivate an actor.
+message DeactivateActor {
+    ActorRef actor = 1;
+}
+
+message ReminderCompletedRequest {
+    // Reference for the execution, which was sent in the ExecuteReminder message.
+    string ref = 1; 
+}
+
+message ReminderCompletedResponse {
+    // Empty for now
+}
+
+message LookupActorRequest {
+    ActorRef actor = 1;
+}
+
+message LookupActorResponse {
+    // Dapr App ID of the host
+    string app_id = 1;
+    // Host address (including port)
+    string address = 2;
+    // Actor idle timeout, in seconds
+    // (Note that this is the absolute idle timeout, and not the remaining lifetime of the actor)
+    uint32 idle_timeout = 3;
+}
+
+message ReportActorDeactivationRequest {
+    ActorRef actor = 1;
+}
+
+message ReportActorDeactivationResponse {
+    // Empty for now
+}
+
+message Reminder {
+    string actor_type = 1;
+    string actor_id = 2;
+    // Name of the reminder
+    string name = 3;
+    google.protobuf.Timestamp execution_time = 4;
+    // Can be empty; will be parsed in any format supported by Dapr actors
+    string period = 5;
+    // Can be empty
+    google.protobuf.Timestamp ttl = 6;
+    // Can be empty
+    bytes data = 7;
+}
+
+message ReminderID {
+    string actor_type = 1;
+    string actor_id = 2;
+    string name = 3;
+}
+
+message CreateReminderRequest {
+    Reminder reminder = 1;
+}
+
+message CreateReminderResponse {
+    // Empty for now
+}
+
+message GetReminderRequest {
+    ReminderID reminder_id = 1;
+}
+
+message GetReminderResponse {
+    Reminder reminder = 1;
+}
+
+message DeleteReminderRequest {
+    ReminderID reminder_id = 1;
+}
+
+message DeleteReminderResponse {
+    // Empty for now
+}
