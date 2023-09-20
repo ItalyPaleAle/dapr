@@ -51,7 +51,7 @@ func (s *server) Init(ctx context.Context, opts Options) error {
 	s.opts = opts
 
 	// Create the gRPC server
-	s.srv = grpc.NewServer(opts.Security.GRPCServerOptionNoClientAuth())
+	s.srv = grpc.NewServer(opts.Security.GRPCServerOptionMTLS())
 	actorsv1pb.RegisterActorsServer(s.srv, s)
 
 	// Init the store

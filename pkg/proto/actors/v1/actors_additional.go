@@ -39,6 +39,21 @@ func (x *RegisterActorHost) ValidateFirstMessage() error {
 	return nil
 }
 
+// ValidateUpdateMessage validates a message sent to update the registration.
+func (x *RegisterActorHost) ValidateUpdateMessage() error {
+	const errPrefix = "update message validation failed: "
+	if x.GetAddress() != "" {
+		return errors.New(errPrefix + "property 'address' cannot be updated")
+	}
+	if x.GetAppId() != "" {
+		return errors.New(errPrefix + "property 'app_id' cannot be updated")
+	}
+	if x.GetApiLevel() > 0 {
+		return errors.New(errPrefix + "property 'api_level' cannot be updated")
+	}
+	return nil
+}
+
 // ToActorStoreRequest converts the message to an actorstore.AddActorHostRequest object.
 func (x *RegisterActorHost) ToActorStoreRequest() actorstore.AddActorHostRequest {
 	var actorTypes []actorstore.ActorHostType = nil
