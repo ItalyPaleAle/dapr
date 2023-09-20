@@ -21,6 +21,25 @@ import (
 
 // This file contains additional, hand-written methods added to the generated objects.
 
+// Validate if the object contains the required fields
+func (x *ActorRef) Validate() error {
+	if x.GetActorType() == "" {
+		return errors.New("required property 'actor_type' is not set")
+	}
+	if x.GetActorId() == "" {
+		return errors.New("required property 'actor_id' is not set")
+	}
+	return nil
+}
+
+// ToInternalActorRef converts the message to an actorstore.ActorRef object.
+func (x *ActorRef) ToInternalActorRef() actorstore.ActorRef {
+	return actorstore.ActorRef{
+		ActorType: x.GetActorType(),
+		ActorID:   x.GetActorId(),
+	}
+}
+
 // ValidateFirstMessage validates if the message contains all fields that are required in the first message.
 func (x *RegisterActorHost) ValidateFirstMessage() error {
 	const errPrefix = "first message validation failed: "

@@ -119,7 +119,7 @@ message ExecuteReminder {
     Reminder reminder = 2;
 }
 
-message Actor {
+message ActorRef {
   string actor_type = 1;
   string actor_id = 2;
 }
@@ -127,7 +127,7 @@ message Actor {
 // ExecuteReminder is one of the messages that cna be sent by ConnectHostServerStream.
 // It is sent to tell the sidecar to deactivate an actor.
 message DeactivateActor {
-    Actor actor = 1;
+    ActorRef actor = 1;
 }
 
 message ReminderCompletedRequest {
@@ -140,7 +140,7 @@ message ReminderCompletedResponse {
 }
 
 message LookupActorRequest {
-    Actor actor = 1;
+    ActorRef actor = 1;
 }
 
 message LookupActorResponse {
@@ -154,7 +154,7 @@ message LookupActorResponse {
 }
 
 message ReportActorDeactivationRequest {
-    Actor actor = 1;
+    ActorRef actor = 1;
 }
 
 message ReportActorDeactivationResponse {

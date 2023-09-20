@@ -149,6 +149,7 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 			}
 
 			// Send a "pong"
+			// This allows us to test if the channel is up more reliably, as we'd get a failure in case of channel failures
 			err = stream.Send(emptyResponse)
 			if err != nil {
 				log.Errorf("Failed to send ping response to actor host: %v", err)
@@ -236,6 +237,21 @@ func (s *server) LookupActor(context.Context, *actorsv1pb.LookupActorRequest) (*
 }
 
 // ReportActorDeactivation is sent to report an actor that has been deactivated.
-func (s *server) ReportActorDeactivation(context.Context, *actorsv1pb.ReportActorDeactivationRequest) (*actorsv1pb.ReportActorDeactivationResponse, error) {
-	panic("unimplemented")
+func (s *server) ReportActorDeactivation(ctx context.Context, req *actorsv1pb.ReportActorDeactivationRequest) (*actorsv1pb.ReportActorDeactivationResponse, error) {
+	err := req.GetActor().Validate()
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "Invalid actor reference: %v", err)
+	}
+
+	err = s.store.RemoveActor(ctx, req.Actor.ToInternalActorRef())
+	if err != nil {
+		if errors.Is(err, actorstore.ErrActorNotFound) {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+
+		log.Errorf("Failed to remove actor from database: %v", err)
+		return nil, fmt.Errorf("failed to remove actor from database: %w", err)
+	}
+
+	return &actorsv1pb.ReportActorDeactivationResponse{}, nil
 }
