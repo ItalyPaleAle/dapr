@@ -49,6 +49,7 @@ func Start(ctx context.Context, opts Options) error {
 
 func (s *server) Init(ctx context.Context, opts Options) error {
 	s.opts = opts
+	log.Infof("Actors subsystem configuration: %v", s.opts.GetActorsConfiguration())
 
 	// Create the gRPC server
 	s.srv = grpc.NewServer(opts.Security.GRPCServerOptionMTLS())

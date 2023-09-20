@@ -33,6 +33,10 @@ const (
 	DefaultHealthzPort = 8080
 	// DefaultHostHealthCheckInterval is the default interval for performing health-checks on actor hosts.
 	DefaultHostHealthCheckInterval = 10 * time.Second
+	// DefaultHostHealthCheckTimeout is the default timeout for performing health-checks on actor hosts.
+	DefaultHostHealthCheckTimeout = 2 * time.Second
+	// DefaultHostHealthCheckThreshold is the default number of failed health-checks after which an actor host is considered unhealthy.
+	DefaultHostHealthCheckThreshold = 2
 )
 
 type Options struct {
@@ -47,7 +51,9 @@ type Options struct {
 	TrustAnchorsFile string
 	SentryAddress    string
 
-	HostHealthCheckInterval time.Duration
+	HostHealthCheckInterval  time.Duration
+	HostHealthCheckTimeout   time.Duration
+	HostHealthCheckThreshold int
 
 	Logger  logger.Options
 	Metrics *metrics.Options
@@ -65,6 +71,8 @@ func New() *Options {
 	fs.StringArrayVar(&opts.StoreOpts, "store-opt", nil, "Option for the store driver, in the format 'key=value'; can be repeated")
 
 	fs.DurationVar(&opts.HostHealthCheckInterval, "host-healthcheck-interval", DefaultHostHealthCheckInterval, "Interval for performing health checks on actor hosts, as a duration")
+	fs.DurationVar(&opts.HostHealthCheckTimeout, "host-healthcheck-timeout", DefaultHostHealthCheckTimeout, "Timeout for actor host health checks, as a duration")
+	fs.IntVar(&opts.HostHealthCheckThreshold, "host-healthcheck-threshold", DefaultHostHealthCheckThreshold, "Number of consecutive failures for an actor host to be considered unhealthy")
 
 	fs.BoolVar(&opts.MTLSEnabled, "enable-mtls", false, "Enable mTLS")
 	fs.StringVar(&opts.TrustDomain, "trust-domain", "localhost", "Trust domain for the Dapr control plane (for mTLS)")
@@ -86,6 +94,14 @@ func New() *Options {
 	}
 	if opts.HostHealthCheckInterval < time.Second {
 		fmt.Println("Flag '--host-healthcheck-interval' must be at least '1s'")
+		os.Exit(2)
+	}
+	if opts.HostHealthCheckTimeout < 50*time.Millisecond {
+		fmt.Println("Flag '--host-healthcheck-timeout' must be at least '50ms'")
+		os.Exit(2)
+	}
+	if time.Duration(opts.HostHealthCheckThreshold) < 1 {
+		fmt.Println("Flag '--host-healthcheck-threshold' must be at least '1'")
 		os.Exit(2)
 	}
 

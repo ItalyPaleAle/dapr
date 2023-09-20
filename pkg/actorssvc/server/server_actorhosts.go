@@ -52,7 +52,6 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 	errCh := make(chan error)
 	go func() {
 		defer func() {
-			fmt.Println("Goroutine exiting")
 			close(pingCh)
 			close(msgRegisterActorHostCh)
 			close(errCh)
@@ -93,6 +92,7 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 
 	defer func() {
 		// Use a background context here because the client may have already disconnected
+		log.Debugf("Uregistering actor host '%s'", actorHostID)
 		err = s.store.RemoveActorHost(context.Background(), actorHostID)
 		if err != nil {
 			log.Errorf("Failed to un-register actor host: %v", err)
@@ -101,7 +101,7 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 
 	select {
 	case <-stream.Context().Done():
-		log.Debugf("Actor host '%s' has disconnected - unregistering", actorHostID)
+		log.Debugf("Actor host '%s' has disconnected", actorHostID)
 		break
 	case err := <-errCh:
 		fmt.Println("ERR HERE", err)

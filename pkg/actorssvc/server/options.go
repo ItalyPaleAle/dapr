@@ -29,7 +29,9 @@ type Options struct {
 	StoreName string
 	StoreOpts []string
 
-	HostHealthCheckInterval time.Duration
+	HostHealthCheckInterval  time.Duration
+	HostHealthCheckTimeout   time.Duration
+	HostHealthCheckThreshold int
 
 	Security security.Handler
 }
@@ -52,8 +54,14 @@ func (o Options) GetActorStoreMetadata() actorstore.Metadata {
 		Base: metadata.Base{
 			Properties: o.GetActorStoreOptions(),
 		},
-		Configuration: actorstore.ActorsConfiguration{
-			HostHealthCheckInterval: o.HostHealthCheckInterval,
-		},
+		Configuration: o.GetActorsConfiguration(),
+	}
+}
+
+func (o Options) GetActorsConfiguration() actorstore.ActorsConfiguration {
+	return actorstore.ActorsConfiguration{
+		HostHealthCheckInterval:  o.HostHealthCheckInterval,
+		HostHealthCheckTimeout:   o.HostHealthCheckTimeout,
+		HostHealthCheckThreshold: o.HostHealthCheckThreshold,
 	}
 }
