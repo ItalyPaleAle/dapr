@@ -22,7 +22,7 @@ option go_package = "github.com/dapr/dapr/pkg/proto/actors/v1;actors";
 service Actors {
     // ConnectHost is used by the Dapr sidecar to register itself as an actor host.
     // It remains active as a long-lived bi-di stream to allow for the Actors service
-    // to communicate with the sidecar.
+    // to communicate with the sidecar, including for health-checks.
     rpc ConnectHost(stream ConnectHostClientStream) returns (stream ConnectHostServerStream) {}
 
     // ReminderCompleted is used by the sidecar to acknowledge that a reminder has been executed successfully.
@@ -50,7 +50,7 @@ service Actors {
 // The first message in the stream must contain the required fields; subsequent messages could be empty, but including fields is allowed to provide updates.
 message ConnectHostClientStream {
     // Message to include.
-    // This is optional, and no message indicates a simple pong (response to a ping).
+    // This is optional, and no message indicates a simple ping (for health checks).
     // However, the first message sent must include a RegisterActorHost.
     oneof message {
         // The first message sent in ConnectHost by the sidecar must contain RegisterActorHost.
@@ -85,17 +85,27 @@ message ActorHostType {
 }
 
 // ConnectHostServerStream is sent by the Actors service to the Dapr sidecar.
-// The message could be empty, in which case it acts as a "ping" message and
-// the Dapr sidecar is always expected to send a response (even with no data).
+// The message could be empty, in which case it acts as a response to a "ping" message.
 message ConnectHostServerStream {
     // Message to include.
     // This is optional, and no message indicates a simple ping.
     oneof message {
+        // Send certain configuration options for the actor subsystem to the actor host.
+        // This is normally sent in response to the first message from the actor host, but can be sent as update at any time.
+        ActorHostConfiguration actor_host_configuration = 1;
         // Start the execution of a reminder.
-        ExecuteReminder execute_reminder = 1;
+        ExecuteReminder execute_reminder = 2;
         // Deactivate an actor
-        DeactivateActor deactivate_actor = 2;
+        DeactivateActor deactivate_actor = 3;
     }
+}
+
+// ActorHostConfiguration is one of the messages that cna be sent by ConnectHostServerStream.
+// It contains certain configuration options for the actor subsystem.
+// This is normally sent in response to the first message from the actor host, but can be sent as update at any time.
+message ActorHostConfiguration {
+    // Maximum interval for the actor host to send pings to the actors service.
+    uint32 health_check_interval = 1;
 }
 
 // ExecuteReminder is one of the messages that cna be sent by ConnectHostServerStream.

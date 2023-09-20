@@ -20,6 +20,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/dapr/components-contrib/actorstore"
 	actorsv1pb "github.com/dapr/dapr/pkg/proto/actors/v1"
 )
 
@@ -46,14 +47,19 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 	}
 	log.Debugf("Registered actor host: id='%s' appID='%s' address='%s'", actorHostID, msg.AppId, msg.Address)
 
+	// Send the relevant configuration to the actor host
+	err = stream.Send(s.opts.GetActorHostConfigurationMessage())
+	if err != nil {
+		log.Errorf("Failed to send configuration to actor host: %v", err)
+		return fmt.Errorf("failed to send configuration to actor host: %w", err)
+	}
+
 	// Read messages in background
-	pingCh := make(chan struct{})
-	msgRegisterActorHostCh := make(chan *actorsv1pb.RegisterActorHost)
+	msgCh := make(chan interface{ ProtoMessage() })
 	errCh := make(chan error)
 	go func() {
 		defer func() {
-			close(pingCh)
-			close(msgRegisterActorHostCh)
+			close(msgCh)
 			close(errCh)
 		}()
 		for {
@@ -80,12 +86,12 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 					return
 				}
 				log.Debugf("Received registration update from actor host id='%s'", actorHostID)
-				msgRegisterActorHostCh <- msg.RegisterActorHost
+				msgCh <- msg.RegisterActorHost
 			default:
 				// Assume all other messages are a ping
 				// TODO: Remove this debug log
 				log.Debugf("Received ping from actor host id='%s'", actorHostID)
-				pingCh <- struct{}{}
+				msgCh <- nil
 			}
 		}
 	}()
@@ -99,20 +105,52 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 		}
 	}()
 
-	select {
-	case <-stream.Context().Done():
-		log.Debugf("Actor host '%s' has disconnected", actorHostID)
-		break
-	case err := <-errCh:
-		fmt.Println("ERR HERE", err)
-		// io.EOF or context canceled signifies the client has disconnected
-		if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
-			return nil
-		}
-		return err
-	}
+	// Repeat while the stream is connected
+	emptyResponse := &actorsv1pb.ConnectHostServerStream{}
+	for {
+		select {
+		case msgAny := <-msgCh:
+			// Any message counts as a ping (at the very least), so update the actor host table
+			var req actorstore.UpdateActorHostRequest
+			switch msg := msgAny.(type) {
+			case *actorsv1pb.RegisterActorHost:
+				// We received a request to update the actor host's registration
+				// This also counts as a ping
+				req = msg.ToUpdateActorHostRequest()
+				req.UpdateLastHealthCheck = true
+			default:
+				// We received a ping
+				req.UpdateLastHealthCheck = true
+			}
+			err = s.store.UpdateActorHost(stream.Context(), actorHostID, req)
+			if err != nil {
+				log.Errorf("Failed to update actor host after ping: %v", err)
+				return fmt.Errorf("failed to update actor host after ping: %w", err)
+			}
 
-	return nil
+			// Send a "pong"
+			err = stream.Send(emptyResponse)
+			if err != nil {
+				log.Errorf("Failed to send ping response to actor host: %v", err)
+				return fmt.Errorf("failed to send ping response to actor host: %w", err)
+			}
+
+		case <-stream.Context().Done():
+			// Normally, context cancelation indicates that the server is shutting down
+			// We consider this equivalent to the client disconnecting
+			log.Debugf("Actor host '%s' has disconnected", actorHostID)
+			return nil
+
+		case err := <-errCh:
+			// io.EOF or context canceled signifies the client has disconnected
+			if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
+				log.Debugf("Actor host '%s' has disconnected", actorHostID)
+				return nil
+			}
+			log.Warnf("Error in ConnectHost stream from actor host '%s': %v", actorHostID, err)
+			return err
+		}
+	}
 }
 
 // Receives the first message sent on connectHost, with a timeout.

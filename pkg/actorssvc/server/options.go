@@ -20,6 +20,7 @@ import (
 	"github.com/dapr/components-contrib/actorstore"
 	"github.com/dapr/components-contrib/metadata"
 	loader "github.com/dapr/dapr/pkg/actorssvc/store"
+	actorsv1pb "github.com/dapr/dapr/pkg/proto/actors/v1"
 	"github.com/dapr/dapr/pkg/security"
 )
 
@@ -29,9 +30,7 @@ type Options struct {
 	StoreName string
 	StoreOpts []string
 
-	HostHealthCheckInterval  time.Duration
-	HostHealthCheckTimeout   time.Duration
-	HostHealthCheckThreshold int
+	HostHealthCheckInterval time.Duration
 
 	Security security.Handler
 }
@@ -60,8 +59,16 @@ func (o Options) GetActorStoreMetadata() actorstore.Metadata {
 
 func (o Options) GetActorsConfiguration() actorstore.ActorsConfiguration {
 	return actorstore.ActorsConfiguration{
-		HostHealthCheckInterval:  o.HostHealthCheckInterval,
-		HostHealthCheckTimeout:   o.HostHealthCheckTimeout,
-		HostHealthCheckThreshold: o.HostHealthCheckThreshold,
+		HostHealthCheckInterval: o.HostHealthCheckInterval,
+	}
+}
+
+func (o Options) GetActorHostConfigurationMessage() *actorsv1pb.ConnectHostServerStream {
+	return &actorsv1pb.ConnectHostServerStream{
+		Message: &actorsv1pb.ConnectHostServerStream_ActorHostConfiguration{
+			ActorHostConfiguration: &actorsv1pb.ActorHostConfiguration{
+				HealthCheckInterval: uint32(o.HostHealthCheckInterval.Seconds()),
+			},
+		},
 	}
 }

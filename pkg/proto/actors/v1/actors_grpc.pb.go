@@ -24,7 +24,7 @@ const _ = grpc.SupportPackageIsVersion7
 type ActorsClient interface {
 	// ConnectHost is used by the Dapr sidecar to register itself as an actor host.
 	// It remains active as a long-lived bi-di stream to allow for the Actors service
-	// to communicate with the sidecar.
+	// to communicate with the sidecar, including for health-checks.
 	ConnectHost(ctx context.Context, opts ...grpc.CallOption) (Actors_ConnectHostClient, error)
 	// ReminderCompleted is used by the sidecar to acknowledge that a reminder has been executed successfully.
 	ReminderCompleted(ctx context.Context, in *ReminderCompletedRequest, opts ...grpc.CallOption) (*ReminderCompletedResponse, error)
@@ -141,7 +141,7 @@ func (c *actorsClient) DeleteReminder(ctx context.Context, in *DeleteReminderReq
 type ActorsServer interface {
 	// ConnectHost is used by the Dapr sidecar to register itself as an actor host.
 	// It remains active as a long-lived bi-di stream to allow for the Actors service
-	// to communicate with the sidecar.
+	// to communicate with the sidecar, including for health-checks.
 	ConnectHost(Actors_ConnectHostServer) error
 	// ReminderCompleted is used by the sidecar to acknowledge that a reminder has been executed successfully.
 	ReminderCompleted(context.Context, *ReminderCompletedRequest) (*ReminderCompletedResponse, error)

@@ -15,6 +15,7 @@ package options
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"time"
 
@@ -31,12 +32,8 @@ const (
 	DefaultPort = 51101
 	// DefaultHealthzPort is the default port for the healthz server to listen on.
 	DefaultHealthzPort = 8080
-	// DefaultHostHealthCheckInterval is the default interval for performing health-checks on actor hosts.
-	DefaultHostHealthCheckInterval = 10 * time.Second
-	// DefaultHostHealthCheckTimeout is the default timeout for performing health-checks on actor hosts.
-	DefaultHostHealthCheckTimeout = 2 * time.Second
-	// DefaultHostHealthCheckThreshold is the default number of failed health-checks after which an actor host is considered unhealthy.
-	DefaultHostHealthCheckThreshold = 2
+	// DefaultHostHealthCheckInterval is the default interval between pings received from an actor host.
+	DefaultHostHealthCheckInterval = 30 * time.Second
 )
 
 type Options struct {
@@ -51,9 +48,7 @@ type Options struct {
 	TrustAnchorsFile string
 	SentryAddress    string
 
-	HostHealthCheckInterval  time.Duration
-	HostHealthCheckTimeout   time.Duration
-	HostHealthCheckThreshold int
+	HostHealthCheckInterval time.Duration
 
 	Logger  logger.Options
 	Metrics *metrics.Options
@@ -70,9 +65,7 @@ func New() *Options {
 	fs.StringVar(&opts.StoreName, "store", "", "Name of the store driver")
 	fs.StringArrayVar(&opts.StoreOpts, "store-opt", nil, "Option for the store driver, in the format 'key=value'; can be repeated")
 
-	fs.DurationVar(&opts.HostHealthCheckInterval, "host-healthcheck-interval", DefaultHostHealthCheckInterval, "Interval for performing health checks on actor hosts, as a duration")
-	fs.DurationVar(&opts.HostHealthCheckTimeout, "host-healthcheck-timeout", DefaultHostHealthCheckTimeout, "Timeout for actor host health checks, as a duration")
-	fs.IntVar(&opts.HostHealthCheckThreshold, "host-healthcheck-threshold", DefaultHostHealthCheckThreshold, "Number of consecutive failures for an actor host to be considered unhealthy")
+	fs.DurationVar(&opts.HostHealthCheckInterval, "host-healthcheck-interval", DefaultHostHealthCheckInterval, "Interval for expecting health checks from actor hosts")
 
 	fs.BoolVar(&opts.MTLSEnabled, "enable-mtls", false, "Enable mTLS")
 	fs.StringVar(&opts.TrustDomain, "trust-domain", "localhost", "Trust domain for the Dapr control plane (for mTLS)")
@@ -88,22 +81,28 @@ func New() *Options {
 	fs.SortFlags = false
 	fs.Parse(os.Args[1:])
 
-	if opts.StoreName == "" {
-		fmt.Println("Required flag '--store' is missing")
-		os.Exit(2)
-	}
-	if opts.HostHealthCheckInterval < time.Second {
-		fmt.Println("Flag '--host-healthcheck-interval' must be at least '1s'")
-		os.Exit(2)
-	}
-	if opts.HostHealthCheckTimeout < 50*time.Millisecond {
-		fmt.Println("Flag '--host-healthcheck-timeout' must be at least '50ms'")
-		os.Exit(2)
-	}
-	if time.Duration(opts.HostHealthCheckThreshold) < 1 {
-		fmt.Println("Flag '--host-healthcheck-threshold' must be at least '1'")
+	validationErr := opts.Validate()
+	if validationErr != "" {
+		fmt.Println(validationErr)
 		os.Exit(2)
 	}
 
 	return &opts
+}
+
+func (o Options) Validate() string {
+	if o.StoreName == "" {
+		return "Required flag '--store' is missing"
+	}
+	if o.HostHealthCheckInterval < time.Second {
+		return "Flag '--host-healthcheck-interval' must be at least '1s'"
+	}
+	if o.HostHealthCheckInterval != o.HostHealthCheckInterval.Truncate(time.Second) {
+		return "Flag '--host-healthcheck-interval' must not have fractions of seconds"
+	}
+	if o.HostHealthCheckInterval.Seconds() > math.MaxUint32 {
+		// HealthCheckInterval can be cast into an uint32 (in seconds), so we need to make sure we don't overflow
+		return "Flag '--host-healthcheck-interval' is too big"
+	}
+	return ""
 }

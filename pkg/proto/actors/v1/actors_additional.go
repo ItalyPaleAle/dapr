@@ -54,7 +54,7 @@ func (x *RegisterActorHost) ValidateUpdateMessage() error {
 	return nil
 }
 
-// ToActorStoreRequest converts the message to an actorstore.AddActorHostRequest object.
+// ToActorStoreRequest converts the message to an actorstore.AddActorHostRequest object for registering a new actor host.
 func (x *RegisterActorHost) ToActorStoreRequest() actorstore.AddActorHostRequest {
 	var actorTypes []actorstore.ActorHostType = nil
 	if x.ActorTypes != nil {
@@ -74,6 +74,27 @@ func (x *RegisterActorHost) ToActorStoreRequest() actorstore.AddActorHostRequest
 		AppID:      x.AppId,
 		Address:    x.Address,
 		ApiLevel:   x.ApiLevel,
+		ActorTypes: actorTypes,
+	}
+}
+
+// ToActorStoreUpdateRequest converts the message to an actorstore.UpdateActorHostRequest object for updating an actor host.
+func (x *RegisterActorHost) ToUpdateActorHostRequest() actorstore.UpdateActorHostRequest {
+	var actorTypes []actorstore.ActorHostType = nil
+	if x.ActorTypes != nil {
+		var n int
+		actorTypes = make([]actorstore.ActorHostType, len(x.ActorTypes))
+		for _, at := range x.ActorTypes {
+			if at == nil {
+				continue
+			}
+			actorTypes[n] = at.ToActorStoreRequest()
+			n++
+		}
+		actorTypes = actorTypes[:n]
+	}
+
+	return actorstore.UpdateActorHostRequest{
 		ActorTypes: actorTypes,
 	}
 }

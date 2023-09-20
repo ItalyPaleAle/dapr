@@ -84,13 +84,11 @@ func main() {
 				return serr
 			}
 			return server.Start(ctx, server.Options{
-				Port:                     opts.Port,
-				StoreName:                opts.StoreName,
-				StoreOpts:                opts.StoreOpts,
-				HostHealthCheckInterval:  opts.HostHealthCheckInterval,
-				HostHealthCheckTimeout:   opts.HostHealthCheckTimeout,
-				HostHealthCheckThreshold: opts.HostHealthCheckThreshold,
-				Security:                 sec,
+				Port:                    opts.Port,
+				StoreName:               opts.StoreName,
+				StoreOpts:               opts.StoreOpts,
+				HostHealthCheckInterval: opts.HostHealthCheckInterval,
+				Security:                sec,
 			})
 		},
 		// Healthz server
