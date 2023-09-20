@@ -29,9 +29,10 @@ var log = logger.NewLogger("dapr.actorssvc.server")
 
 // server is the gRPC server for the Actors service.
 type server struct {
-	opts  Options
-	store actorstore.Store
-	srv   *grpc.Server
+	opts       Options
+	store      actorstore.Store
+	srv        *grpc.Server
+	shutdownCh chan struct{}
 }
 
 // Start starts the server. Blocks until the context is cancelled.
@@ -49,6 +50,7 @@ func Start(ctx context.Context, opts Options) error {
 
 func (s *server) Init(ctx context.Context, opts Options) error {
 	s.opts = opts
+	s.shutdownCh = make(chan struct{})
 	log.Infof("Actors subsystem configuration: %v", s.opts.GetActorsConfiguration())
 
 	// Create the gRPC server
@@ -103,6 +105,13 @@ func (s *server) Run(ctx context.Context) error {
 
 	<-ctx.Done()
 	log.Info("Shutting down gRPC server")
-	s.srv.GracefulStop()
+
+	gracefulShutdownCh := make(chan struct{})
+	go func() {
+		s.srv.GracefulStop()
+		close(gracefulShutdownCh)
+	}()
+	close(s.shutdownCh)
+	<-gracefulShutdownCh
 	return <-errCh
 }

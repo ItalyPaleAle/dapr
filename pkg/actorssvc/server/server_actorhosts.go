@@ -178,6 +178,13 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 			log.Debugf("Actor host '%s' has disconnected", actorHostID)
 			return nil
 
+		case <-s.shutdownCh:
+			// When we get a message on shutdownCh, it also indicates that the server is shutting down
+			// We treat this like the case above
+			unregisterOnClose = false
+			log.Debugf("Disconnecting from actor host '%s' because server is shutting down", actorHostID)
+			return nil
+
 		case err := <-errCh:
 			// io.EOF or context canceled signifies the client has disconnected
 			if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
