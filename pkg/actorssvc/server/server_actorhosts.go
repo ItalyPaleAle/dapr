@@ -20,6 +20,9 @@ import (
 	"io"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	"github.com/dapr/components-contrib/actorstore"
 	actorsv1pb "github.com/dapr/dapr/pkg/proto/actors/v1"
 )
@@ -54,6 +57,18 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 		return fmt.Errorf("failed to send configuration to actor host: %w", err)
 	}
 
+	// Timeout for healthchecks
+	healthCheckTimeout := time.NewTimer(s.opts.HostHealthCheckInterval)
+	stopHealthCheckTimeout := func() {
+		if !healthCheckTimeout.Stop() {
+			select {
+			case <-healthCheckTimeout.C:
+			default:
+			}
+		}
+	}
+	defer stopHealthCheckTimeout()
+
 	// Read messages in background
 	msgCh := make(chan interface{ ProtoMessage() })
 	errCh := make(chan error)
@@ -82,7 +97,7 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 				}
 				err = msg.RegisterActorHost.ValidateUpdateMessage()
 				if err != nil {
-					errCh <- err
+					errCh <- status.Errorf(codes.InvalidArgument, "Invalid request: %v", err)
 					return
 				}
 				log.Debugf("Received registration update from actor host id='%s'", actorHostID)
@@ -135,6 +150,15 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 				return fmt.Errorf("failed to send ping response to actor host: %w", err)
 			}
 
+			// Reset the healthcheck timer
+			stopHealthCheckTimeout()
+			healthCheckTimeout.Reset(s.opts.HostHealthCheckInterval)
+
+		case <-healthCheckTimeout.C:
+			// Host hasn't sent a ping in the required amount of time, so we must assume it's offline
+			log.Warnf("Actor host '%s' hasn't sent a ping in %v and is assumed to be in a failed state", actorHostID, s.opts.HostHealthCheckInterval)
+			return status.Errorf(codes.DeadlineExceeded, "Did not receive a ping in %v", s.opts.HostHealthCheckInterval)
+
 		case <-stream.Context().Done():
 			// Normally, context cancelation indicates that the server is shutting down
 			// We consider this equivalent to the client disconnecting
@@ -171,7 +195,7 @@ func (s *server) connectHostReceiveFirstMessage(stream actorsv1pb.Actors_Connect
 		msg := cs.GetRegisterActorHost()
 		if msg == nil {
 			// If msg is nil, it was not a RegisterActorHost message
-			errCh <- errors.New("received an unexpected first message from caller: expecting a RegisterActorHost")
+			errCh <- status.Error(codes.InvalidArgument, "Received an unexpected first message from caller: expecting a RegisterActorHost")
 			return
 		}
 		msgCh <- msg
@@ -184,7 +208,7 @@ func (s *server) connectHostReceiveFirstMessage(stream actorsv1pb.Actors_Connect
 		// Ensure required fields are present
 		err := msg.ValidateFirstMessage()
 		if err != nil {
-			return nil, err
+			return nil, status.Errorf(codes.InvalidArgument, "Invalid request: %v", err)
 		}
 		return msg, nil
 	case <-ctx.Done():
@@ -192,7 +216,7 @@ func (s *server) connectHostReceiveFirstMessage(stream actorsv1pb.Actors_Connect
 		if errors.Is(ctx.Err(), context.Canceled) {
 			return nil, io.EOF
 		}
-		return nil, errors.New("timed out while waiting for the first message")
+		return nil, status.Error(codes.DeadlineExceeded, "Timed out while waiting for the first message")
 	case err := <-errCh:
 		return nil, fmt.Errorf("error while receiving first message: %w", err)
 	}
