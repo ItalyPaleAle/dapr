@@ -57,6 +57,7 @@ type Options struct {
 	DaprPublicPort               string
 	AppPort                      string
 	DaprGracefulShutdownSeconds  int
+	ActorsServiceAddress         string
 	PlacementServiceHostAddr     string
 	DaprAPIListenAddresses       string
 	AppHealthProbeInterval       int
@@ -96,6 +97,7 @@ func New(args []string) *Options {
 	flag.StringVar(&opts.SentryAddress, "sentry-address", "", "Address for the Sentry CA service")
 	flag.StringVar(&opts.ControlPlaneTrustDomain, "control-plane-trust-domain", "localhost", "Trust domain of the Dapr control plane")
 	flag.StringVar(&opts.ControlPlaneNamespace, "control-plane-namespace", "default", "Namespace of the Dapr control plane")
+	flag.StringVar(&opts.ActorsServiceAddress, "actors-service-address", "", "Address of Dapr Actors service")
 	flag.StringVar(&opts.PlacementServiceHostAddr, "placement-host-address", "", "Addresses for Dapr Actor Placement servers")
 	flag.StringVar(&opts.AllowedOrigins, "allowed-origins", cors.DefaultAllowedOrigins, "Allowed HTTP origins")
 	flag.BoolVar(&opts.EnableProfiling, "enable-profiling", false, "Enable profiling")

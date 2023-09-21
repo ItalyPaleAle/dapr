@@ -140,5 +140,13 @@ func (x *ActorHostConfiguration) Validate() error {
 
 // GetPingInterval returns the interval, as a time.Duration, to send pings according to the configuration.
 func (x *ActorHostConfiguration) GetPingInterval() time.Duration {
-	return time.Duration(x.GetHealthCheckInterval()) * time.Second
+	d := time.Duration(x.GetHealthCheckInterval()) * time.Second
+
+	// We perform pings every d/2, but at most 5s before the expiration
+	switch {
+	case d > 10*time.Second:
+		return d - 5*time.Second
+	default:
+		return d / 2
+	}
 }

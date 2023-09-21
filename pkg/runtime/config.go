@@ -90,6 +90,7 @@ type Config struct {
 	ApplicationPort              string
 	DaprGracefulShutdownSeconds  int
 	PlacementServiceHostAddr     string
+	ActorsServiceAddress         string
 	DaprAPIListenAddresses       string
 	AppHealthProbeInterval       int
 	AppHealthProbeTimeout        int
@@ -119,6 +120,7 @@ type internalConfig struct {
 	appConnectionConfig          config.AppConnectionConfig
 	mode                         modes.DaprMode
 	placementAddresses           []string
+	actorsServiceAddress         string
 	allowedOrigins               string
 	standalone                   configmodes.StandaloneConfig
 	kubernetes                   configmodes.KubernetesConfig
@@ -267,6 +269,7 @@ func (c *Config) toInternal() (*internalConfig, error) {
 		standalone: configmodes.StandaloneConfig{
 			ResourcesPath: c.ResourcesPath,
 		},
+		actorsServiceAddress:         c.ActorsServiceAddress,
 		enableProfiling:              c.EnableProfiling,
 		mTLSEnabled:                  c.EnableMTLS,
 		disableBuiltinK8sSecretStore: c.DisableBuiltinK8sSecretStore,
@@ -440,10 +443,9 @@ func (c *Config) toInternal() (*internalConfig, error) {
 }
 
 func parsePlacementAddr(val string) []string {
-	parsed := []string{}
 	p := strings.Split(val, ",")
-	for _, addr := range p {
-		parsed = append(parsed, strings.TrimSpace(addr))
+	for i, v := range p {
+		p[i] = strings.TrimSpace(v)
 	}
-	return parsed
+	return p
 }

@@ -1140,16 +1140,17 @@ func (a *DaprRuntime) initActors(ctx context.Context) error {
 		log.Info("actors: state store is not configured - this is okay for clients but services with hosted actors will fail to initialize!")
 	}
 	actorConfig := actors.NewConfig(actors.ConfigOpts{
-		HostAddress:        a.hostAddress,
-		AppID:              a.runtimeConfig.id,
-		PlacementAddresses: a.runtimeConfig.placementAddresses,
-		Port:               a.runtimeConfig.internalGRPCPort,
-		Namespace:          a.namespace,
-		AppConfig:          a.appConfig,
-		HealthHTTPClient:   a.channels.AppHTTPClient(),
-		HealthEndpoint:     a.channels.AppHTTPEndpoint(),
-		AppChannelAddress:  a.runtimeConfig.appConnectionConfig.ChannelAddress,
-		PodName:            getPodName(),
+		HostAddress:          a.hostAddress,
+		AppID:                a.runtimeConfig.id,
+		PlacementAddresses:   a.runtimeConfig.placementAddresses,
+		ActorsServiceAddress: a.runtimeConfig.actorsServiceAddress,
+		Port:                 a.runtimeConfig.internalGRPCPort,
+		Namespace:            a.namespace,
+		AppConfig:            a.appConfig,
+		HealthHTTPClient:     a.channels.AppHTTPClient(),
+		HealthEndpoint:       a.channels.AppHTTPEndpoint(),
+		AppChannelAddress:    a.runtimeConfig.appConnectionConfig.ChannelAddress,
+		PodName:              getPodName(),
 	})
 
 	act := actors.NewActors(actors.ActorsOpts{

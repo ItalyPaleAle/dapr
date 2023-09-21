@@ -34,8 +34,10 @@ import (
 	"k8s.io/utils/clock"
 
 	"github.com/dapr/components-contrib/state"
+	"github.com/dapr/dapr/pkg/actors/client"
 	"github.com/dapr/dapr/pkg/actors/internal"
 	"github.com/dapr/dapr/pkg/actors/placement"
+	placementv2 "github.com/dapr/dapr/pkg/actors/placement/v2"
 	"github.com/dapr/dapr/pkg/actors/reminders"
 	"github.com/dapr/dapr/pkg/actors/timers"
 	"github.com/dapr/dapr/pkg/channel"
@@ -45,6 +47,7 @@ import (
 	"github.com/dapr/dapr/pkg/health"
 	invokev1 "github.com/dapr/dapr/pkg/messaging/v1"
 	"github.com/dapr/dapr/pkg/modes"
+	actorsv1pb "github.com/dapr/dapr/pkg/proto/actors/v1"
 	commonv1pb "github.com/dapr/dapr/pkg/proto/common/v1"
 	internalv1pb "github.com/dapr/dapr/pkg/proto/internals/v1"
 	runtimev1pb "github.com/dapr/dapr/pkg/proto/runtime/v1"
@@ -110,6 +113,8 @@ type GRPCConnectionFn func(ctx context.Context, address string, id string, names
 
 type actorsRuntime struct {
 	appChannel           channel.AppChannel
+	actorsServiceClient  actorsv1pb.ActorsClient
+	actorsServiceConn    *grpc.ClientConn
 	placement            internal.PlacementService
 	grpcConnectionFn     GRPCConnectionFn
 	actorsConfig         Config
@@ -221,18 +226,26 @@ func (a *actorsRuntime) haveCompatibleStorage() bool {
 	return state.FeatureETag.IsPresent(features) && state.FeatureTransactional.IsPresent(features)
 }
 
-func (a *actorsRuntime) Init(ctx context.Context) error {
+func (a *actorsRuntime) Init(ctx context.Context) (err error) {
 	if a.closed.Load() {
 		return errors.New("actors runtime has already been closed")
 	}
 
-	if len(a.actorsConfig.PlacementAddresses) == 0 {
-		return errors.New("actors: couldn't connect to placement service: address is empty")
+	if len(a.actorsConfig.PlacementAddresses) == 0 && a.actorsConfig.ActorsServiceAddress == "" {
+		return errors.New("actors: couldn't connect to actors service: address is empty")
 	}
 
 	if len(a.actorsConfig.Config.HostedActorTypes.ListActorTypes()) > 0 {
 		if !a.haveCompatibleStorage() {
 			return ErrIncompatibleStateStore
+		}
+	}
+
+	// If using actors v2, connect to the actors service
+	if a.actorsConfig.GetActorsVersion() == internal.ActorsV2 {
+		a.actorsServiceClient, a.actorsServiceConn, err = client.GetActorsClient(ctx, a.actorsConfig.ActorsServiceAddress, a.sec)
+		if err != nil {
+			return fmt.Errorf("failed to connect to the actors service: %w", err)
 		}
 	}
 
@@ -242,21 +255,38 @@ func (a *actorsRuntime) Init(ctx context.Context) error {
 	a.timers.Init(ctx)
 
 	if a.placement == nil {
-		a.placement = placement.NewActorPlacement(placement.ActorPlacementOpts{
-			ServerAddrs:     a.actorsConfig.Config.PlacementAddresses,
-			Security:        a.sec,
-			AppID:           a.actorsConfig.Config.AppID,
-			RuntimeHostname: hostname,
-			PodName:         a.actorsConfig.Config.PodName,
-			ActorTypes:      a.actorsConfig.Config.HostedActorTypes.ListActorTypes(),
-			AppHealthFn: func() bool {
-				return a.appHealthy.Load()
-			},
-			AfterTableUpdateFn: func() {
-				a.drainRebalancedActors()
-				a.actorsReminders.OnPlacementTablesUpdated(ctx)
-			},
-		})
+		switch a.actorsConfig.GetActorsVersion() {
+		case internal.ActorsV1:
+			a.placement = placement.NewActorPlacement(placement.ActorPlacementOpts{
+				ServerAddrs:     a.actorsConfig.Config.PlacementAddresses,
+				Security:        a.sec,
+				AppID:           a.actorsConfig.Config.AppID,
+				RuntimeHostname: hostname,
+				PodName:         a.actorsConfig.Config.PodName,
+				ActorTypes:      a.actorsConfig.Config.HostedActorTypes.ListActorTypes(),
+				AppHealthFn: func() bool {
+					return a.appHealthy.Load()
+				},
+				AfterTableUpdateFn: func() {
+					a.drainRebalancedActors()
+					a.actorsReminders.OnPlacementTablesUpdated(ctx)
+				},
+			})
+
+		case internal.ActorsV2:
+			a.placement = placementv2.NewActorPlacement(placementv2.ActorPlacementOpts{
+				ActorsClient: a.actorsServiceClient,
+				AppID:        a.actorsConfig.Config.AppID,
+				Address:      hostname,
+				AppHealthCh:  nil, // TODO
+			})
+			for _, actorType := range a.actorsConfig.Config.HostedActorTypes.ListActorTypes() {
+				err = a.placement.AddHostedActorType(actorType, a.actorsConfig.GetIdleTimeoutForType(actorType))
+				if err != nil {
+					return fmt.Errorf("failed to register actor %s: %w", actorType, err)
+				}
+			}
+		}
 	}
 
 	a.wg.Add(3)

@@ -23,10 +23,18 @@ import (
 	daprAppConfig "github.com/dapr/dapr/pkg/config"
 )
 
+type ActorsVersion uint8
+
+const (
+	ActorsV1 ActorsVersion = 1
+	ActorsV2 ActorsVersion = 2
+)
+
 // Config is the actor runtime configuration.
 type Config struct {
 	HostAddress                   string
 	AppID                         string
+	ActorsServiceAddress          string
 	PlacementAddresses            []string
 	HostedActorTypes              *hostedActors
 	Port                          int
@@ -43,6 +51,13 @@ type Config struct {
 	HealthEndpoint                string
 	AppChannelAddress             string
 	PodName                       string
+}
+
+func (c Config) GetActorsVersion() ActorsVersion {
+	if c.ActorsServiceAddress == "" {
+		return ActorsV1
+	}
+	return ActorsV2
 }
 
 // Remap of daprAppConfig.EntityConfig but with more useful types for actors.go.

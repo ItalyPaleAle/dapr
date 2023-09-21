@@ -27,6 +27,7 @@ const (
 	HostAddress      = "host"
 	AppID            = "testApp"
 	PlacementAddress = "placement"
+	ActorsAddress    = "actors"
 	Port             = 5000
 	Namespace        = "default"
 )
@@ -42,16 +43,18 @@ func TestConfig(t *testing.T) {
 		RemindersStoragePartitions: 0,
 	}
 	c := NewConfig(ConfigOpts{
-		HostAddress:        "localhost:5050",
-		AppID:              "app1",
-		PlacementAddresses: []string{"placement:5050"},
-		Port:               3500,
-		Namespace:          "default",
-		AppConfig:          config,
-		PodName:            TestPodName,
+		HostAddress:          "localhost:5050",
+		AppID:                "app1",
+		ActorsServiceAddress: "actors:5050",
+		PlacementAddresses:   []string{"placement:5050"},
+		Port:                 3500,
+		Namespace:            "default",
+		AppConfig:            config,
+		PodName:              TestPodName,
 	})
 	assert.Equal(t, "localhost:5050", c.HostAddress)
 	assert.Equal(t, "app1", c.AppID)
+	assert.Equal(t, "actors:5050", c.ActorsServiceAddress)
 	assert.Equal(t, []string{"placement:5050"}, c.PlacementAddresses)
 	assert.Equal(t, internal.NewHostedActors([]string{"1"}), c.HostedActorTypes)
 	assert.Equal(t, 3500, c.Port)
@@ -67,12 +70,11 @@ func TestReentrancyConfig(t *testing.T) {
 	t.Run("Test empty reentrancy values", func(t *testing.T) {
 		config := DefaultAppConfig
 		c := NewConfig(ConfigOpts{
-			HostAddress:        "localhost:5050",
-			AppID:              "app1",
-			PlacementAddresses: []string{"placement:5050"},
-			Port:               3500,
-			Namespace:          "default",
-			AppConfig:          config,
+			HostAddress: "localhost:5050",
+			AppID:       "app1",
+			Port:        3500,
+			Namespace:   "default",
+			AppConfig:   config,
 		})
 		assert.False(t, c.Reentrancy.Enabled)
 		assert.NotNil(t, c.Reentrancy.MaxStackDepth)
@@ -90,12 +92,11 @@ func TestReentrancyConfig(t *testing.T) {
 			},
 		}
 		c := NewConfig(ConfigOpts{
-			HostAddress:        "localhost:5050",
-			AppID:              "app1",
-			PlacementAddresses: []string{"placement:5050"},
-			Port:               3500,
-			Namespace:          "default",
-			AppConfig:          appConfig,
+			HostAddress: "localhost:5050",
+			AppID:       "app1",
+			Port:        3500,
+			Namespace:   "default",
+			AppConfig:   appConfig,
 		})
 		assert.False(t, c.Reentrancy.Enabled)
 		assert.NotNil(t, c.Reentrancy.MaxStackDepth)
@@ -107,12 +108,11 @@ func TestReentrancyConfig(t *testing.T) {
 		appConfig := DefaultAppConfig
 		appConfig.Reentrancy = config.ReentrancyConfig{Enabled: true}
 		c := NewConfig(ConfigOpts{
-			HostAddress:        "localhost:5050",
-			AppID:              "app1",
-			PlacementAddresses: []string{"placement:5050"},
-			Port:               3500,
-			Namespace:          "default",
-			AppConfig:          appConfig,
+			HostAddress: "localhost:5050",
+			AppID:       "app1",
+			Port:        3500,
+			Namespace:   "default",
+			AppConfig:   appConfig,
 		})
 		assert.True(t, c.Reentrancy.Enabled)
 		assert.NotNil(t, c.Reentrancy.MaxStackDepth)
@@ -124,12 +124,11 @@ func TestReentrancyConfig(t *testing.T) {
 		reentrancyLimit := 64
 		appConfig.Reentrancy = config.ReentrancyConfig{Enabled: true, MaxStackDepth: &reentrancyLimit}
 		c := NewConfig(ConfigOpts{
-			HostAddress:        "localhost:5050",
-			AppID:              "app1",
-			PlacementAddresses: []string{"placement:5050"},
-			Port:               3500,
-			Namespace:          "default",
-			AppConfig:          appConfig,
+			HostAddress: "localhost:5050",
+			AppID:       "app1",
+			Port:        3500,
+			Namespace:   "default",
+			AppConfig:   appConfig,
 		})
 		assert.True(t, c.Reentrancy.Enabled)
 		assert.NotNil(t, c.Reentrancy.MaxStackDepth)
@@ -140,16 +139,18 @@ func TestReentrancyConfig(t *testing.T) {
 func TestDefaultConfigValuesSet(t *testing.T) {
 	appConfig := config.ApplicationConfig{Entities: []string{"actor1"}}
 	config := NewConfig(ConfigOpts{
-		HostAddress:        HostAddress,
-		AppID:              AppID,
-		PlacementAddresses: []string{PlacementAddress},
-		Port:               Port,
-		Namespace:          Namespace,
-		AppConfig:          appConfig,
+		HostAddress:          HostAddress,
+		AppID:                AppID,
+		ActorsServiceAddress: ActorsAddress,
+		PlacementAddresses:   []string{PlacementAddress},
+		Port:                 Port,
+		Namespace:            Namespace,
+		AppConfig:            appConfig,
 	})
 
 	assert.Equal(t, HostAddress, config.HostAddress)
 	assert.Equal(t, AppID, config.AppID)
+	assert.Equal(t, config.ActorsServiceAddress, ActorsAddress)
 	assert.Contains(t, config.PlacementAddresses, PlacementAddress)
 	assert.Equal(t, Port, config.Port)
 	assert.Equal(t, Namespace, config.Namespace)
@@ -157,6 +158,36 @@ func TestDefaultConfigValuesSet(t *testing.T) {
 	assert.NotNil(t, config.ActorDeactivationScanInterval)
 	assert.NotNil(t, config.DrainOngoingCallTimeout)
 	assert.NotNil(t, config.DrainRebalancedActors)
+}
+
+func TestConfigGetActorsVersion(t *testing.T) {
+	t.Run("only PlacementAddresses set", func(t *testing.T) {
+		config := NewConfig(ConfigOpts{
+			HostAddress:        HostAddress,
+			AppID:              AppID,
+			PlacementAddresses: []string{PlacementAddress},
+		})
+		assert.Equal(t, internal.ActorsV1, config.GetActorsVersion())
+	})
+
+	t.Run("only ActorsServiceAddress set", func(t *testing.T) {
+		config := NewConfig(ConfigOpts{
+			HostAddress:          HostAddress,
+			AppID:                AppID,
+			ActorsServiceAddress: ActorsAddress,
+		})
+		assert.Equal(t, internal.ActorsV2, config.GetActorsVersion())
+	})
+
+	t.Run("both are set", func(t *testing.T) {
+		config := NewConfig(ConfigOpts{
+			HostAddress:          HostAddress,
+			AppID:                AppID,
+			ActorsServiceAddress: ActorsAddress,
+			PlacementAddresses:   []string{PlacementAddress},
+		})
+		assert.Equal(t, internal.ActorsV2, config.GetActorsVersion())
+	})
 }
 
 func TestPerActorTypeConfigurationValues(t *testing.T) {
@@ -187,17 +218,19 @@ func TestPerActorTypeConfigurationValues(t *testing.T) {
 		},
 	}
 	config := NewConfig(ConfigOpts{
-		HostAddress:        HostAddress,
-		AppID:              AppID,
-		PlacementAddresses: []string{PlacementAddress},
-		Port:               Port,
-		Namespace:          Namespace,
-		AppConfig:          appConfig,
+		HostAddress:          HostAddress,
+		AppID:                AppID,
+		ActorsServiceAddress: ActorsAddress,
+		PlacementAddresses:   []string{PlacementAddress},
+		Port:                 Port,
+		Namespace:            Namespace,
+		AppConfig:            appConfig,
 	})
 
 	// Check the base level items.
 	assert.Equal(t, HostAddress, config.HostAddress)
 	assert.Equal(t, AppID, config.AppID)
+	assert.Equal(t, config.ActorsServiceAddress, ActorsAddress)
 	assert.Contains(t, config.PlacementAddresses, PlacementAddress)
 	assert.Equal(t, Port, config.Port)
 	assert.Equal(t, Namespace, config.Namespace)
@@ -260,12 +293,11 @@ func TestOnlyHostedActorTypesAreIncluded(t *testing.T) {
 	}
 
 	config := NewConfig(ConfigOpts{
-		HostAddress:        HostAddress,
-		AppID:              AppID,
-		PlacementAddresses: []string{PlacementAddress},
-		Port:               Port,
-		Namespace:          Namespace,
-		AppConfig:          appConfig,
+		HostAddress: HostAddress,
+		AppID:       AppID,
+		Port:        Port,
+		Namespace:   Namespace,
+		AppConfig:   appConfig,
 	})
 
 	assert.Contains(t, config.EntityConfigs, "actor1")
