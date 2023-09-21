@@ -20,6 +20,9 @@ import "google/protobuf/timestamp.proto";
 option go_package = "github.com/dapr/dapr/pkg/proto/actors/v1;actors";
 
 service Actors {
+    // ServiceInfo returns information on the actors service, including the version.
+    rpc ServiceInfo(ServiceInfoRequest) returns (ServiceInfoResponse) {}
+
     // ConnectHost is used by the Dapr sidecar to register itself as an actor host.
     // It remains active as a long-lived bi-di stream to allow for the Actors service
     // to communicate with the sidecar, including for health-checks.
@@ -44,6 +47,16 @@ service Actors {
 
     // DeleteReminder removes an existing reminder before it fires.
     rpc DeleteReminder(DeleteReminderRequest) returns (DeleteReminderResponse) {}
+}
+
+message ServiceInfoRequest {
+    // Empty for now
+}
+
+message ServiceInfoResponse {
+    // Version of the actors service.
+    // This is indicated as an integer.
+    uint32 version = 1;
 }
 
 // ConnectHostClientStream is sent by the Dapr sidecar to the Actors service.

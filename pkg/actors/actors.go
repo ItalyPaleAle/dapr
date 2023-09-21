@@ -1063,9 +1063,14 @@ func (a *actorsRuntime) Close() error {
 
 	if a.closed.CompareAndSwap(false, true) {
 		defer close(a.closeCh)
+		errs := make([]error, 0, 2)
 		if a.placement != nil {
-			return a.placement.Close()
+			errs = append(errs, a.placement.Close())
 		}
+		if a.actorsServiceConn != nil {
+			errs = append(errs, a.actorsServiceConn.Close())
+		}
+		return errors.Join(errs...)
 	}
 
 	return nil

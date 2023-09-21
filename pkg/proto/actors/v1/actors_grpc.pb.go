@@ -22,6 +22,8 @@ const _ = grpc.SupportPackageIsVersion7
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ActorsClient interface {
+	// ServiceInfo returns information on the actors service, including the version.
+	ServiceInfo(ctx context.Context, in *ServiceInfoRequest, opts ...grpc.CallOption) (*ServiceInfoResponse, error)
 	// ConnectHost is used by the Dapr sidecar to register itself as an actor host.
 	// It remains active as a long-lived bi-di stream to allow for the Actors service
 	// to communicate with the sidecar, including for health-checks.
@@ -48,6 +50,15 @@ type actorsClient struct {
 
 func NewActorsClient(cc grpc.ClientConnInterface) ActorsClient {
 	return &actorsClient{cc}
+}
+
+func (c *actorsClient) ServiceInfo(ctx context.Context, in *ServiceInfoRequest, opts ...grpc.CallOption) (*ServiceInfoResponse, error) {
+	out := new(ServiceInfoResponse)
+	err := c.cc.Invoke(ctx, "/dapr.proto.actors.v1.Actors/ServiceInfo", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *actorsClient) ConnectHost(ctx context.Context, opts ...grpc.CallOption) (Actors_ConnectHostClient, error) {
@@ -139,6 +150,8 @@ func (c *actorsClient) DeleteReminder(ctx context.Context, in *DeleteReminderReq
 // All implementations should embed UnimplementedActorsServer
 // for forward compatibility
 type ActorsServer interface {
+	// ServiceInfo returns information on the actors service, including the version.
+	ServiceInfo(context.Context, *ServiceInfoRequest) (*ServiceInfoResponse, error)
 	// ConnectHost is used by the Dapr sidecar to register itself as an actor host.
 	// It remains active as a long-lived bi-di stream to allow for the Actors service
 	// to communicate with the sidecar, including for health-checks.
@@ -163,6 +176,9 @@ type ActorsServer interface {
 type UnimplementedActorsServer struct {
 }
 
+func (UnimplementedActorsServer) ServiceInfo(context.Context, *ServiceInfoRequest) (*ServiceInfoResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ServiceInfo not implemented")
+}
 func (UnimplementedActorsServer) ConnectHost(Actors_ConnectHostServer) error {
 	return status.Errorf(codes.Unimplemented, "method ConnectHost not implemented")
 }
@@ -194,6 +210,24 @@ type UnsafeActorsServer interface {
 
 func RegisterActorsServer(s grpc.ServiceRegistrar, srv ActorsServer) {
 	s.RegisterService(&Actors_ServiceDesc, srv)
+}
+
+func _Actors_ServiceInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ServiceInfoRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ActorsServer).ServiceInfo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/dapr.proto.actors.v1.Actors/ServiceInfo",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ActorsServer).ServiceInfo(ctx, req.(*ServiceInfoRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _Actors_ConnectHost_Handler(srv interface{}, stream grpc.ServerStream) error {
@@ -337,6 +371,10 @@ var Actors_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "dapr.proto.actors.v1.Actors",
 	HandlerType: (*ActorsServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ServiceInfo",
+			Handler:    _Actors_ServiceInfo_Handler,
+		},
 		{
 			MethodName: "ReminderCompleted",
 			Handler:    _Actors_ReminderCompleted_Handler,

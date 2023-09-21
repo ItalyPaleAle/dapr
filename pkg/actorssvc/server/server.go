@@ -115,3 +115,9 @@ func (s *server) Run(ctx context.Context) error {
 	<-gracefulShutdownCh
 	return <-errCh
 }
+
+func (s *server) ServiceInfo(ctx context.Context, req *actorsv1pb.ServiceInfoRequest) (*actorsv1pb.ServiceInfoResponse, error) {
+	return &actorsv1pb.ServiceInfoResponse{
+		Version: ActorsServiceVersion,
+	}, nil
+}
