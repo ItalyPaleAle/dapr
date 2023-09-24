@@ -22,6 +22,7 @@ import (
 
 	"github.com/dapr/components-contrib/actorstore"
 	actorsv1pb "github.com/dapr/dapr/pkg/proto/actors/v1"
+	"github.com/dapr/dapr/utils/actorscache"
 	"github.com/dapr/kit/logger"
 )
 
@@ -33,6 +34,7 @@ type server struct {
 	store      actorstore.Store
 	srv        *grpc.Server
 	shutdownCh chan struct{}
+	cache      *actorscache.Cache[*actorsv1pb.LookupActorResponse]
 }
 
 // Start starts the server. Blocks until the context is cancelled.
@@ -62,6 +64,12 @@ func (s *server) Init(ctx context.Context, opts Options) error {
 	if err != nil {
 		return fmt.Errorf("failed to init actor store: %w", err)
 	}
+
+	// Init the cache - this also starts the background cleanup
+	// This cache has a max TTL of 2s, as it's primarily meant to reduce the load on the database
+	s.cache = actorscache.NewCache[*actorsv1pb.LookupActorResponse](actorscache.CacheOptions{
+		MaxTTL: 2,
+	})
 
 	return nil
 }
@@ -113,6 +121,9 @@ func (s *server) Run(ctx context.Context) error {
 	}()
 	close(s.shutdownCh)
 	<-gracefulShutdownCh
+
+	s.cache.Stop()
+
 	return <-errCh
 }
 

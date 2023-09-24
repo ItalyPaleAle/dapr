@@ -153,7 +153,10 @@ message ReminderCompletedResponse {
 }
 
 message LookupActorRequest {
+    // Actor reference.
     ActorRef actor = 1;
+    // If true, always performs a lookup from the database, ignoring cache.
+    bool no_cache = 2;
 }
 
 message LookupActorResponse {

@@ -247,27 +247,42 @@ func (s *server) connectHostHandshake(stream actorsv1pb.Actors_ConnectHostServer
 
 // LookupActor returns the address of an actor.
 // If the actor is not active yet, it returns the address of an actor host capable of hosting it.
-func (s *server) LookupActor(ctx context.Context, req *actorsv1pb.LookupActorRequest) (*actorsv1pb.LookupActorResponse, error) {
-	err := req.GetActor().Validate()
+func (s *server) LookupActor(ctx context.Context, req *actorsv1pb.LookupActorRequest) (res *actorsv1pb.LookupActorResponse, err error) {
+	err = req.GetActor().Validate()
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid actor reference: %v", err)
 	}
 
-	lar, err := s.store.LookupActor(ctx, req.Actor.ToInternalActorRef())
-	if err != nil {
-		if errors.Is(err, actorstore.ErrNoActorHost) {
-			return nil, status.Error(codes.FailedPrecondition, err.Error())
-		}
-
-		log.Errorf("Failed to perform actor lookup: %v", err)
-		return nil, status.Errorf(codes.Internal, "failed to perform actor lookup: %v", err)
+	// Try getting the value from the cache
+	cacheKey := req.Actor.ActorType + "/" + req.Actor.ActorId
+	if !req.NoCache {
+		res, _ = s.cache.Get(cacheKey)
 	}
 
-	return &actorsv1pb.LookupActorResponse{
-		AppId:       lar.AppID,
-		Address:     lar.Address,
-		IdleTimeout: lar.IdleTimeout,
-	}, nil
+	// If there's nothing in the cache, fetch from the store
+	if res == nil {
+		lar, err := s.store.LookupActor(ctx, req.Actor.ToInternalActorRef())
+		if err != nil {
+			if errors.Is(err, actorstore.ErrNoActorHost) {
+				return nil, status.Error(codes.FailedPrecondition, err.Error())
+			}
+
+			log.Errorf("Failed to perform actor lookup: %v", err)
+			return nil, status.Errorf(codes.Internal, "failed to perform actor lookup: %v", err)
+		}
+
+		res = &actorsv1pb.LookupActorResponse{
+			AppId:       lar.AppID,
+			Address:     lar.Address,
+			IdleTimeout: lar.IdleTimeout,
+		}
+
+		// Update the cache
+		// The cache has a MaxTTL of 2s, which caps the IdleTimeout
+		s.cache.Set(cacheKey, res, int64(lar.IdleTimeout))
+	}
+
+	return res, nil
 }
 
 // ReportActorDeactivation is sent to report an actor that has been deactivated.
