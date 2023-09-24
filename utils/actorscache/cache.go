@@ -28,6 +28,7 @@ type Cache[V any] struct {
 	stopped   atomic.Bool
 	runningCh chan struct{}
 	stopCh    chan struct{}
+	maxTTL    int64
 }
 
 // CacheOptions are options for NewCache.
@@ -39,6 +40,9 @@ type CacheOptions struct {
 	// Interval to perform garbage collection.
 	// This is optional, and defaults to 150s (2.5 minutes).
 	CleanupInterval time.Duration
+
+	// Maximum TTL value, if greater than 0
+	MaxTTL int64
 
 	// Internal clock property, used for testing
 	clock kclock.WithTicker
@@ -64,6 +68,7 @@ func NewCache[V any](opts CacheOptions) *Cache[V] {
 	c := &Cache[V]{
 		m:      m,
 		clock:  opts.clock,
+		maxTTL: opts.MaxTTL,
 		stopCh: make(chan struct{}),
 	}
 	c.startBackgroundCleanup(opts.CleanupInterval)
@@ -84,6 +89,10 @@ func (c *Cache[V]) Get(key string) (v V, ok bool) {
 func (c *Cache[V]) Set(key string, val V, ttl int64) {
 	if ttl <= 0 {
 		panic("invalid TTL: must be > 0")
+	}
+
+	if c.maxTTL > 0 && ttl > c.maxTTL {
+		ttl = c.maxTTL
 	}
 
 	exp := c.clock.Now().Add(time.Duration(ttl) * time.Second)
