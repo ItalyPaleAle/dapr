@@ -60,8 +60,11 @@ func NewMockPlacement() actors.PlacementService {
 }
 
 // LookupActor implements internal.PlacementService
-func (*mockPlacement) LookupActor(ctx context.Context, actorType string, actorID string) (host string, appID string, err error) {
-	return "localhost", testAppID, nil
+func (*mockPlacement) LookupActor(context.Context, actors.LookupActorRequest) (actors.LookupActorResponse, error) {
+	return actors.LookupActorResponse{
+		Address: "localhost",
+		AppID:   testAppID,
+	}, nil
 }
 
 // Start implements internal.PlacementService

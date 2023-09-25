@@ -30,6 +30,7 @@ import (
 	diag "github.com/dapr/dapr/pkg/diagnostics"
 	"github.com/dapr/dapr/pkg/placement/hashing"
 	v1pb "github.com/dapr/dapr/pkg/proto/placement/v1"
+	"github.com/dapr/dapr/pkg/resiliency"
 	"github.com/dapr/dapr/pkg/security"
 	"github.com/dapr/kit/logger"
 )
@@ -94,6 +95,8 @@ type actorPlacement struct {
 	shutdownConnLoop sync.WaitGroup
 	// closeCh is the channel to close the placement service.
 	closeCh chan struct{}
+
+	resiliency resiliency.Provider
 }
 
 // ActorPlacementOpts contains options for NewActorPlacement.
@@ -106,6 +109,7 @@ type ActorPlacementOpts struct {
 	ActorTypes         []string
 	AppHealthFn        func() bool
 	AfterTableUpdateFn func()
+	Resiliency         resiliency.Provider
 }
 
 // NewActorPlacement initializes ActorPlacement for the actor service.
@@ -128,6 +132,7 @@ func NewActorPlacement(opts ActorPlacementOpts) internal.PlacementService {
 		appHealthFn:         opts.AppHealthFn,
 		afterTableUpdateFn:  opts.AfterTableUpdateFn,
 		closeCh:             make(chan struct{}),
+		resiliency:          opts.Resiliency,
 	}
 }
 
@@ -289,7 +294,24 @@ func (p *actorPlacement) WaitUntilReady(ctx context.Context) error {
 }
 
 // LookupActor resolves to actor service instance address using consistent hashing table.
-func (p *actorPlacement) LookupActor(ctx context.Context, actorType, actorID string) (string, string, error) {
+func (p *actorPlacement) LookupActor(ctx context.Context, req internal.LookupActorRequest) (internal.LookupActorResponse, error) {
+	// Retry here to allow placement table dissemination/rebalancing to happen.
+	policyDef := p.resiliency.BuiltInPolicy(resiliency.BuiltInActorNotFoundRetries)
+	policyRunner := resiliency.NewRunner[internal.LookupActorResponse](ctx, policyDef)
+	return policyRunner(func(ctx context.Context) (res internal.LookupActorResponse, rErr error) {
+		rAddr, rAppID, rErr := p.doLookupActor(ctx, req.ActorType, req.ActorID)
+		if rErr != nil {
+			return res, fmt.Errorf("error finding address for actor %s/%s: %w", req.ActorType, req.ActorID, rErr)
+		} else if rAddr == "" {
+			return res, fmt.Errorf("did not find address for actor %s/%s", req.ActorType, req.ActorID)
+		}
+		res.Address = rAddr
+		res.AppID = rAppID
+		return res, nil
+	})
+}
+
+func (p *actorPlacement) doLookupActor(ctx context.Context, actorType, actorID string) (string, string, error) {
 	p.placementTableLock.RLock()
 	defer p.placementTableLock.RUnlock()
 
@@ -303,7 +325,7 @@ func (p *actorPlacement) LookupActor(ctx context.Context, actorType, actorID str
 	}
 	host, err := t.GetHost(actorID)
 	if err != nil || host == nil {
-		return "", "", nil
+		return "", "", nil //nolint:nilerr
 	}
 	return host.Name, host.AppID, nil
 }

@@ -203,16 +203,19 @@ func newActorsWithClock(opts ActorsOpts, clock clock.WithTicker) ActorRuntime {
 }
 
 func (a *actorsRuntime) isActorLocallyHosted(ctx context.Context, actorType string, actorID string) (isLocal bool, actorAddress string) {
-	targetActorAddress, _, _ := a.placement.LookupActor(ctx, actorType, actorID)
-	if targetActorAddress == "" {
-		log.Warn("Did not find address for actor with actorType %s and actorID %s", actorType, actorID)
+	lar, err := a.placement.LookupActor(ctx, internal.LookupActorRequest{
+		ActorType: actorType,
+		ActorID:   actorID,
+	})
+	if err != nil {
+		log.Warn(err.Error())
 		return false, ""
 	}
 
-	if a.isActorLocal(targetActorAddress, a.actorsConfig.Config.HostAddress, a.actorsConfig.Config.Port) {
-		return true, targetActorAddress
+	if a.isActorLocal(lar.Address, a.actorsConfig.Config.HostAddress, a.actorsConfig.Config.Port) {
+		return true, lar.Address
 	}
-	return false, targetActorAddress
+	return false, lar.Address
 }
 
 func (a *actorsRuntime) haveCompatibleStorage() bool {
@@ -264,6 +267,7 @@ func (a *actorsRuntime) Init(ctx context.Context) (err error) {
 				RuntimeHostname: hostname,
 				PodName:         a.actorsConfig.Config.PodName,
 				ActorTypes:      a.actorsConfig.Config.HostedActorTypes.ListActorTypes(),
+				Resiliency:      a.resiliency,
 				AppHealthFn: func() bool {
 					return a.appHealthy.Load()
 				},
@@ -424,11 +428,6 @@ func (a *actorsRuntime) deactivationTicker(configuration Config, deactivateFn de
 	}
 }
 
-type lookupActorRes struct {
-	targetActorAddress string
-	appID              string
-}
-
 func (a *actorsRuntime) Call(ctx context.Context, req *invokev1.InvokeMethodRequest) (*invokev1.InvokeMethodResponse, error) {
 	err := a.placement.WaitUntilReady(ctx)
 	if err != nil {
@@ -436,33 +435,18 @@ func (a *actorsRuntime) Call(ctx context.Context, req *invokev1.InvokeMethodRequ
 	}
 
 	actor := req.Actor()
-	// Retry here to allow placement table dissemination/rebalancing to happen.
-	policyDef := a.resiliency.BuiltInPolicy(resiliency.BuiltInActorNotFoundRetries)
-	policyRunner := resiliency.NewRunner[*lookupActorRes](ctx, policyDef)
-	lar, err := policyRunner(func(ctx context.Context) (*lookupActorRes, error) {
-		rAddr, rAppID, rErr := a.placement.LookupActor(ctx, actor.GetActorType(), actor.GetActorId())
-		if rErr == nil && rAddr == "" {
-			rErr = errors.New("empty response")
-		}
-		if rErr != nil {
-			return nil, fmt.Errorf("error finding address for actor type %s with id %s: %w", actor.GetActorType(), actor.GetActorId(), rErr)
-		}
-		return &lookupActorRes{
-			targetActorAddress: rAddr,
-			appID:              rAppID,
-		}, nil
+	lar, err := a.placement.LookupActor(ctx, internal.LookupActorRequest{
+		ActorType: actor.GetActorType(),
+		ActorID:   actor.GetActorId(),
 	})
 	if err != nil {
 		return nil, err
 	}
-	if lar == nil {
-		lar = &lookupActorRes{}
-	}
 	var resp *invokev1.InvokeMethodResponse
-	if a.isActorLocal(lar.targetActorAddress, a.actorsConfig.Config.HostAddress, a.actorsConfig.Config.Port) {
+	if a.isActorLocal(lar.Address, a.actorsConfig.Config.HostAddress, a.actorsConfig.Config.Port) {
 		resp, err = a.callLocalActor(ctx, req)
 	} else {
-		resp, err = a.callRemoteActorWithRetry(ctx, retry.DefaultLinearRetryCount, retry.DefaultLinearBackoffInterval, a.callRemoteActor, lar.targetActorAddress, lar.appID, req)
+		resp, err = a.callRemoteActorWithRetry(ctx, retry.DefaultLinearRetryCount, retry.DefaultLinearBackoffInterval, a.callRemoteActor, lar.Address, lar.AppID, req)
 	}
 
 	if err != nil {
@@ -818,8 +802,11 @@ func (a *actorsRuntime) drainRebalancedActors() {
 			// for each actor, deactivate if no longer hosted locally
 			actorKey := key.(string)
 			actorType, actorID := a.getActorTypeAndIDFromKey(actorKey)
-			address, _, _ := a.placement.LookupActor(context.TODO(), actorType, actorID)
-			if address != "" && !a.isActorLocal(address, a.actorsConfig.Config.HostAddress, a.actorsConfig.Config.Port) {
+			lar, _ := a.placement.LookupActor(context.TODO(), internal.LookupActorRequest{
+				ActorType: actorType,
+				ActorID:   actorID,
+			})
+			if lar.Address != "" && !a.isActorLocal(lar.Address, a.actorsConfig.Config.HostAddress, a.actorsConfig.Config.Port) {
 				// actor has been moved to a different host, deactivate when calls are done cancel any reminders
 				// each item in reminders contain a struct with some metadata + the actual reminder struct
 				a.actorsReminders.DrainRebalancedReminders(actorType, actorID)

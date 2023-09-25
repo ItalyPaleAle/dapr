@@ -26,6 +26,8 @@ import (
 
 	"github.com/dapr/dapr/pkg/actors/internal"
 	actorsv1pb "github.com/dapr/dapr/pkg/proto/actors/v1"
+	"github.com/dapr/dapr/pkg/resiliency"
+	"github.com/dapr/dapr/utils/actorscache"
 	"github.com/dapr/kit/logger"
 )
 
@@ -40,9 +42,11 @@ type actorPlacement struct {
 	actorTypes     []*actorsv1pb.ActorHostType
 	addActorTypeCh chan struct{}
 	appHealthCh    chan bool
+	resiliency     resiliency.Provider
 	running        atomic.Bool
 	runningCtx     context.Context
 	runningCancel  context.CancelFunc
+	cache          *actorscache.Cache[*actorsv1pb.LookupActorResponse]
 }
 
 // ActorPlacementOpts contains options for NewActorPlacement.
@@ -50,6 +54,7 @@ type ActorPlacementOpts struct {
 	ActorsClient actorsv1pb.ActorsClient
 	Address      string
 	AppID        string
+	Resiliency   resiliency.Provider
 	// TODO: Needs to be used
 	AppHealthCh chan bool
 }
@@ -61,6 +66,7 @@ func NewActorPlacement(opts ActorPlacementOpts) internal.PlacementService {
 		actorsClient: opts.ActorsClient,
 		address:      opts.Address,
 		appID:        opts.AppID,
+		resiliency:   opts.Resiliency,
 		actorTypes:   make([]*actorsv1pb.ActorHostType, 0),
 	}
 }
@@ -109,6 +115,12 @@ func (p *actorPlacement) Start(ctx context.Context) error {
 	}
 
 	p.runningCtx, p.runningCancel = context.WithCancel(ctx)
+
+	// Init the cache
+	// This has a max TTL of 5s
+	p.cache = actorscache.NewCache[*actorsv1pb.LookupActorResponse](actorscache.CacheOptions{
+		MaxTTL: 5,
+	})
 
 	// If we have actor types registered, start the ConnectHost stream right away
 	p.lock.Lock()
@@ -317,6 +329,7 @@ func (p *actorPlacement) Close() error {
 	if !p.running.CompareAndSwap(true, false) {
 		return nil
 	}
+	p.cache.Stop()
 	p.runningCancel()
 
 	return nil
@@ -327,17 +340,19 @@ func (p *actorPlacement) WaitUntilReady(ctx context.Context) error {
 	return nil
 }
 
-func (p *actorPlacement) LookupActor(ctx context.Context, actorType, actorID string) (host string, appID string, err error) {
-	res, err := p.actorsClient.LookupActor(ctx, &actorsv1pb.LookupActorRequest{
-		Actor: createActorRef(actorType, actorID),
+func (p *actorPlacement) LookupActor(ctx context.Context, req internal.LookupActorRequest) (res internal.LookupActorResponse, err error) {
+	lar, err := p.actorsClient.LookupActor(ctx, &actorsv1pb.LookupActorRequest{
+		Actor: createActorRef(req.ActorType, req.ActorID),
 	})
 	if err != nil {
 		if status.Code(err) == codes.FailedPrecondition {
-			return "", "", nil
+			return res, fmt.Errorf("did not find address for actor %s/%s", req.ActorType, req.ActorID)
 		}
-		return "", "", fmt.Errorf("error from Actor service: %w", err)
+		return res, fmt.Errorf("error from Actor service: %w", err)
 	}
-	return res.Address, res.AppId, nil
+	res.Address = lar.Address
+	res.AppID = lar.AppId
+	return res, nil
 }
 
 func (p *actorPlacement) ReportActorDeactivation(ctx context.Context, actorType, actorID string) error {

@@ -25,7 +25,19 @@ type PlacementService interface {
 
 	Start(context.Context) error
 	WaitUntilReady(ctx context.Context) error
-	LookupActor(ctx context.Context, actorType, actorID string) (host string, appID string, err error)
+	LookupActor(ctx context.Context, req LookupActorRequest) (LookupActorResponse, error)
 	AddHostedActorType(actorType string, idleTimeout time.Duration) error
 	ReportActorDeactivation(ctx context.Context, actorType, actorID string) error
+}
+
+// LookupActorRequest is the request for LookupActor.
+type LookupActorRequest struct {
+	ActorType string
+	ActorID   string
+}
+
+// LookupActorResponse is the response from LookupActor.
+type LookupActorResponse struct {
+	Address string
+	AppID   string
 }
