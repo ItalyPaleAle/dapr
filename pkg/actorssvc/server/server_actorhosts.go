@@ -253,33 +253,20 @@ func (s *server) LookupActor(ctx context.Context, req *actorsv1pb.LookupActorReq
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid actor reference: %v", err)
 	}
 
-	// Try getting the value from the cache
-	cacheKey := req.Actor.ActorType + "/" + req.Actor.ActorId
-	if !req.NoCache {
-		res, _ = s.cache.Get(cacheKey)
+	lar, err := s.store.LookupActor(ctx, req.Actor.ToInternalActorRef())
+	if err != nil {
+		if errors.Is(err, actorstore.ErrNoActorHost) {
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
+		}
+
+		log.Errorf("Failed to perform actor lookup: %v", err)
+		return nil, status.Errorf(codes.Internal, "failed to perform actor lookup: %v", err)
 	}
 
-	// If there's nothing in the cache, fetch from the store
-	if res == nil {
-		lar, err := s.store.LookupActor(ctx, req.Actor.ToInternalActorRef())
-		if err != nil {
-			if errors.Is(err, actorstore.ErrNoActorHost) {
-				return nil, status.Error(codes.FailedPrecondition, err.Error())
-			}
-
-			log.Errorf("Failed to perform actor lookup: %v", err)
-			return nil, status.Errorf(codes.Internal, "failed to perform actor lookup: %v", err)
-		}
-
-		res = &actorsv1pb.LookupActorResponse{
-			AppId:       lar.AppID,
-			Address:     lar.Address,
-			IdleTimeout: lar.IdleTimeout,
-		}
-
-		// Update the cache
-		// The cache has a MaxTTL of 2s, which caps the IdleTimeout
-		s.cache.Set(cacheKey, res, int64(lar.IdleTimeout))
+	res = &actorsv1pb.LookupActorResponse{
+		AppId:       lar.AppID,
+		Address:     lar.Address,
+		IdleTimeout: lar.IdleTimeout,
 	}
 
 	return res, nil

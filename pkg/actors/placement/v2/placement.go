@@ -356,8 +356,7 @@ func (p *actorPlacement) LookupActor(ctx context.Context, req internal.LookupAct
 	// If thre's no cached value, fetch it from the server
 	if lar == nil {
 		lar, err = p.actorsClient.LookupActor(ctx, &actorsv1pb.LookupActorRequest{
-			Actor:   createActorRef(req.ActorType, req.ActorID),
-			NoCache: req.NoCache,
+			Actor: createActorRef(req.ActorType, req.ActorID),
 		})
 		if err != nil {
 			if status.Code(err) == codes.FailedPrecondition {
