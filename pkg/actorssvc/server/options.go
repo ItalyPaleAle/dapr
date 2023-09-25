@@ -42,6 +42,10 @@ func (o Options) GetActorStore() (actorstore.Store, error) {
 func (o Options) GetActorStoreOptions() map[string]string {
 	res := make(map[string]string, len(o.StoreOpts))
 	for _, opt := range o.StoreOpts {
+		opt = strings.TrimSpace(opt)
+		if opt == "" {
+			continue
+		}
 		k, v, _ := strings.Cut(opt, "=")
 		res[k] = v
 	}

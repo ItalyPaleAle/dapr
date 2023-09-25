@@ -15,6 +15,13 @@ deploymentAnnotations: {}
 
 runAsNonRoot: true
 
+store:
+  name: ""
+  options: []
+  optionsFile:
+    secretName: ""
+    secretKey: ""
+
 ports:
   protocol: TCP
   port: 51101

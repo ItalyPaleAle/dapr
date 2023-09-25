@@ -14,7 +14,10 @@ limitations under the License.
 package options
 
 import (
+	"bufio"
+	"errors"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"time"
@@ -40,8 +43,9 @@ type Options struct {
 	Port        int
 	HealthzPort int
 
-	StoreName string
-	StoreOpts []string
+	StoreName     string
+	StoreOpts     []string
+	StoreOptsFile string
 
 	MTLSEnabled      bool
 	TrustDomain      string
@@ -62,8 +66,9 @@ func New() *Options {
 	fs.IntVar(&opts.Port, "port", DefaultPort, "The port for the sentry server to listen on")
 	fs.IntVar(&opts.HealthzPort, "healthz-port", DefaultHealthzPort, "The port for the healthz server to listen on")
 
-	fs.StringVar(&opts.StoreName, "store", "", "Name of the store driver")
+	fs.StringVar(&opts.StoreName, "store-name", "", "Name of the store driver")
 	fs.StringArrayVar(&opts.StoreOpts, "store-opt", nil, "Option for the store driver, in the format 'key=value'; can be repeated")
+	fs.StringVar(&opts.StoreOptsFile, "store-opts-file", "", "Path to a file containing options for the store, with each line having its own 'key=value'")
 
 	fs.DurationVar(&opts.HostHealthCheckInterval, "host-healthcheck-interval", DefaultHostHealthCheckInterval, "Interval for expecting health checks from actor hosts")
 
@@ -81,6 +86,13 @@ func New() *Options {
 	fs.SortFlags = false
 	fs.Parse(os.Args[1:])
 
+	err := opts.LoadStoreOptionsFile()
+	if err != nil {
+		//nolint:forbidigo
+		fmt.Println("Failed to load options from file:", err)
+		os.Exit(2)
+	}
+
 	validationErr := opts.Validate()
 	if validationErr != "" {
 		//nolint:forbidigo
@@ -93,7 +105,7 @@ func New() *Options {
 
 func (o Options) Validate() string {
 	if o.StoreName == "" {
-		return "Required flag '--store' is missing"
+		return "Required flag '--store-name' is missing"
 	}
 	if o.HostHealthCheckInterval < time.Second {
 		return "Flag '--host-healthcheck-interval' must be at least '1s'"
@@ -106,4 +118,33 @@ func (o Options) Validate() string {
 		return "Flag '--host-healthcheck-interval' is too big"
 	}
 	return ""
+}
+
+func (o *Options) LoadStoreOptionsFile() error {
+	if o.StoreOptsFile == "" {
+		return nil
+	}
+
+	f, err := os.Open(o.StoreOptsFile)
+	if err != nil {
+		return fmt.Errorf("failed to open file with store options: %w", err)
+	}
+	defer f.Close()
+
+	bio := bufio.NewReader(f)
+	for {
+		line, isPrefix, err := bio.ReadLine()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return fmt.Errorf("failed to read from file with store options: %w", err)
+		}
+		if isPrefix {
+			return errors.New("failed to read from file with store options: file contains lines too long")
+		}
+		o.StoreOpts = append(o.StoreOpts, string(line))
+	}
+
+	return nil
 }

@@ -107,11 +107,17 @@ spec:
           - name: dapr-trust-bundle
             mountPath: /var/run/secrets/dapr.io/tls
             readOnly: true
-        {{- if .Values.global.mtls.mountSentryVolume }}
+          {{- if .Values.global.mtls.mountSentryVolume }}
           - name: dapr-identity-token
             mountPath: /var/run/secrets/dapr.io/sentrytoken
             readOnly: true
-        {{- end }}
+          {{- end }}
+          {{- if .Values.store.optionsFile.secretName }}
+          - name: actors-opts
+            mountPath: /var/run/secrets/dapr.io/actors/options
+            subPath: options
+            readOnly: true
+          {{- end }}
         {{- with .Values.global.extraVolumeMounts.actors }}
           {{- toYaml . | nindent 10 }}
         {{- end }}
@@ -132,8 +138,19 @@ spec:
           - "/actors"
           - "--"
           {{- end }}
+          - "--store-name"
+          - "{{ .Values.store.name }}"
+          {{- range .Values.store.options }}
+          - "--store-opt"
+          - "{{ . }}"
+          {{- end }}
+          {{- if .Values.store.optionsFile.secretName }}
+          - "--store-opts-file"
+          - "/var/run/secrets/dapr.io/actors/options"
+          {{- end }}
           - "--log-level"
           - "{{ .Values.logLevel }}"
+          - "--enable-mtls"
           - "--trust-anchors-file"
           - "/var/run/secrets/dapr.io/tls/ca.crt"
           {{- if eq .Values.global.logAsJson true }}
@@ -151,7 +168,7 @@ spec:
         - name: dapr-trust-bundle
           configMap:
             name: dapr-trust-bundle
-    {{- if .Values.global.mtls.mountSentryVolume }}
+        {{- if .Values.global.mtls.mountSentryVolume }}
         - name: dapr-identity-token
           projected:
             sources:
@@ -159,7 +176,15 @@ spec:
                   path: token
                   expirationSeconds: 600
                   audience: "spiffe://{{ .Values.global.mtls.controlPlaneTrustDomain }}/ns/{{ .Release.Namespace }}/dapr-sentry"
-    {{- end }}
+        {{- end }}
+        {{- if .Values.store.optionsFile.secretName }}
+        - name: actors-opts
+          secret:
+            secretName: "{{ .Values.store.optionsFile.secretName }}"
+            items:
+              - key: "{{ .Values.store.optionsFile.secretKey }}"
+                path: options
+        {{- end }}
       {{- with .Values.global.extraVolumes.actors }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
