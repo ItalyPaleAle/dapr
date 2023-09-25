@@ -442,6 +442,8 @@ func (a *actorsRuntime) Call(ctx context.Context, req *invokev1.InvokeMethodRequ
 	lar, err := a.placement.LookupActor(ctx, internal.LookupActorRequest{
 		ActorType: actor.GetActorType(),
 		ActorID:   actor.GetActorId(),
+		// Don't use a cache here, as we need to make sure we have accurate data before making the decision to invoke an actor locally
+		NoCache: true,
 	})
 	if err != nil {
 		return nil, err

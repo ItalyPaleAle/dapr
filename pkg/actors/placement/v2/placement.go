@@ -341,15 +341,36 @@ func (p *actorPlacement) WaitUntilReady(ctx context.Context) error {
 }
 
 func (p *actorPlacement) LookupActor(ctx context.Context, req internal.LookupActorRequest) (res internal.LookupActorResponse, err error) {
-	lar, err := p.actorsClient.LookupActor(ctx, &actorsv1pb.LookupActorRequest{
-		Actor: createActorRef(req.ActorType, req.ActorID),
-	})
-	if err != nil {
-		if status.Code(err) == codes.FailedPrecondition {
-			return res, fmt.Errorf("did not find address for actor %s/%s", req.ActorType, req.ActorID)
+	cacheKey := req.ActorKey()
+
+	// Get the value from the cache if possible
+	var lar *actorsv1pb.LookupActorResponse
+	if !req.NoCache {
+		var ok bool
+		lar, ok = p.cache.Get(cacheKey)
+		if !ok {
+			lar = nil
 		}
-		return res, fmt.Errorf("error from Actor service: %w", err)
 	}
+
+	// If thre's no cached value, fetch it from the server
+	if lar == nil {
+		lar, err = p.actorsClient.LookupActor(ctx, &actorsv1pb.LookupActorRequest{
+			Actor:   createActorRef(req.ActorType, req.ActorID),
+			NoCache: req.NoCache,
+		})
+		if err != nil {
+			if status.Code(err) == codes.FailedPrecondition {
+				return res, fmt.Errorf("did not find address for actor %s/%s", req.ActorType, req.ActorID)
+			}
+			return res, fmt.Errorf("error from Actor service: %w", err)
+		}
+
+		// Store in the cache
+		p.cache.Set(cacheKey, lar, int64(lar.IdleTimeout))
+	}
+
+	// Return
 	res.Address = lar.Address
 	res.AppID = lar.AppId
 	return res, nil

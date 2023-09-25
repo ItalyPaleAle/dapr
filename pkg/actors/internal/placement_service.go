@@ -34,6 +34,7 @@ type PlacementService interface {
 type LookupActorRequest struct {
 	ActorType string
 	ActorID   string
+	NoCache   bool
 }
 
 func (lar LookupActorRequest) ActorKey() string {
