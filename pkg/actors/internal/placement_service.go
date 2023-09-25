@@ -37,8 +37,9 @@ type LookupActorRequest struct {
 	NoCache   bool
 }
 
+// ActorKey returns the key for the actor, which is "type/id".
 func (lar LookupActorRequest) ActorKey() string {
-	return lar.ActorType + "/" + lar.ActorType
+	return lar.ActorType + "/" + lar.ActorID
 }
 
 // LookupActorResponse is the response from LookupActor.
