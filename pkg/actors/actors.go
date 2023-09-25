@@ -386,8 +386,8 @@ func (a *actorsRuntime) removeActorFromTable(actorType, actorID string) {
 }
 
 func (a *actorsRuntime) getActorTypeAndIDFromKey(key string) (string, string) {
-	arr := strings.Split(key, daprSeparator)
-	return arr[0], arr[1]
+	typ, id, _ := strings.Cut(key, daprSeparator)
+	return typ, id
 }
 
 type deactivateFn = func(actorType string, actorID string) error
@@ -857,7 +857,7 @@ func (a *actorsRuntime) executeTimer(reminder *internal.Reminder) bool {
 		return false
 	}
 
-	err := a.doExecuteReminderOrTimer(reminder, true)
+	err := a.doExecuteReminderOrTimer(context.TODO(), reminder, true)
 	diag.DefaultMonitoring.ActorTimerFired(reminder.ActorType, err == nil)
 	if err != nil {
 		log.Errorf("error invoking timer on actor %s: %s", reminder.ActorKey(), err)
@@ -870,7 +870,7 @@ func (a *actorsRuntime) executeTimer(reminder *internal.Reminder) bool {
 
 // executeReminder implements reminders.ExecuteReminderFn.
 func (a *actorsRuntime) executeReminder(reminder *internal.Reminder) bool {
-	err := a.doExecuteReminderOrTimer(reminder, false)
+	err := a.doExecuteReminderOrTimer(context.TODO(), reminder, false)
 	diag.DefaultMonitoring.ActorReminderFired(reminder.ActorType, err == nil)
 	if err != nil {
 		if errors.Is(err, ErrReminderCanceled) {
@@ -885,12 +885,18 @@ func (a *actorsRuntime) executeReminder(reminder *internal.Reminder) bool {
 }
 
 // Executes a reminder or timer
-func (a *actorsRuntime) doExecuteReminderOrTimer(reminder *internal.Reminder, isTimer bool) (err error) {
+func (a *actorsRuntime) doExecuteReminderOrTimer(ctx context.Context, reminder *internal.Reminder, isTimer bool) (err error) {
 	var (
 		data         any
 		logName      string
 		invokeMethod string
 	)
+
+	// Sanity check: make sure the actor is actually locally-hosted
+	isLocal, _ := a.isActorLocallyHosted(ctx, reminder.ActorType, reminder.ActorID)
+	if !isLocal {
+		return errors.New("actor is not locally hosted")
+	}
 
 	if isTimer {
 		logName = "timer"
@@ -922,7 +928,7 @@ func (a *actorsRuntime) doExecuteReminderOrTimer(reminder *internal.Reminder, is
 	}
 	defer req.Close()
 
-	policyRunner := resiliency.NewRunnerWithOptions(context.TODO(), policyDef,
+	policyRunner := resiliency.NewRunnerWithOptions(ctx, policyDef,
 		resiliency.RunnerOpts[*invokev1.InvokeMethodResponse]{
 			Disposer: resiliency.DisposerCloser[*invokev1.InvokeMethodResponse],
 		},
