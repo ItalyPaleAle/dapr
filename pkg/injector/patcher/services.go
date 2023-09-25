@@ -28,6 +28,8 @@ var (
 	ServiceAPI = Service{"dapr-api", 80}
 	// Dapr placement service.
 	ServicePlacement = Service{"dapr-placement-server", 50005}
+	// Dapr actors service.
+	ServiceActors = Service{"dapr-actors", 51101}
 	// Dapr sentry service.
 	ServiceSentry = Service{"dapr-sentry", 443}
 )

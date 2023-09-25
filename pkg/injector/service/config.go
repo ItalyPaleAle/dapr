@@ -35,6 +35,7 @@ type Config struct {
 	RunAsNonRoot                      string `envconfig:"SIDECAR_RUN_AS_NON_ROOT"`
 	ReadOnlyRootFilesystem            string `envconfig:"SIDECAR_READ_ONLY_ROOT_FILESYSTEM"`
 	SidecarDropALLCapabilities        string `envconfig:"SIDECAR_DROP_ALL_CAPABILITIES"`
+	ActorsV2                          string `envconfig:"ACTORS_V2"`
 
 	TrustAnchorsFile        string `envconfig:"DAPR_TRUST_ANCHORS_FILE"`
 	ControlPlaneTrustDomain string `envconfig:"DAPR_CONTROL_PLANE_TRUST_DOMAIN"`
@@ -120,6 +121,11 @@ func (c *Config) GetDropCapabilities() bool {
 func (c *Config) GetSkipPlacement() bool {
 	// Default is false if empty
 	return utils.IsTruthy(c.SkipPlacement)
+}
+
+func (c *Config) GetActorsV2() bool {
+	// Default is false if empty
+	return utils.IsTruthy(c.ActorsV2)
 }
 
 func (c *Config) parseTolerationsJSON() {

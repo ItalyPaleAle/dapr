@@ -107,9 +107,12 @@ func (c *SidecarConfig) getSidecarContainer(opts getSidecarContainerOpts) (*core
 		args = append(args, "--app-channel-address", c.AppChannelAddress)
 	}
 
-	// Placement address could be empty if placement service is disabled
+	// Placement or Actors addresses could be empty if actors service is disabled
 	if c.PlacementAddress != "" {
 		args = append(args, "--placement-host-address", c.PlacementAddress)
+	}
+	if c.ActorsAddress != "" {
+		args = append(args, "--actors-service-address", c.ActorsAddress)
 	}
 
 	// --enable-api-logging is set if and only if there's an explicit value (true or false) for that

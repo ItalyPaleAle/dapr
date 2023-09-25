@@ -142,6 +142,10 @@ spec:
 {{- end }}
         - name: SIDECAR_IMAGE_PULL_POLICY
           value: "{{ .Values.sidecarImagePullPolicy }}"
+{{- if and (eq .Values.global.actors.enabled true) (eq .Values.global.actors.v2 true) }}
+        - name: ACTORS_V2
+          value: "true"
+{{- end }}
         - name: NAMESPACE
           valueFrom:
             fieldRef:

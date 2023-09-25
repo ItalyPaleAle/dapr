@@ -48,6 +48,7 @@ func (i *injector) getPodPatchOperations(ctx context.Context, ar *admissionv1.Ad
 
 	// Keep DNS resolution outside of GetSidecarContainer for unit testing.
 	placementAddress := patcher.ServiceAddress(patcher.ServicePlacement, i.config.Namespace, i.config.KubeClusterDomain)
+	actorsAddress := patcher.ServiceAddress(patcher.ServiceActors, i.config.Namespace, i.config.KubeClusterDomain)
 	sentryAddress := patcher.ServiceAddress(patcher.ServiceSentry, i.config.Namespace, i.config.KubeClusterDomain)
 	operatorAddress := patcher.ServiceAddress(patcher.ServiceAPI, i.config.Namespace, i.config.KubeClusterDomain)
 
@@ -81,10 +82,12 @@ func (i *injector) getPodPatchOperations(ctx context.Context, ar *admissionv1.Ad
 	sidecar.CertKey = string(daprdPrivateKey)
 	sidecar.DisableTokenVolume = !token.HasKubernetesToken()
 
-	// Set the placement address unless it's skipped
-	// Even if the placement is skipped, however,the placement address will still be included if explicitly set in the annotations
-	// We still include PlacementServiceAddress if explicitly set as annotation
-	if !i.config.GetSkipPlacement() {
+	// Set the placement or actor service address unless it's skipped
+	// Even if the address is skipped, however, it address will still be included if explicitly set in the annotations
+	// We still include PlacementServiceAddress or ActorsServiceAddress if explicitly set as annotation
+	if i.config.GetActorsV2() {
+		sidecar.ActorsAddress = actorsAddress
+	} else if !i.config.GetSkipPlacement() {
 		sidecar.PlacementAddress = placementAddress
 	}
 
