@@ -203,6 +203,10 @@ func newActorsWithClock(opts ActorsOpts, clock clock.WithTicker) ActorRuntime {
 }
 
 func (a *actorsRuntime) isActorLocallyHosted(ctx context.Context, actorType string, actorID string) (isLocal bool, actorAddress string) {
+	if isInternalActor(actorType) {
+		return true, "localhost"
+	}
+
 	lar, err := a.placement.LookupActor(ctx, internal.LookupActorRequest{
 		ActorType: actorType,
 		ActorID:   actorID,

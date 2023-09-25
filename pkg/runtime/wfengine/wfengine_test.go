@@ -49,43 +49,6 @@ func fakeStore() state.Store {
 	return daprt.NewFakeStateStore()
 }
 
-type mockPlacement struct{}
-
-func (p *mockPlacement) AddHostedActorType(string, time.Duration) error {
-	return nil
-}
-
-func NewMockPlacement() actors.PlacementService {
-	return &mockPlacement{}
-}
-
-// LookupActor implements internal.PlacementService
-func (*mockPlacement) LookupActor(context.Context, actors.LookupActorRequest) (actors.LookupActorResponse, error) {
-	return actors.LookupActorResponse{
-		Address: "localhost",
-		AppID:   testAppID,
-	}, nil
-}
-
-// Start implements internal.PlacementService
-func (*mockPlacement) Start(context.Context) error {
-	return nil
-}
-
-// Stop implements internal.PlacementService
-func (*mockPlacement) Close() error {
-	return nil
-}
-
-// WaitUntilReady implements internal.PlacementService
-func (*mockPlacement) WaitUntilReady(ctx context.Context) error {
-	return nil
-}
-
-func (*mockPlacement) ReportActorDeactivation(ctx context.Context, actorType, actorID string) error {
-	return nil
-}
-
 // TestStartWorkflowEngine validates that starting the workflow engine returns no errors.
 func TestStartWorkflowEngine(t *testing.T) {
 	ctx := context.Background()
@@ -800,7 +763,7 @@ func getEngine(t *testing.T) *wfengine.WorkflowEngine {
 		CompStore:      compStore,
 		Config:         cfg,
 		StateStoreName: "workflowStore",
-		MockPlacement:  NewMockPlacement(),
+		MockPlacement:  actors.NewMockPlacement(testAppID),
 		Resiliency:     resiliency.New(logger.NewLogger("test")),
 	})
 
@@ -826,7 +789,7 @@ func getEngineAndStateStore(t *testing.T) (*wfengine.WorkflowEngine, *daprt.Fake
 		CompStore:      compStore,
 		Config:         cfg,
 		StateStoreName: "workflowStore",
-		MockPlacement:  NewMockPlacement(),
+		MockPlacement:  actors.NewMockPlacement(testAppID),
 		Resiliency:     resiliency.New(logger.NewLogger("test")),
 	})
 

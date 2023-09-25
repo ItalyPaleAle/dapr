@@ -36,6 +36,10 @@ type LookupActorRequest struct {
 	ActorID   string
 }
 
+func (lar LookupActorRequest) ActorKey() string {
+	return lar.ActorType + "/" + lar.ActorType
+}
+
 // LookupActorResponse is the response from LookupActor.
 type LookupActorResponse struct {
 	Address string
