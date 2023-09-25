@@ -67,6 +67,7 @@ func NewActorPlacement(opts ActorPlacementOpts) internal.PlacementService {
 		address:      opts.Address,
 		appID:        opts.AppID,
 		resiliency:   opts.Resiliency,
+		appHealthCh:  opts.AppHealthCh,
 		actorTypes:   make([]*actorsv1pb.ActorHostType, 0),
 	}
 }
@@ -176,9 +177,9 @@ func (p *actorPlacement) establishConnectHost(actorTypes []*actorsv1pb.ActorHost
 		for {
 			// Block until we receive a message
 			// This returns an error when the stream ends or in case of errors
-			cs, err := stream.Recv()
-			if err != nil {
-				errCh <- fmt.Errorf("error from server: %w", err)
+			cs, rErr := stream.Recv()
+			if rErr != nil {
+				errCh <- fmt.Errorf("error from server: %w", rErr)
 				return
 			}
 
@@ -191,9 +192,9 @@ func (p *actorPlacement) establishConnectHost(actorTypes []*actorsv1pb.ActorHost
 					errCh <- errors.New("configuration update message has nil ActorHostConfiguration property")
 					return
 				}
-				err = msg.ActorHostConfiguration.Validate()
-				if err != nil {
-					errCh <- status.Errorf(codes.InvalidArgument, "Invalid request: %v", err)
+				rErr = msg.ActorHostConfiguration.Validate()
+				if rErr != nil {
+					errCh <- status.Errorf(codes.InvalidArgument, "Invalid request: %v", rErr)
 					return
 				}
 				log.Debugf("Received actor configuration update")

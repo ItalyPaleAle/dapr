@@ -28,6 +28,7 @@ import (
 	"github.com/dapr/kit/logger"
 )
 
+//nolint:unused
 var log = logger.NewLogger("dapr.runtime.actors.client")
 
 const dialTimeout = 20 * time.Second

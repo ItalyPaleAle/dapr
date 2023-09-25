@@ -80,9 +80,9 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 		for {
 			// Block until we receive a message
 			// This returns an error when the stream ends or in case of errors
-			cs, err := stream.Recv()
-			if err != nil {
-				errCh <- fmt.Errorf("error from client: %w", err)
+			cs, rErr := stream.Recv()
+			if rErr != nil {
+				errCh <- fmt.Errorf("error from client: %w", rErr)
 				return
 			}
 
@@ -95,9 +95,9 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 					errCh <- errors.New("registration update message has nil RegisterActorHost property")
 					return
 				}
-				err = msg.RegisterActorHost.ValidateUpdateMessage()
-				if err != nil {
-					errCh <- status.Errorf(codes.InvalidArgument, "Invalid request: %v", err)
+				rErr = msg.RegisterActorHost.ValidateUpdateMessage()
+				if rErr != nil {
+					errCh <- status.Errorf(codes.InvalidArgument, "Invalid request: %v", rErr)
 					return
 				}
 				log.Debugf("Received registration update from actor host id='%s'", actorHostID)
