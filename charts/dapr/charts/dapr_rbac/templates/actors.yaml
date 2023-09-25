@@ -1,8 +1,8 @@
-{{- if and (eq .Values.global.actors.enabled true) (eq .Values.global.actors.v2 false) }}
+{{- if and (eq .Values.global.actors.enabled true) (eq .Values.global.actors.v2 true) }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: dapr-placement
+  name: dapr-actors
   namespace: {{ .Release.Namespace }}
   labels:
     {{- range $key, $value := .Values.global.k8sLabels }}
@@ -10,7 +10,7 @@ metadata:
     {{- end }}
 {{- end }}
 ---
-{{- if and (eq .Values.global.actors.enabled true) (eq .Values.global.actors.v2 false) }}
+{{- if and (eq .Values.global.actors.enabled true) (eq .Values.global.actors.v2 true) }}
 {{- if eq .Values.global.rbac.namespaced true }}
 kind: Role
 {{- else }}
@@ -18,7 +18,7 @@ kind: ClusterRole
 {{- end }}
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: dapr-placement
+  name: dapr-actors
   labels:
     {{- range $key, $value := .Values.global.k8sLabels }}
     {{ $key }}: {{ tpl $value $ }}
@@ -26,7 +26,7 @@ metadata:
 rules: []
 {{- end }}
 ---
-{{- if and (eq .Values.global.actors.enabled true) (eq .Values.global.actors.v2 false) }}
+{{- if and (eq .Values.global.actors.enabled true) (eq .Values.global.actors.v2 true) }}
 {{- if eq .Values.global.rbac.namespaced true }}
 kind: RoleBinding
 {{- else }}
@@ -34,14 +34,14 @@ kind: ClusterRoleBinding
 {{- end }}
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: dapr-placement
+  name: dapr-actors
   labels:
     {{- range $key, $value := .Values.global.k8sLabels }}
     {{ $key }}: {{ tpl $value $ }}
     {{- end }}
 subjects:
 - kind: ServiceAccount
-  name: dapr-placement
+  name: dapr-actors
   namespace: {{ .Release.Namespace }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -50,5 +50,5 @@ roleRef:
 {{- else }}
   kind: ClusterRole
 {{- end }}
-  name: dapr-placement
+  name: dapr-actors
 {{- end }}

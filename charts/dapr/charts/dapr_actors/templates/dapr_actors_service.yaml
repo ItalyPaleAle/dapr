@@ -1,0 +1,19 @@
+{{- if and (eq .Values.global.actors.enabled true) (eq .Values.global.actors.v2 true) }}
+kind: Service
+apiVersion: v1
+metadata:
+  name: dapr-actors
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- range $key, $value := .Values.global.k8sLabels }}
+    {{ $key }}: {{ tpl $value $ }}
+    {{- end }}
+spec:
+  selector:
+    app: dapr-actors
+  ports:
+    - protocol: TCP
+      port: {{ .Values.ports.port }} 
+      targetPort: {{ .Values.ports.targetPort }}
+      name: grpc
+{{- end }}

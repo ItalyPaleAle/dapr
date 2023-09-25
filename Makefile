@@ -23,7 +23,7 @@ GIT_COMMIT  = $(shell git rev-list -1 HEAD)
 GIT_VERSION ?= $(shell git describe --always --abbrev=7 --dirty)
 # By default, disable CGO_ENABLED. See the details on https://golang.org/cmd/cgo
 CGO         ?= 0
-BINARIES    ?= daprd placement operator injector sentry
+BINARIES    ?= daprd placement operator injector sentry actors
 HA_MODE     ?= false
 # Force in-memory log for placement
 FORCE_INMEM ?= true
@@ -272,6 +272,7 @@ ifeq ($(ONLY_DAPR_IMAGE),true)
 	ADDITIONAL_HELM_SET := $(ADDITIONAL_HELM_SET) \
 		--set dapr_operator.image.name=$(RELEASE_NAME) \
 		--set dapr_placement.image.name=$(RELEASE_NAME) \
+		--set dapr_actors.image.name=$(RELEASE_NAME) \
 		--set dapr_sentry.image.name=$(RELEASE_NAME) \
 		--set dapr_sidecar_injector.image.name=$(RELEASE_NAME) \
 		--set dapr_sidecar_injector.injectorImage.name=$(RELEASE_NAME)

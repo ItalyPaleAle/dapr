@@ -59,6 +59,7 @@ global:
   #  injector:
   actors:
     enabled: true
+    v2: false
   daprControlPlaneOs: linux
   labels: {}
   seccompProfile: ""

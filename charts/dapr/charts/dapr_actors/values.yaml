@@ -1,0 +1,38 @@
+replicaCount: 1
+logLevel: info
+component: actors
+
+# Override this to use a custom actors service image.
+# If the image name contains a "/", it is assumed to be a full docker image name, including the registry url and tag.
+# Otherwise, the helm chart will use {{ .Values.global.registry }}/{{ .Values.image.name }}:{{ .Values.global.tag }}
+image:
+  name: "actors"
+
+nameOverride: ""
+fullnameOverride: ""
+
+deploymentAnnotations: {}
+
+runAsNonRoot: true
+
+ports:
+  protocol: TCP
+  port: 51101
+  targetPort: 51101
+
+resources: {}
+
+livenessProbe:
+  initialDelaySeconds: 3
+  periodSeconds: 3
+  failureThreshold: 5
+
+readinessProbe:
+  initialDelaySeconds: 3
+  periodSeconds: 3
+  failureThreshold: 5
+
+debug:
+  enabled: false
+  port: 40000
+  initialDelaySeconds: 30000
