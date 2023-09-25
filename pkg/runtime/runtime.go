@@ -210,21 +210,21 @@ func newDaprRuntime(ctx context.Context,
 		channels:                   channels,
 		sec:                        sec,
 		processor: processor.New(processor.Options{
-			ID:               runtimeConfig.id,
-			Namespace:        getNamespace(),
-			IsHTTP:           runtimeConfig.appConnectionConfig.Protocol.IsHTTP(),
-			PlacementEnabled: len(runtimeConfig.placementAddresses) > 0,
-			Registry:         runtimeConfig.registry,
-			ComponentStore:   compStore,
-			Meta:             meta,
-			GlobalConfig:     globalConfig,
-			Resiliency:       resiliencyProvider,
-			Mode:             runtimeConfig.mode,
-			PodName:          getPodName(),
-			Standalone:       runtimeConfig.standalone,
-			OperatorClient:   operatorClient,
-			GRPC:             grpc,
-			Channels:         channels,
+			ID:             runtimeConfig.id,
+			Namespace:      getNamespace(),
+			IsHTTP:         runtimeConfig.appConnectionConfig.Protocol.IsHTTP(),
+			ActorsEnabled:  runtimeConfig.ActorsEnabled(),
+			Registry:       runtimeConfig.registry,
+			ComponentStore: compStore,
+			Meta:           meta,
+			GlobalConfig:   globalConfig,
+			Resiliency:     resiliencyProvider,
+			Mode:           runtimeConfig.mode,
+			PodName:        getPodName(),
+			Standalone:     runtimeConfig.standalone,
+			OperatorClient: operatorClient,
+			GRPC:           grpc,
+			Channels:       channels,
 		}),
 	}
 
@@ -573,7 +573,7 @@ func (a *DaprRuntime) appHealthReadyInit(ctx context.Context) error {
 	// Load app configuration (for actors) and init actors
 	a.loadAppConfiguration(ctx)
 
-	if len(a.runtimeConfig.placementAddresses) != 0 {
+	if a.runtimeConfig.ActorsEnabled() {
 		err = a.initActors(ctx)
 		if err != nil {
 			log.Warn(err)
