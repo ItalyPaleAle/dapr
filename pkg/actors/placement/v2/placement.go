@@ -41,7 +41,8 @@ type actorPlacement struct {
 	lock           sync.Mutex
 	actorTypes     []*actorsv1pb.ActorHostType
 	addActorTypeCh chan struct{}
-	appHealthCh    chan bool
+	appHealthFn    func(ctx context.Context) <-chan bool
+	appHealthCh    <-chan bool
 	resiliency     resiliency.Provider
 	running        atomic.Bool
 	runningCtx     context.Context
@@ -55,8 +56,7 @@ type ActorPlacementOpts struct {
 	Address      string
 	AppID        string
 	Resiliency   resiliency.Provider
-	// TODO: Needs to be used
-	AppHealthCh chan bool
+	AppHealthFn  func(ctx context.Context) <-chan bool
 }
 
 // NewActorPlacement initializes ActorPlacement for the actor service.
@@ -67,7 +67,7 @@ func NewActorPlacement(opts ActorPlacementOpts) internal.PlacementService {
 		address:      opts.Address,
 		appID:        opts.AppID,
 		resiliency:   opts.Resiliency,
-		appHealthCh:  opts.AppHealthCh,
+		appHealthFn:  opts.AppHealthFn,
 		actorTypes:   make([]*actorsv1pb.ActorHostType, 0),
 	}
 }
@@ -123,6 +123,9 @@ func (p *actorPlacement) Start(ctx context.Context) error {
 		MaxTTL: 5,
 	})
 
+	// Start checking app's health
+	p.appHealthCh = p.appHealthFn(ctx)
+
 	// If we have actor types registered, start the ConnectHost stream right away
 	p.lock.Lock()
 	if len(p.actorTypes) > 0 {
@@ -140,18 +143,37 @@ func (p *actorPlacement) Start(ctx context.Context) error {
 // It must be invoked by a caller that owns the lock.
 func (p *actorPlacement) startConnectHost() {
 	go func() {
-		err := p.establishConnectHost(p.actorTypes)
-		if err != nil {
-			// TODO: Handle errors better and restart the connection
-			log.Errorf("Error from ConnectHost: %v", err)
+		for {
+			select {
+			case healthy, ok := <-p.appHealthCh:
+				// If the second value is false, it means the channel is closed
+				// That happens when the context is canceled
+				if !ok {
+					return
+				}
+				if healthy {
+					// If we got a healthy signal, start the ConnectHost stream
+					// Until this method returns, signals in the channel will be handled by the loop within this method
+					err := p.establishConnectHost(p.actorTypes)
+					if err != nil {
+						// TODO: Handle errors better and restart the connection
+						log.Errorf("Error from ConnectHost: %v", err)
+					}
+				}
+			case <-p.runningCtx.Done():
+				return
+			}
 		}
 	}()
 	p.addActorTypeCh = make(chan struct{}, 1)
 }
 
 func (p *actorPlacement) establishConnectHost(actorTypes []*actorsv1pb.ActorHostType) error {
+	ctx, cancel := context.WithCancel(p.runningCtx)
+	defer cancel()
+
 	// Establish the stream connection
-	stream, err := p.actorsClient.ConnectHost(p.runningCtx)
+	stream, err := p.actorsClient.ConnectHost(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to establish ConnectHost stream: %w", err)
 	}
@@ -256,12 +278,24 @@ func (p *actorPlacement) establishConnectHost(actorTypes []*actorsv1pb.ActorHost
 				return fmt.Errorf("error while updating the list of supported actor types: %w", err)
 			}
 
+		case healthy, ok := <-p.appHealthCh:
+			// If the second value is false, it means the channel is closed
+			// That happens when the context is canceled, in which case the service is shutting down
+			if !ok {
+				return nil
+			}
+
+			// If the app is reported as unhealthy, we need to disconnect
+			if !healthy {
+				return errors.New("app is unhealthy")
+			}
+
 		case <-stream.Context().Done():
 			// When the context is done, it usually means that the service is shutting down
 			// Let's just return
 			return nil
 
-		case <-p.runningCtx.Done():
+		case <-ctx.Done():
 			// Context passed to Start is being closed
 			// Let's just return
 			return nil

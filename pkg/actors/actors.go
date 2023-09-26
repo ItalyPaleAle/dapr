@@ -267,9 +267,7 @@ func (a *actorsRuntime) Init(ctx context.Context) (err error) {
 				PodName:         a.actorsConfig.Config.PodName,
 				ActorTypes:      a.actorsConfig.Config.HostedActorTypes.ListActorTypes(),
 				Resiliency:      a.resiliency,
-				AppHealthFn: func(ctx context.Context) <-chan bool {
-					return a.getAppHealthCheckChan(ctx)
-				},
+				AppHealthFn:     a.getAppHealthCheckChan,
 				AfterTableUpdateFn: func() {
 					a.drainRebalancedActors()
 					a.actorsReminders.OnPlacementTablesUpdated(ctx)
@@ -281,7 +279,7 @@ func (a *actorsRuntime) Init(ctx context.Context) (err error) {
 				ActorsClient: a.actorsServiceClient,
 				AppID:        a.actorsConfig.Config.AppID,
 				Address:      hostname,
-				AppHealthCh:  nil, // TODO
+				AppHealthFn:  a.getAppHealthCheckChan,
 			})
 			for _, actorType := range a.actorsConfig.Config.HostedActorTypes.ListActorTypes() {
 				err = a.placement.AddHostedActorType(actorType, a.actorsConfig.GetIdleTimeoutForType(actorType))
