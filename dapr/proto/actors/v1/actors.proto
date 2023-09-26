@@ -175,6 +175,13 @@ message ReportActorDeactivationResponse {
     // Empty for now
 }
 
+message ReminderRef {
+    string actor_type = 1;
+    string actor_id = 2;
+    // Name of the reminder
+    string name = 3;
+}
+
 message Reminder {
     string actor_type = 1;
     string actor_id = 2;
@@ -189,12 +196,6 @@ message Reminder {
     bytes data = 7;
 }
 
-message ReminderID {
-    string actor_type = 1;
-    string actor_id = 2;
-    string name = 3;
-}
-
 message CreateReminderRequest {
     Reminder reminder = 1;
 }
@@ -204,7 +205,7 @@ message CreateReminderResponse {
 }
 
 message GetReminderRequest {
-    ReminderID reminder_id = 1;
+    ReminderRef ref = 1;
 }
 
 message GetReminderResponse {
@@ -212,7 +213,7 @@ message GetReminderResponse {
 }
 
 message DeleteReminderRequest {
-    ReminderID reminder_id = 1;
+    ReminderRef ref = 1;
 }
 
 message DeleteReminderResponse {
