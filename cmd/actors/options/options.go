@@ -53,6 +53,7 @@ type Options struct {
 	SentryAddress    string
 
 	HostHealthCheckInterval time.Duration
+	NoReminders             bool
 
 	Logger  logger.Options
 	Metrics *metrics.Options
@@ -71,6 +72,7 @@ func New() *Options {
 	fs.StringVar(&opts.StoreOptsFile, "store-opts-file", "", "Path to a file containing options for the store, with each line having its own 'key=value'")
 
 	fs.DurationVar(&opts.HostHealthCheckInterval, "host-healthcheck-interval", DefaultHostHealthCheckInterval, "Interval for expecting health checks from actor hosts")
+	fs.BoolVar(&opts.NoReminders, "no-reminders", false, "If true, does not enable reminders functionality in the service")
 
 	fs.BoolVar(&opts.MTLSEnabled, "enable-mtls", false, "Enable mTLS")
 	fs.StringVar(&opts.TrustDomain, "trust-domain", "localhost", "Trust domain for the Dapr control plane (for mTLS)")

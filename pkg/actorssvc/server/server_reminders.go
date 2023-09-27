@@ -28,6 +28,10 @@ import (
 // CreateReminder creates a new reminder.
 // If a reminder with the same ID (actor type, actor ID, name) already exists, it's replaced.
 func (s *server) CreateReminder(ctx context.Context, req *actorsv1pb.CreateReminderRequest) (*actorsv1pb.CreateReminderResponse, error) {
+	if !s.opts.EnableReminders {
+		return nil, status.Error(codes.PermissionDenied, "Reminders functionality is not enabled")
+	}
+
 	err := req.GetReminder().ValidateRequest()
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid reminder in request: %v", err)
@@ -44,6 +48,10 @@ func (s *server) CreateReminder(ctx context.Context, req *actorsv1pb.CreateRemin
 
 // GetReminder returns details about an existing reminder.
 func (s *server) GetReminder(ctx context.Context, req *actorsv1pb.GetReminderRequest) (*actorsv1pb.GetReminderResponse, error) {
+	if !s.opts.EnableReminders {
+		return nil, status.Error(codes.PermissionDenied, "Reminders functionality is not enabled")
+	}
+
 	err := req.GetRef().Validate()
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid reminder reference in request: %v", err)
@@ -81,6 +89,10 @@ func (s *server) GetReminder(ctx context.Context, req *actorsv1pb.GetReminderReq
 
 // DeleteReminder removes an existing reminder before it fires.
 func (s *server) DeleteReminder(ctx context.Context, req *actorsv1pb.DeleteReminderRequest) (*actorsv1pb.DeleteReminderResponse, error) {
+	if !s.opts.EnableReminders {
+		return nil, status.Error(codes.PermissionDenied, "Reminders functionality is not enabled")
+	}
+
 	err := req.GetRef().Validate()
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid reminder reference in request: %v", err)
@@ -101,5 +113,9 @@ func (s *server) DeleteReminder(ctx context.Context, req *actorsv1pb.DeleteRemin
 
 // ReminderCompleted is used by the sidecar to acknowledge that a reminder has been executed successfully.
 func (s *server) ReminderCompleted(ctx context.Context, req *actorsv1pb.ReminderCompletedRequest) (*actorsv1pb.ReminderCompletedResponse, error) {
+	if !s.opts.EnableReminders {
+		return nil, status.Error(codes.PermissionDenied, "Reminders functionality is not enabled")
+	}
+
 	panic("unimplemented")
 }

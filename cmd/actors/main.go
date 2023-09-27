@@ -88,6 +88,7 @@ func main() {
 				StoreName:               opts.StoreName,
 				StoreOpts:               opts.StoreOpts,
 				HostHealthCheckInterval: opts.HostHealthCheckInterval,
+				EnableReminders:         !opts.NoReminders,
 				Security:                sec,
 			})
 		},

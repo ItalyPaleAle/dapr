@@ -30,6 +30,7 @@ type Options struct {
 	StoreName string
 	StoreOpts []string
 
+	EnableReminders         bool
 	HostHealthCheckInterval time.Duration
 
 	Security security.Handler
