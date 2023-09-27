@@ -74,6 +74,21 @@ func (x *RegisterActorHost) ValidateUpdateMessage() error {
 	return nil
 }
 
+// GetActorTypeNames returns the list of all the names of supported actor types.
+func (x *RegisterActorHost) GetActorTypeNames() []string {
+	ats := x.GetActorTypes()
+	res := make([]string, len(ats))
+	n := 0
+	for _, v := range ats {
+		if v == nil {
+			continue
+		}
+		res[n] = v.ActorType
+		n++
+	}
+	return res[:n]
+}
+
 // ToActorStoreRequest converts the message to an actorstore.AddActorHostRequest object for registering a new actor host.
 func (x *RegisterActorHost) ToActorStoreRequest() actorstore.AddActorHostRequest {
 	var actorTypes []actorstore.ActorHostType = nil

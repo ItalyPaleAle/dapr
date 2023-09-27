@@ -43,8 +43,10 @@ type server struct {
 
 	// This map contains the list of active connections from actor hosts.
 	// We use a "regular" map with a RWMutex instead of a sync.Map because we need to be sure that once we get a channel from the map, it's still valid when we attempt to use it.
-	connectedHosts     map[string]chan actorsv1pb.ServerStreamMessage
-	connectedHostsLock sync.RWMutex
+	connectedHosts           connectedHosts
+	connectedHostsIDs        []string
+	connectedHostsActorTypes []string
+	connectedHostsLock       sync.RWMutex
 }
 
 // Start starts the server. Blocks until the context is cancelled.
@@ -63,7 +65,7 @@ func Start(ctx context.Context, opts Options) error {
 func (s *server) Init(ctx context.Context, opts Options) (err error) {
 	s.opts = opts
 	s.shutdownCh = make(chan struct{})
-	s.connectedHosts = make(map[string]chan actorsv1pb.ServerStreamMessage)
+	s.connectedHosts = make(connectedHosts)
 
 	// Generate a random PID
 	s.pid, err = generatePID()
@@ -92,7 +94,7 @@ func (s *server) initActorStore(ctx context.Context) (err error) {
 		return err
 	}
 
-	err = s.store.Init(ctx, s.opts.GetActorStoreMetadata())
+	err = s.store.Init(ctx, s.opts.GetActorStoreMetadata(s.pid))
 	if err != nil {
 		return err
 	}
@@ -143,6 +145,23 @@ func (s *server) ServiceInfo(ctx context.Context, req *actorsv1pb.ServiceInfoReq
 	}, nil
 }
 
+// Adds or updates a connected host.
+func (s *server) setConnectedHost(actorHostID string, info connectedHostInfo) {
+	// Set in the connectedHosts map then update the cached actor types
+	s.connectedHostsLock.Lock()
+	s.connectedHosts[actorHostID] = info
+	s.connectedHostsIDs, s.connectedHostsActorTypes = s.connectedHosts.updateCachedData(s.connectedHostsIDs, s.connectedHostsActorTypes)
+	s.connectedHostsLock.Unlock()
+}
+
+// Removes a connected host
+func (s *server) removeConnectedHost(actorHostID string) {
+	s.connectedHostsLock.Lock()
+	delete(s.connectedHosts, actorHostID)
+	s.connectedHostsIDs, s.connectedHostsActorTypes = s.connectedHosts.updateCachedData(s.connectedHostsIDs, s.connectedHostsActorTypes)
+	s.connectedHostsLock.Unlock()
+}
+
 // Generates a new "process ID" randomly.
 // This identifier has only 32 bits of entropy, which means that collisions are not extremely unlikely.
 // However, pids are only used as additional safeguards when acquiring locks on the reminders table, so in the (still rare) event of a collision, that is tolerable.
@@ -153,4 +172,45 @@ func generatePID() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(pidB), nil
+}
+
+type connectedHosts map[string]connectedHostInfo
+
+type connectedHostInfo struct {
+	serverMsgCh chan actorsv1pb.ServerStreamMessage
+	actorTypes  []string
+}
+
+func (ch connectedHosts) updateCachedData(connectedHostsIDs, actorTypesRes []string) ([]string, []string) {
+	if connectedHostsIDs == nil {
+		// If the result slice is nil, allocate an initial capacity for the number of hosts
+		connectedHostsIDs = make([]string, 0, len(ch))
+	} else {
+		// Reset the slice but keep the memory allocated
+		connectedHostsIDs = connectedHostsIDs[:0]
+	}
+
+	if actorTypesRes == nil {
+		// If the result slice is nil, allocate an initial capacity of 2 * number of hosts, as a guesstimate
+		actorTypesRes = make([]string, 0, len(ch)*2)
+	} else {
+		// Reset the slice but keep the memory allocated
+		actorTypesRes = actorTypesRes[:0]
+	}
+
+	foundTypes := make(map[string]struct{}, cap(actorTypesRes))
+	for name, info := range ch {
+		connectedHostsIDs = append(connectedHostsIDs, name)
+
+		// Add the actor types avoiding duplicates
+		for _, at := range info.actorTypes {
+			_, ok := foundTypes[at]
+			if ok {
+				continue
+			}
+			foundTypes[at] = struct{}{}
+			actorTypesRes = append(actorTypesRes, at)
+		}
+	}
+	return connectedHostsIDs, actorTypesRes
 }

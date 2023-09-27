@@ -30,8 +30,11 @@ type Options struct {
 	StoreName string
 	StoreOpts []string
 
-	EnableReminders         bool
-	HostHealthCheckInterval time.Duration
+	EnableReminders              bool
+	HostHealthCheckInterval      time.Duration
+	RemindersFetchAheadInterval  time.Duration
+	RemindersLeaseDuration       time.Duration
+	RemindersFetchAheadBatchSize int
 
 	Security security.Handler
 }
@@ -53,18 +56,22 @@ func (o Options) GetActorStoreOptions() map[string]string {
 	return res
 }
 
-func (o Options) GetActorStoreMetadata() actorstore.Metadata {
+func (o Options) GetActorStoreMetadata(pid string) actorstore.Metadata {
 	return actorstore.Metadata{
 		Base: metadata.Base{
 			Properties: o.GetActorStoreOptions(),
 		},
+		PID:           pid,
 		Configuration: o.GetActorsConfiguration(),
 	}
 }
 
 func (o Options) GetActorsConfiguration() actorstore.ActorsConfiguration {
 	return actorstore.ActorsConfiguration{
-		HostHealthCheckInterval: o.HostHealthCheckInterval,
+		HostHealthCheckInterval:      o.HostHealthCheckInterval,
+		RemindersFetchAheadInterval:  o.RemindersFetchAheadInterval,
+		RemindersLeaseDuration:       o.RemindersLeaseDuration,
+		RemindersFetchAheadBatchSize: o.RemindersFetchAheadBatchSize,
 	}
 }
 

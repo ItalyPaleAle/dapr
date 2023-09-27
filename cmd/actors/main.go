@@ -16,6 +16,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"time"
 
 	// Register all stores
 	_ "github.com/dapr/dapr/cmd/actors/stores"
@@ -90,6 +91,11 @@ func main() {
 				HostHealthCheckInterval: opts.HostHealthCheckInterval,
 				EnableReminders:         !opts.NoReminders,
 				Security:                sec,
+
+				// TODO: Make the following options configurable
+				RemindersFetchAheadInterval:  5 * time.Second,
+				RemindersLeaseDuration:       20 * time.Second,
+				RemindersFetchAheadBatchSize: 3,
 			})
 		},
 		// Healthz server

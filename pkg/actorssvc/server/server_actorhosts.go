@@ -32,7 +32,7 @@ import (
 // to communicate with the sidecar.
 func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 	// Receive the first message
-	msg, err := s.connectHostHandshake(stream)
+	handshakeMsg, err := s.connectHostHandshake(stream)
 	if err != nil {
 		// If the error is io.EOF, it means that the stream has ended
 		if errors.Is(err, io.EOF) {
@@ -43,12 +43,12 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 	}
 
 	// Register the actor host
-	actorHostID, err := s.store.AddActorHost(stream.Context(), msg.ToActorStoreRequest())
+	actorHostID, err := s.store.AddActorHost(stream.Context(), handshakeMsg.ToActorStoreRequest())
 	if err != nil {
 		log.Errorf("Failed to register actor host: %v", err)
 		return fmt.Errorf("failed to register actor host: %w", err)
 	}
-	log.Debugf("Registered actor host: id='%s' appID='%s' address='%s' actorTypes=%v", actorHostID, msg.AppId, msg.Address, msg.GetActorTypes())
+	log.Debugf("Registered actor host: id='%s' appID='%s' address='%s' actorTypes=%v", actorHostID, handshakeMsg.AppId, handshakeMsg.Address, handshakeMsg.GetActorTypeNames())
 
 	// Send the relevant configuration to the actor host
 	err = stream.Send(s.opts.GetActorHostConfigurationMessage())
@@ -113,14 +113,11 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 
 	// Store a channel in connectedHosts that can be used to send messages to this actor host
 	serverMsgCh := make(chan actorsv1pb.ServerStreamMessage)
-	s.connectedHostsLock.Lock()
-	s.connectedHosts[actorHostID] = serverMsgCh
-	s.connectedHostsLock.Unlock()
-	defer func() {
-		s.connectedHostsLock.Lock()
-		delete(s.connectedHosts, actorHostID)
-		s.connectedHostsLock.Unlock()
-	}()
+	s.setConnectedHost(actorHostID, connectedHostInfo{
+		serverMsgCh: serverMsgCh,
+		actorTypes:  handshakeMsg.GetActorTypeNames(),
+	})
+	defer s.removeConnectedHost(actorHostID)
 
 	unregisterOnClose := true
 	defer func() {
@@ -148,13 +145,17 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 		case msgAny := <-clientMsgCh:
 			// Received a message from the client
 			// Any message counts as a ping (at the very least), so update the actor host table
-			var req actorstore.UpdateActorHostRequest
+			var (
+				req               actorstore.UpdateActorHostRequest
+				updatedActorTypes []string
+			)
 			switch msg := msgAny.(type) {
 			case *actorsv1pb.RegisterActorHost:
 				// We received a request to update the actor host's registration
 				// This also counts as a ping
 				req = msg.ToUpdateActorHostRequest()
 				req.UpdateLastHealthCheck = true
+				updatedActorTypes = msg.GetActorTypeNames()
 			default:
 				// We received a ping
 				req.UpdateLastHealthCheck = true
@@ -171,6 +172,14 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 			if err != nil {
 				log.Errorf("Failed to send ping response to actor host: %v", err)
 				return fmt.Errorf("failed to send ping response to actor host: %w", err)
+			}
+
+			// Update the list of cached actor host types
+			if updatedActorTypes != nil {
+				s.setConnectedHost(actorHostID, connectedHostInfo{
+					serverMsgCh: serverMsgCh,
+					actorTypes:  updatedActorTypes,
+				})
 			}
 
 			// Reset the healthcheck timer
