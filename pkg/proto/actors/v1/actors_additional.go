@@ -150,3 +150,84 @@ func (x *ActorHostConfiguration) GetPingInterval() time.Duration {
 		return d / 2
 	}
 }
+
+// Validate if the message contains all fields that are required.
+func (x *ReminderRef) Validate() error {
+	if x == nil {
+		return errors.New("message is nil")
+	}
+	if x.ActorType == "" {
+		return errors.New("required property 'actor_type' is not set")
+	}
+	if x.ActorId == "" {
+		return errors.New("required property 'actor_id' is not set")
+	}
+	if x.Name == "" {
+		return errors.New("required property 'name' is not set")
+	}
+	return nil
+}
+
+// ToActorStoreRequest converts the message to an actorstore.ReminderRef object.
+func (x *ReminderRef) ToActorStoreReminderRef() actorstore.ReminderRef {
+	return actorstore.ReminderRef{
+		ActorType: x.ActorType,
+		ActorID:   x.ActorId,
+		Name:      x.Name,
+	}
+}
+
+// ValidateRequest validates if the message contains all fields that are required in the request.
+func (x *Reminder) ValidateRequest() error {
+	if x == nil {
+		return errors.New("message is nil")
+	}
+	if x.ActorType == "" {
+		return errors.New("required property 'actor_type' is not set")
+	}
+	if x.ActorId == "" {
+		return errors.New("required property 'actor_id' is not set")
+	}
+	if x.Name == "" {
+		return errors.New("required property 'name' is not set")
+	}
+	if x.ExecutionTime == nil || !x.ExecutionTime.IsValid() || x.ExecutionTime.AsTime().IsZero() {
+		return errors.New("required property 'execution_time' is not set")
+	}
+	return nil
+}
+
+// ToActorStoreRequest converts the message to an actorstore.ReminderRef object.
+func (x *Reminder) ToActorStoreReminderRef() actorstore.ReminderRef {
+	return actorstore.ReminderRef{
+		ActorType: x.ActorType,
+		ActorID:   x.ActorId,
+		Name:      x.Name,
+	}
+}
+
+// ToActorStoreRequest converts the message to an actorstore.CreateReminderRequest object.
+func (x *CreateReminderRequest) ToActorStoreRequest() actorstore.CreateReminderRequest {
+	r := x.GetReminder()
+
+	opts := actorstore.ReminderOptions{
+		ExecutionTime: r.ExecutionTime.AsTime(),
+	}
+	if r.Period != "" {
+		opts.Period = &r.Period
+	}
+	if r.Ttl != nil && r.Ttl.IsValid() {
+		ttl := r.Ttl.AsTime()
+		if !ttl.IsZero() {
+			opts.TTL = &ttl
+		}
+	}
+	if len(r.Data) > 0 {
+		opts.Data = r.Data
+	}
+
+	return actorstore.CreateReminderRequest{
+		ReminderRef:     r.ToActorStoreReminderRef(),
+		ReminderOptions: opts,
+	}
+}
