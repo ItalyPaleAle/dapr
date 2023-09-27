@@ -70,11 +70,11 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 	defer stopHealthCheckTimeout()
 
 	// Read messages in background
-	msgCh := make(chan interface{ ProtoMessage() })
+	clientMsgCh := make(chan interface{ ProtoMessage() })
 	errCh := make(chan error)
 	go func() {
 		defer func() {
-			close(msgCh)
+			close(clientMsgCh)
 			close(errCh)
 		}()
 		for {
@@ -101,14 +101,25 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 					return
 				}
 				log.Debugf("Received registration update from actor host id='%s'", actorHostID)
-				msgCh <- msg.RegisterActorHost
+				clientMsgCh <- msg.RegisterActorHost
 			default:
 				// Assume all other messages are a ping
 				// TODO: Remove this debug log
 				log.Debugf("Received ping from actor host id='%s'", actorHostID)
-				msgCh <- nil
+				clientMsgCh <- nil
 			}
 		}
+	}()
+
+	// Store a channel in connectedHosts that can be used to send messages to this actor host
+	serverMsgCh := make(chan actorsv1pb.ServerStreamMessage)
+	s.connectedHostsLock.Lock()
+	s.connectedHosts[actorHostID] = serverMsgCh
+	s.connectedHostsLock.Unlock()
+	defer func() {
+		s.connectedHostsLock.Lock()
+		delete(s.connectedHosts, actorHostID)
+		s.connectedHostsLock.Unlock()
 	}()
 
 	unregisterOnClose := true
@@ -134,7 +145,8 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 	emptyResponse := &actorsv1pb.ConnectHostServerStream{}
 	for {
 		select {
-		case msgAny := <-msgCh:
+		case msgAny := <-clientMsgCh:
+			// Received a message from the client
 			// Any message counts as a ping (at the very least), so update the actor host table
 			var req actorstore.UpdateActorHostRequest
 			switch msg := msgAny.(type) {
@@ -164,6 +176,16 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 			// Reset the healthcheck timer
 			stopHealthCheckTimeout()
 			healthCheckTimeout.Reset(s.opts.HostHealthCheckInterval)
+
+		case msg := <-serverMsgCh:
+			// Server wants to send a message to the client
+			err = stream.Send(&actorsv1pb.ConnectHostServerStream{
+				Message: msg,
+			})
+			if err != nil {
+				log.Errorf("Failed to send message to actor host: %v", err)
+				return fmt.Errorf("failed to send message to actor host: %w", err)
+			}
 
 		case <-healthCheckTimeout.C:
 			// Host hasn't sent a ping in the required amount of time, so we must assume it's offline

@@ -15,8 +15,12 @@ package server
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"net"
+	"sync"
 
 	"google.golang.org/grpc"
 
@@ -33,6 +37,14 @@ type server struct {
 	store      actorstore.Store
 	srv        *grpc.Server
 	shutdownCh chan struct{}
+
+	// "Process ID", which is generated randomly when the server is initialized.
+	pid string
+
+	// This map contains the list of active connections from actor hosts.
+	// We use a "regular" map with a RWMutex instead of a sync.Map because we need to be sure that once we get a channel from the map, it's still valid when we attempt to use it.
+	connectedHosts     map[string]chan actorsv1pb.ServerStreamMessage
+	connectedHostsLock sync.RWMutex
 }
 
 // Start starts the server. Blocks until the context is cancelled.
@@ -48,9 +60,17 @@ func Start(ctx context.Context, opts Options) error {
 	return s.Run(ctx)
 }
 
-func (s *server) Init(ctx context.Context, opts Options) error {
+func (s *server) Init(ctx context.Context, opts Options) (err error) {
 	s.opts = opts
 	s.shutdownCh = make(chan struct{})
+	s.connectedHosts = make(map[string]chan actorsv1pb.ServerStreamMessage)
+
+	// Generate a random PID
+	s.pid, err = generatePID()
+	if err != nil {
+		return fmt.Errorf("failed to generate random process ID: %w", err)
+	}
+
 	log.Infof("Actors subsystem configuration: %v", s.opts.GetActorsConfiguration())
 
 	// Create the gRPC server
@@ -58,7 +78,7 @@ func (s *server) Init(ctx context.Context, opts Options) error {
 	actorsv1pb.RegisterActorsServer(s.srv, s)
 
 	// Init the store
-	err := s.initActorStore(ctx)
+	err = s.initActorStore(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to init actor store: %w", err)
 	}
@@ -121,4 +141,16 @@ func (s *server) ServiceInfo(ctx context.Context, req *actorsv1pb.ServiceInfoReq
 	return &actorsv1pb.ServiceInfoResponse{
 		Version: ActorsServiceVersion,
 	}, nil
+}
+
+// Generates a new "process ID" randomly.
+// This identifier has only 32 bits of entropy, which means that collisions are not extremely unlikely.
+// However, pids are only used as additional safeguards when acquiring locks on the reminders table, so in the (still rare) event of a collision, that is tolerable.
+func generatePID() (string, error) {
+	pidB := make([]byte, 4)
+	_, err := io.ReadFull(rand.Reader, pidB)
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(pidB), nil
 }

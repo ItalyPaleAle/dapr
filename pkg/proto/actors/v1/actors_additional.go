@@ -231,3 +231,11 @@ func (x *CreateReminderRequest) ToActorStoreRequest() actorstore.CreateReminderR
 		ReminderOptions: opts,
 	}
 }
+
+// ServerStreamMessage exposes isConnectHostServerStream_Message.
+// It is the interface for messages that can be sent by the actor service to connected hosts.
+type ServerStreamMessage = isConnectHostServerStream_Message
+
+// ClientStreamMessage exposes isConnectHostClientStream_Message.
+// It is the interface for messages that are sent from connected hosts to the server.
+type ClientStreamMessage = isConnectHostClientStream_Message
