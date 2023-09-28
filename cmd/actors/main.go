@@ -89,10 +89,11 @@ func main() {
 				StoreName:               opts.StoreName,
 				StoreOpts:               opts.StoreOpts,
 				HostHealthCheckInterval: opts.HostHealthCheckInterval,
-				EnableReminders:         !opts.NoReminders,
 				Security:                sec,
 
+				EnableReminders: !opts.NoReminders,
 				// TODO: Make the following options configurable
+				RemindersPollInterval:        2500 * time.Millisecond,
 				RemindersFetchAheadInterval:  5 * time.Second,
 				RemindersLeaseDuration:       20 * time.Second,
 				RemindersFetchAheadBatchSize: 3,

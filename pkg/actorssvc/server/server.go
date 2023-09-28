@@ -23,9 +23,11 @@ import (
 	"sync"
 
 	"google.golang.org/grpc"
+	kclock "k8s.io/utils/clock"
 
 	"github.com/dapr/components-contrib/actorstore"
 	actorsv1pb "github.com/dapr/dapr/pkg/proto/actors/v1"
+	"github.com/dapr/kit/events/queue"
 	"github.com/dapr/kit/logger"
 )
 
@@ -37,6 +39,8 @@ type server struct {
 	store      actorstore.Store
 	srv        *grpc.Server
 	shutdownCh chan struct{}
+	clock      kclock.WithTicker
+	processor  *queue.Processor[*actorstore.FetchedReminder]
 
 	// "Process ID", which is generated randomly when the server is initialized.
 	pid string
@@ -67,6 +71,11 @@ func (s *server) Init(ctx context.Context, opts Options) (err error) {
 	s.shutdownCh = make(chan struct{})
 	s.connectedHosts = make(connectedHosts)
 
+	s.clock = opts.clock
+	if s.clock == nil {
+		s.clock = kclock.RealClock{}
+	}
+
 	// Generate a random PID
 	s.pid, err = generatePID()
 	if err != nil {
@@ -75,15 +84,20 @@ func (s *server) Init(ctx context.Context, opts Options) (err error) {
 
 	log.Infof("Actors subsystem configuration: %v", s.opts.GetActorsConfiguration())
 
-	// Create the gRPC server
-	s.srv = grpc.NewServer(opts.Security.GRPCServerOptionMTLS())
-	actorsv1pb.RegisterActorsServer(s.srv, s)
-
 	// Init the store
 	err = s.initActorStore(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to init actor store: %w", err)
 	}
+
+	// If reminder processing is enabled, start polling for reminder in background
+	if s.opts.EnableReminders {
+		go s.pollForReminders(ctx)
+	}
+
+	// Create the gRPC server
+	s.srv = grpc.NewServer(opts.Security.GRPCServerOptionMTLS())
+	actorsv1pb.RegisterActorsServer(s.srv, s)
 
 	return nil
 }
@@ -150,7 +164,7 @@ func (s *server) setConnectedHost(actorHostID string, info connectedHostInfo) {
 	// Set in the connectedHosts map then update the cached actor types
 	s.connectedHostsLock.Lock()
 	s.connectedHosts[actorHostID] = info
-	s.connectedHostsIDs, s.connectedHostsActorTypes = s.connectedHosts.updateCachedData(s.connectedHostsIDs, s.connectedHostsActorTypes)
+	s.connectedHostsIDs, s.connectedHostsActorTypes = s.connectedHosts.updateCachedData(len(s.connectedHostsIDs), len(s.connectedHostsActorTypes))
 	s.connectedHostsLock.Unlock()
 }
 
@@ -158,7 +172,7 @@ func (s *server) setConnectedHost(actorHostID string, info connectedHostInfo) {
 func (s *server) removeConnectedHost(actorHostID string) {
 	s.connectedHostsLock.Lock()
 	delete(s.connectedHosts, actorHostID)
-	s.connectedHostsIDs, s.connectedHostsActorTypes = s.connectedHosts.updateCachedData(s.connectedHostsIDs, s.connectedHostsActorTypes)
+	s.connectedHostsIDs, s.connectedHostsActorTypes = s.connectedHosts.updateCachedData(len(s.connectedHostsIDs), len(s.connectedHostsActorTypes))
 	s.connectedHostsLock.Unlock()
 }
 
@@ -181,22 +195,16 @@ type connectedHostInfo struct {
 	actorTypes  []string
 }
 
-func (ch connectedHosts) updateCachedData(connectedHostsIDs, actorTypesRes []string) ([]string, []string) {
-	if connectedHostsIDs == nil {
-		// If the result slice is nil, allocate an initial capacity for the number of hosts
-		connectedHostsIDs = make([]string, 0, len(ch))
-	} else {
-		// Reset the slice but keep the memory allocated
-		connectedHostsIDs = connectedHostsIDs[:0]
-	}
+func (ch connectedHosts) updateCachedData(currentConnectedHostsIDsLen, curActorTypeResLen int) (connectedHostsIDs, actorTypesRes []string) {
+	// For connectedHostsIDs, allocate an initial capacity for the number of hosts
+	connectedHostsIDs = make([]string, 0, len(ch))
 
-	if actorTypesRes == nil {
-		// If the result slice is nil, allocate an initial capacity of 2 * number of hosts, as a guesstimate
-		actorTypesRes = make([]string, 0, len(ch)*2)
-	} else {
-		// Reset the slice but keep the memory allocated
-		actorTypesRes = actorTypesRes[:0]
+	// For actorTypeResLen, allocate an initial capacity equal to the current capacity + 2 for each additional host that was added
+	addedHosts := len(ch) - currentConnectedHostsIDsLen
+	if addedHosts < 0 {
+		addedHosts = 0
 	}
+	actorTypesRes = make([]string, 0, currentConnectedHostsIDsLen+addedHosts*2)
 
 	foundTypes := make(map[string]struct{}, cap(actorTypesRes))
 	for name, info := range ch {

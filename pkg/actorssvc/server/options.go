@@ -17,6 +17,8 @@ import (
 	"strings"
 	"time"
 
+	kclock "k8s.io/utils/clock"
+
 	"github.com/dapr/components-contrib/actorstore"
 	"github.com/dapr/components-contrib/metadata"
 	loader "github.com/dapr/dapr/pkg/actorssvc/store"
@@ -30,13 +32,17 @@ type Options struct {
 	StoreName string
 	StoreOpts []string
 
+	HostHealthCheckInterval time.Duration
+
 	EnableReminders              bool
-	HostHealthCheckInterval      time.Duration
+	RemindersPollInterval        time.Duration
 	RemindersFetchAheadInterval  time.Duration
 	RemindersLeaseDuration       time.Duration
 	RemindersFetchAheadBatchSize int
 
 	Security security.Handler
+
+	clock kclock.WithTicker
 }
 
 func (o Options) GetActorStore() (actorstore.Store, error) {
