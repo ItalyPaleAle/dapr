@@ -15,11 +15,13 @@ package actors
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/dapr/components-contrib/actorstore"
+	timeutils "github.com/dapr/kit/time"
 )
 
 // This file contains additional, hand-written methods added to the generated objects.
@@ -219,6 +221,19 @@ func (x *Reminder) ValidateRequest() error {
 	} else if x.HasExecutionTime() && x.HasDelay() {
 		return errors.New("cannot specify both 'execution_time' and 'delay'")
 	}
+
+	if x.Period != "" {
+		_, _, _, _, repeats, err := timeutils.ParseDuration(x.Period)
+		if err != nil {
+			return fmt.Errorf("property 'period' is invalid: %w", err)
+		}
+
+		// Error on timers with zero repetitions
+		if repeats == 0 {
+			return errors.New("property 'period' is invalid: has zero repetitions")
+		}
+	}
+
 	return nil
 }
 

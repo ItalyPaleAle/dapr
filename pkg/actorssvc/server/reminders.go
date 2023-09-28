@@ -17,12 +17,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/dapr/components-contrib/actorstore"
 	"github.com/dapr/dapr/pkg/proto/actors/v1"
 	"github.com/dapr/kit/events/queue"
 	"github.com/dapr/kit/logger"
+	timeutils "github.com/dapr/kit/time"
 )
 
 func (s *server) pollForReminders(ctx context.Context) {
@@ -102,6 +105,8 @@ func (s *server) executeReminder(r *actorstore.FetchedReminder) {
 	// Third, and last, we remove the reminder from the reminders table. However, if the reminder is repeating (and hasn't reached its TTL), then we update its execution time instead.
 
 	ctx := context.Background()
+	log.Debugf("Executing reminder '%s'…", r.Key())
+	start := time.Now()
 
 	// Start by retrieving the reminder's data
 	reminder, err := s.store.GetReminderWithLease(ctx, r)
@@ -162,8 +167,21 @@ func (s *server) executeReminder(r *actorstore.FetchedReminder) {
 		return
 	}
 
-	// Lastly, remove the reminder from the store
+	// Lastly, remove the reminder from the store (or update the execution time for repeating reminders)
+	nextRepetition, updatedPeriod, doesRepeat := s.reminderNextRepetition(reminder)
+	if doesRepeat {
+		// TODO: Update the reminder
+		_ = nextRepetition
+		_ = updatedPeriod
+	} else {
+		err = s.store.DeleteReminderWithLease(ctx, r)
+		if err != nil {
+			log.Errorf("Failed to delete reminder '%s': %v", r.Key(), ctx.Err())
+			return
+		}
+	}
 
+	log.Debugf("Reminder '%s' has been executed in %v", r.Key(), time.Since(start))
 }
 
 func (s *server) fetchReminders(ctx context.Context) ([]*actorstore.FetchedReminder, error) {
@@ -180,4 +198,52 @@ func (s *server) fetchReminders(ctx context.Context) ([]*actorstore.FetchedRemin
 	}
 
 	return s.store.FetchNextReminders(ctx, req)
+}
+
+func (s *server) reminderNextRepetition(reminder actorstore.Reminder) (next time.Time, updatedPeriod string, doesRepeat bool) {
+	// Reminder does not repeat
+	if reminder.Period == nil || *reminder.Period == "" {
+		return next, "", false
+	}
+
+	// For reminders that have a finite number of repetitions, we append "||<num>" at the end to count the ones that have been executed
+	// We need to remove that before returning
+	var (
+		executedCount int
+		countStr      string
+	)
+	updatedPeriod = *reminder.Period
+	updatedPeriod, countStr, _ = strings.Cut(updatedPeriod, "||")
+	if countStr != "" {
+		executedCount, _ = strconv.Atoi(countStr)
+		executedCount++
+	}
+
+	years, months, days, period, repeats, err := timeutils.ParseDuration(*reminder.Period)
+	if err != nil || repeats == 0 {
+		// The repetition string should have been parsed when the reminder was created, to guarantee it's valid
+		// So this should never happen
+		return next, "", false
+	}
+
+	if repeats > 0 && repeats >= executedCount {
+		// We have exhausted all repetitions
+		return next, "", false
+	}
+
+	// Calculate the next repetition time
+	// Note this starts from the current time and not the previous execution time
+	next = s.clock.Now().AddDate(years, months, days).Add(period)
+
+	// If the next repetition is after the TTL, we stop repeating
+	if reminder.TTL != nil && !reminder.TTL.IsZero() && next.After(*reminder.TTL) {
+		return next, "", false
+	}
+
+	// Append the execution count if we are tracking that
+	if executedCount > 0 {
+		updatedPeriod += "||" + strconv.Itoa(executedCount)
+	}
+
+	return next, updatedPeriod, true
 }
