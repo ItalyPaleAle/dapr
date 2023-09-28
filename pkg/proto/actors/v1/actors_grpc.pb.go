@@ -28,8 +28,6 @@ type ActorsClient interface {
 	// It remains active as a long-lived bi-di stream to allow for the Actors service
 	// to communicate with the sidecar, including for health-checks.
 	ConnectHost(ctx context.Context, opts ...grpc.CallOption) (Actors_ConnectHostClient, error)
-	// ReminderCompleted is used by the sidecar to acknowledge that a reminder has been executed successfully.
-	ReminderCompleted(ctx context.Context, in *ReminderCompletedRequest, opts ...grpc.CallOption) (*ReminderCompletedResponse, error)
 	// LookupActor returns the address of an actor.
 	// If the actor is not active yet, it returns the address of an actor host capable of hosting it.
 	LookupActor(ctx context.Context, in *LookupActorRequest, opts ...grpc.CallOption) (*LookupActorResponse, error)
@@ -92,15 +90,6 @@ func (x *actorsConnectHostClient) Recv() (*ConnectHostServerStream, error) {
 	return m, nil
 }
 
-func (c *actorsClient) ReminderCompleted(ctx context.Context, in *ReminderCompletedRequest, opts ...grpc.CallOption) (*ReminderCompletedResponse, error) {
-	out := new(ReminderCompletedResponse)
-	err := c.cc.Invoke(ctx, "/dapr.proto.actors.v1.Actors/ReminderCompleted", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *actorsClient) LookupActor(ctx context.Context, in *LookupActorRequest, opts ...grpc.CallOption) (*LookupActorResponse, error) {
 	out := new(LookupActorResponse)
 	err := c.cc.Invoke(ctx, "/dapr.proto.actors.v1.Actors/LookupActor", in, out, opts...)
@@ -156,8 +145,6 @@ type ActorsServer interface {
 	// It remains active as a long-lived bi-di stream to allow for the Actors service
 	// to communicate with the sidecar, including for health-checks.
 	ConnectHost(Actors_ConnectHostServer) error
-	// ReminderCompleted is used by the sidecar to acknowledge that a reminder has been executed successfully.
-	ReminderCompleted(context.Context, *ReminderCompletedRequest) (*ReminderCompletedResponse, error)
 	// LookupActor returns the address of an actor.
 	// If the actor is not active yet, it returns the address of an actor host capable of hosting it.
 	LookupActor(context.Context, *LookupActorRequest) (*LookupActorResponse, error)
@@ -181,9 +168,6 @@ func (UnimplementedActorsServer) ServiceInfo(context.Context, *ServiceInfoReques
 }
 func (UnimplementedActorsServer) ConnectHost(Actors_ConnectHostServer) error {
 	return status.Errorf(codes.Unimplemented, "method ConnectHost not implemented")
-}
-func (UnimplementedActorsServer) ReminderCompleted(context.Context, *ReminderCompletedRequest) (*ReminderCompletedResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method ReminderCompleted not implemented")
 }
 func (UnimplementedActorsServer) LookupActor(context.Context, *LookupActorRequest) (*LookupActorResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method LookupActor not implemented")
@@ -254,24 +238,6 @@ func (x *actorsConnectHostServer) Recv() (*ConnectHostClientStream, error) {
 		return nil, err
 	}
 	return m, nil
-}
-
-func _Actors_ReminderCompleted_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ReminderCompletedRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ActorsServer).ReminderCompleted(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/dapr.proto.actors.v1.Actors/ReminderCompleted",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ActorsServer).ReminderCompleted(ctx, req.(*ReminderCompletedRequest))
-	}
-	return interceptor(ctx, in, info, handler)
 }
 
 func _Actors_LookupActor_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -374,10 +340,6 @@ var Actors_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ServiceInfo",
 			Handler:    _Actors_ServiceInfo_Handler,
-		},
-		{
-			MethodName: "ReminderCompleted",
-			Handler:    _Actors_ReminderCompleted_Handler,
 		},
 		{
 			MethodName: "LookupActor",

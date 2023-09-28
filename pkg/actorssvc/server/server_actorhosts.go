@@ -284,7 +284,7 @@ func (s *server) LookupActor(ctx context.Context, req *actorsv1pb.LookupActorReq
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid actor reference: %v", err)
 	}
 
-	lar, err := s.store.LookupActor(ctx, req.Actor.ToInternalActorRef())
+	lar, err := s.store.LookupActor(ctx, req.Actor.ToInternalActorRef(), actorstore.LookupActorOpts{})
 	if err != nil {
 		if errors.Is(err, actorstore.ErrNoActorHost) {
 			return nil, status.Error(codes.FailedPrecondition, err.Error())

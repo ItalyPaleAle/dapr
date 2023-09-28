@@ -146,12 +146,3 @@ func (s *server) DeleteReminder(ctx context.Context, req *actorsv1pb.DeleteRemin
 
 	return &actorsv1pb.DeleteReminderResponse{}, nil
 }
-
-// ReminderCompleted is used by the sidecar to acknowledge that a reminder has been executed successfully.
-func (s *server) ReminderCompleted(ctx context.Context, req *actorsv1pb.ReminderCompletedRequest) (*actorsv1pb.ReminderCompletedResponse, error) {
-	if !s.opts.EnableReminders {
-		return nil, status.Error(codes.PermissionDenied, "Reminders functionality is not enabled")
-	}
-
-	panic("unimplemented")
-}

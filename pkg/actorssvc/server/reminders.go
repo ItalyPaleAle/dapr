@@ -15,9 +15,12 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
 
 	"github.com/dapr/components-contrib/actorstore"
+	"github.com/dapr/dapr/pkg/proto/actors/v1"
 	"github.com/dapr/kit/events/queue"
 	"github.com/dapr/kit/logger"
 )
@@ -25,7 +28,7 @@ import (
 func (s *server) pollForReminders(ctx context.Context) {
 	log.Infof("Start polling for reminder with interval='%v' fetchAheadInterval='%v' batchSize='%d' leaseDuration='%v'", s.opts.RemindersPollInterval, s.opts.RemindersFetchAheadInterval, s.opts.RemindersFetchAheadBatchSize, s.opts.RemindersLeaseDuration)
 
-	s.processor = queue.NewProcessor[*actorstore.FetchedReminder](s.processReminder)
+	s.processor = queue.NewProcessor[*actorstore.FetchedReminder](s.executeReminder)
 	defer func() {
 		err := s.processor.Close()
 		if err != nil {
@@ -69,7 +72,7 @@ func (s *server) scheduleNewReminders(ctx context.Context) error {
 	}
 
 	for i := range reminders {
-		err = s.enqueueReminder(&reminders[i])
+		err = s.enqueueReminder(reminders[i])
 		if err != nil {
 			return fmt.Errorf("failed to enqueue reminder %s: %w", reminders[i].Key(), err)
 		}
@@ -89,11 +92,81 @@ func (s *server) enqueueReminder(r *actorstore.FetchedReminder) error {
 	return nil
 }
 
-func (s *server) processReminder(r *actorstore.FetchedReminder) {
-	fmt.Println("EXECUTING REMINDER", r.Key())
+func (s *server) executeReminder(r *actorstore.FetchedReminder) {
+	// Executing reminders is a multi-step process
+	// First, we fetch the reminder again, to be sure that the data we have in-memory is up-to-date:
+	// it is possible, for example, that another instance of the actors service may have modified the reminder in the database
+	// before we got to this stage.
+	// Note that after this check completes, the reminder *will* be executed (or attempted to be executed). If someone else modifies the reminder after this check (but before step 3), the original reminder will still be executed (and modifications would only impact subsequent iterations).
+	// Second, we send the reminder to the actor host that is currently hosting the actor (or if the actor is inactive, we activate it in one of the hosts that we are connected to).
+	// Third, and last, we remove the reminder from the reminders table. However, if the reminder is repeating (and hasn't reached its TTL), then we update its execution time instead.
+
+	ctx := context.Background()
+
+	// Start by retrieving the reminder's data
+	reminder, err := s.store.GetReminderWithLease(ctx, r)
+	if err != nil {
+		if errors.Is(err, actorstore.ErrReminderNotFound) {
+			// If the reminder can't be found now, it means that either the lease was lost, or more likely the reminder was modified in the database
+			// In either case, we can ignore that error.
+			log.Debugf("Reminder '%s' was modified in the store and will not be executed", r.Key())
+			return
+		}
+
+		log.Errorf("Failed to retrieve reminder '%s' with lease: %v", r.Key(), err)
+		return
+	}
+
+	// Lookup the host ID for the actor
+	s.connectedHostsLock.RLock()
+	connectedHosts := s.connectedHostsIDs
+	s.connectedHostsLock.RUnlock()
+	lar, err := s.store.LookupActor(ctx, reminder.ActorRef(), actorstore.LookupActorOpts{
+		Hosts: connectedHosts,
+	})
+	if err != nil {
+		if errors.Is(err, actorstore.ErrNoActorHost) {
+			// If there's no host capable of serving this reminder, it means that the host has disconnected since we fetched the reminder
+			// In this case, we can ignore the error
+			log.Debugf("Reminder '%s' cannot be executed on any host currently connected to this instance and will be retried later", r.Key())
+			return
+		}
+
+		log.Errorf("Failed to lookup actor host for reminder '%s': %v", r.Key(), err)
+		return
+	}
+
+	// Send the message to the actor host
+	serverMsg := &actors.ConnectHostServerStream_ExecuteReminder{
+		ExecuteReminder: &actors.ExecuteReminder{
+			Reminder: actors.NewReminderFromActorStore(reminder),
+		},
+	}
+	s.connectedHostsLock.RLock()
+	connHostInfo, ok := s.connectedHosts[lar.HostID]
+	s.connectedHostsLock.RUnlock()
+	if !ok {
+		// Same situation as above: the host has disconnected since we fetched the reminder
+		log.Debugf("Reminder '%s' cannot be executed on any host currently connected to this instance and will be retried later", r.Key())
+		return
+	}
+
+	// Sanity check to ensure the channel isn't blocked for too long, leading to a goroutine leak
+	sendCtx, sendCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer sendCancel()
+	select {
+	case connHostInfo.serverMsgCh <- serverMsg:
+		// All good - nop
+	case <-sendCtx.Done():
+		log.Errorf("Failed to send reminder '%s' to actor host: %v", r.Key(), ctx.Err())
+		return
+	}
+
+	// Lastly, remove the reminder from the store
+
 }
 
-func (s *server) fetchReminders(ctx context.Context) ([]actorstore.FetchedReminder, error) {
+func (s *server) fetchReminders(ctx context.Context) ([]*actorstore.FetchedReminder, error) {
 	s.connectedHostsLock.RLock()
 	req := actorstore.FetchNextRemindersRequest{
 		Hosts:      s.connectedHostsIDs,

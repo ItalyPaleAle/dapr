@@ -29,9 +29,6 @@ service Actors {
     // to communicate with the sidecar, including for health-checks.
     rpc ConnectHost(stream ConnectHostClientStream) returns (stream ConnectHostServerStream) {}
 
-    // ReminderCompleted is used by the sidecar to acknowledge that a reminder has been executed successfully.
-    rpc ReminderCompleted(ReminderCompletedRequest) returns (ReminderCompletedResponse) {}
-
     // LookupActor returns the address of an actor.
     // If the actor is not active yet, it returns the address of an actor host capable of hosting it.
     rpc LookupActor(LookupActorRequest) returns (LookupActorResponse) {}
@@ -124,13 +121,10 @@ message ActorHostConfiguration {
 
 // ExecuteReminder is one of the messages that cna be sent by ConnectHostServerStream.
 // It is sent to tell the sidecar to execute a reminder.
-// The sidecar is expected to respond right away, and then acknowledge that the reminder
-// has been completely executed with ReminderCompleted.
+// The sidecar is expected to respond right away, and process the reminder asynchronously.
 message ExecuteReminder {
-    // Reference for the execution, which must be sent back in the ReminderComplete request.
-    string ref = 1; 
     // Reminder that is to be executed
-    Reminder reminder = 2;
+    Reminder reminder = 1; 
 }
 
 message ActorRef {
@@ -138,19 +132,10 @@ message ActorRef {
   string actor_id = 2;
 }
 
-// ExecuteReminder is one of the messages that cna be sent by ConnectHostServerStream.
+// DeactivateActor is one of the messages that cna be sent by ConnectHostServerStream.
 // It is sent to tell the sidecar to deactivate an actor.
 message DeactivateActor {
     ActorRef actor = 1;
-}
-
-message ReminderCompletedRequest {
-    // Reference for the execution, which was sent in the ExecuteReminder message.
-    string ref = 1; 
-}
-
-message ReminderCompletedResponse {
-    // Empty for now
 }
 
 message LookupActorRequest {

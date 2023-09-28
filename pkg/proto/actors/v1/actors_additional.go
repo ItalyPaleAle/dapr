@@ -17,6 +17,8 @@ import (
 	"errors"
 	"time"
 
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	"github.com/dapr/components-contrib/actorstore"
 )
 
@@ -289,3 +291,14 @@ type ServerStreamMessage = isConnectHostServerStream_Message
 // ClientStreamMessage exposes isConnectHostClientStream_Message.
 // It is the interface for messages that are sent from connected hosts to the server.
 type ClientStreamMessage = isConnectHostClientStream_Message
+
+// NewReminderFromActorStore returns a new Reminder object from an actorstore.Reminder object.
+func NewReminderFromActorStore(r actorstore.Reminder) *Reminder {
+	return &Reminder{
+		ActorType:     r.ActorType,
+		ActorId:       r.ActorID,
+		Name:          r.Name,
+		ExecutionTime: timestamppb.New(r.ExecutionTime),
+		Data:          r.Data,
+	}
+}
