@@ -16,6 +16,7 @@ syntax = "proto3";
 package dapr.proto.actors.v1;
 
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
 
 option go_package = "github.com/dapr/dapr/pkg/proto/actors/v1;actors";
 
@@ -187,13 +188,16 @@ message Reminder {
     string actor_id = 2;
     // Name of the reminder
     string name = 3;
+    // Execution time - either one of execution_time or delay is required
     google.protobuf.Timestamp execution_time = 4;
+    // Delay from current time; will be parsed in any format supported by Dapr actors - either one of execution_time or delay is required
+    google.protobuf.Duration delay = 5;
     // Can be empty; will be parsed in any format supported by Dapr actors
-    string period = 5;
+    string period = 6;
     // Can be empty
-    google.protobuf.Timestamp ttl = 6;
+    google.protobuf.Timestamp ttl = 7;
     // Can be empty
-    bytes data = 7;
+    bytes data = 8;
 }
 
 message CreateReminderRequest {

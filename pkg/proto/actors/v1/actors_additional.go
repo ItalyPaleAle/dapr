@@ -206,10 +206,24 @@ func (x *Reminder) ValidateRequest() error {
 	if x.Name == "" {
 		return errors.New("required property 'name' is not set")
 	}
-	if x.ExecutionTime == nil || !x.ExecutionTime.IsValid() || x.ExecutionTime.AsTime().IsZero() {
-		return errors.New("required property 'execution_time' is not set")
+
+	if !x.HasExecutionTime() && !x.HasDelay() {
+		return errors.New("either one of 'execution_time' and 'delay' is required")
+	} else if x.HasExecutionTime() && x.HasDelay() {
+		return errors.New("cannot specify both 'execution_time' and 'delay'")
 	}
 	return nil
+}
+
+// HasExecutionTime returns true if the request object has an execution time.
+func (x *Reminder) HasExecutionTime() bool {
+	return x.ExecutionTime != nil && x.ExecutionTime.IsValid() && !x.ExecutionTime.AsTime().IsZero()
+}
+
+// HasExecutionTime returns true if the request object has a delay.
+func (x *Reminder) HasDelay() bool {
+	// Delay could be zero seconds
+	return x.Delay != nil && x.Delay.IsValid()
 }
 
 // ToActorStoreRequest converts the message to an actorstore.ReminderRef object.
@@ -225,8 +239,11 @@ func (x *Reminder) ToActorStoreReminderRef() actorstore.ReminderRef {
 func (x *CreateReminderRequest) ToActorStoreRequest() actorstore.CreateReminderRequest {
 	r := x.GetReminder()
 
-	opts := actorstore.ReminderOptions{
-		ExecutionTime: r.ExecutionTime.AsTime(),
+	opts := actorstore.ReminderOptions{}
+	if r.HasDelay() {
+		opts.Delay = r.Delay.AsDuration()
+	} else {
+		opts.ExecutionTime = r.ExecutionTime.AsTime()
 	}
 	if r.Period != "" {
 		opts.Period = &r.Period
