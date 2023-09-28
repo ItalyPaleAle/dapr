@@ -183,6 +183,11 @@ func (x *ReminderRef) Validate() error {
 	return nil
 }
 
+// GetKey returns the reminder's key.
+func (x *ReminderRef) GetKey() string {
+	return x.ActorType + "||" + x.ActorId + "||" + x.Name
+}
+
 // ToActorStoreRequest converts the message to an actorstore.ReminderRef object.
 func (x *ReminderRef) ToActorStoreReminderRef() actorstore.ReminderRef {
 	return actorstore.ReminderRef{
@@ -215,6 +220,11 @@ func (x *Reminder) ValidateRequest() error {
 	return nil
 }
 
+// GetKey returns the reminder's key.
+func (x *Reminder) GetKey() string {
+	return x.ActorType + "||" + x.ActorId + "||" + x.Name
+}
+
 // HasExecutionTime returns true if the request object has an execution time.
 func (x *Reminder) HasExecutionTime() bool {
 	return x.ExecutionTime != nil && x.ExecutionTime.IsValid() && !x.ExecutionTime.AsTime().IsZero()
@@ -224,6 +234,14 @@ func (x *Reminder) HasExecutionTime() bool {
 func (x *Reminder) HasDelay() bool {
 	// Delay could be zero seconds
 	return x.Delay != nil && x.Delay.IsValid()
+}
+
+// GetExecutionTimeDelay returns the execution time as a delay in all cases.
+func (x *Reminder) GetExecutionTimeDelay(now time.Time) time.Duration {
+	if x.HasExecutionTime() {
+		return x.ExecutionTime.AsTime().Sub(now)
+	}
+	return x.Delay.AsDuration()
 }
 
 // ToActorStoreRequest converts the message to an actorstore.ReminderRef object.

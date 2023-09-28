@@ -32,15 +32,47 @@ func (s *server) CreateReminder(ctx context.Context, req *actorsv1pb.CreateRemin
 		return nil, status.Error(codes.PermissionDenied, "Reminders functionality is not enabled")
 	}
 
-	err := req.GetReminder().ValidateRequest()
-	if err != nil {
+	reminder := req.GetReminder()
+	if err := reminder.ValidateRequest(); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid reminder in request: %v", err)
 	}
 
-	err = s.store.CreateReminder(ctx, req.ToActorStoreRequest())
+	// If the reminder is scheduled to be executed in the fetchAhead interval, and it can be delivered to an actor host connected to this instance, acquire a lease too
+	if reminder.GetExecutionTimeDelay(s.clock.Now()) > s.opts.RemindersFetchAheadInterval {
+		err := s.store.CreateReminder(ctx, req.ToActorStoreRequest())
+		if err != nil {
+			log.Errorf("Failed to create reminder %s: %v", reminder.GetKey(), err)
+			return nil, status.Errorf(codes.Internal, "failed to create reminder: %v", err)
+		}
+
+		// Remove from the queue in case it's a reminder that's been updated and it was in there
+		// We ignore errors here
+		_ = s.processor.Dequeue(reminder.GetKey())
+
+		return &actorsv1pb.CreateReminderResponse{}, nil
+	}
+
+	storeReq := actorstore.CreateLeasedReminderRequest{
+		Reminder: req.ToActorStoreRequest(),
+	}
+	s.connectedHostsLock.RLock()
+	storeReq.Hosts = s.connectedHostsIDs
+	storeReq.ActorTypes = s.connectedHostsActorTypes
+	s.connectedHostsLock.RUnlock()
+
+	fetched, err := s.store.CreateLeasedReminder(ctx, storeReq)
 	if err != nil {
-		log.Errorf("Failed to create reminder: %v", err)
+		log.Errorf("Failed to create reminder %s: %v", reminder.GetKey(), err)
 		return nil, status.Errorf(codes.Internal, "failed to create reminder: %v", err)
+	}
+
+	// Enqueue the reminder
+	if fetched != nil {
+		err = s.enqueueReminder(fetched)
+		if err != nil {
+			log.Errorf("Failed to enqueue reminder %s: %v", reminder.GetKey(), err)
+			return nil, status.Errorf(codes.Internal, "failed to enqueue reminder: %v", err)
+		}
 	}
 
 	return &actorsv1pb.CreateReminderResponse{}, nil
@@ -107,6 +139,10 @@ func (s *server) DeleteReminder(ctx context.Context, req *actorsv1pb.DeleteRemin
 		log.Errorf("Failed to delete reminder: %v", err)
 		return nil, status.Errorf(codes.Internal, "failed to delete reminder: %v", err)
 	}
+
+	// Remove from the queue if present
+	// We ignore errors here
+	_ = s.processor.Dequeue(req.Ref.GetKey())
 
 	return &actorsv1pb.DeleteReminderResponse{}, nil
 }

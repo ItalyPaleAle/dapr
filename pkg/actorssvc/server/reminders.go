@@ -23,7 +23,7 @@ import (
 )
 
 func (s *server) pollForReminders(ctx context.Context) {
-	log.Infof("Start polling for reminder with interval %v", s.opts.RemindersPollInterval)
+	log.Infof("Start polling for reminder with interval='%v' fetchAheadInterval='%v' batchSize='%d' leaseDuration='%v'", s.opts.RemindersPollInterval, s.opts.RemindersFetchAheadInterval, s.opts.RemindersFetchAheadBatchSize, s.opts.RemindersLeaseDuration)
 
 	s.processor = queue.NewProcessor[*actorstore.FetchedReminder](s.processReminder)
 	defer func() {
@@ -69,16 +69,23 @@ func (s *server) scheduleNewReminders(ctx context.Context) error {
 	}
 
 	for i := range reminders {
-		r := reminders[i]
-		if log.IsOutputLevelEnabled(logger.DebugLevel) {
-			log.Debugf("Scheduling reminder '%s' to be executed at '%v'", r.Key(), r.ScheduledTime())
-		}
-		err = s.processor.Enqueue(&r)
+		err = s.enqueueReminder(&reminders[i])
 		if err != nil {
-			return fmt.Errorf("failed to enqueue reminder %s: %w", r.Key(), err)
+			return fmt.Errorf("failed to enqueue reminder %s: %w", reminders[i].Key(), err)
 		}
 	}
 
+	return nil
+}
+
+func (s *server) enqueueReminder(r *actorstore.FetchedReminder) error {
+	if log.IsOutputLevelEnabled(logger.DebugLevel) {
+		log.Debugf("Scheduling reminder '%s' to be executed at '%v'", r.Key(), r.ScheduledTime())
+	}
+	err := s.processor.Enqueue(r)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
