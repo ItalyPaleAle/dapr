@@ -550,6 +550,12 @@ func (a *ActorClient) ReportActorDeactivation(ctx context.Context, actorType, ac
 		Actor: createActorRef(actorType, actorID),
 	})
 	if err != nil {
+		// If the error is a NotFound, it means the actor was already inactive.
+		// That's an error we should log, but we shouldn't return that as error
+		if status.Code(err) == codes.NotFound {
+			log.Warnf("Attempted to deactivate actor '%s/%s' that was already inactive in the Actors service: %v", actorType, actorID, err)
+			return nil
+		}
 		return fmt.Errorf("error from Actors service: %w", err)
 	}
 	return nil
