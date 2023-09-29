@@ -247,8 +247,8 @@ func (s *server) reminderNextExecutionTime(reminder actorstore.Reminder) (next t
 	updatedPeriod, countStr, _ = strings.Cut(updatedPeriod, "||")
 	if countStr != "" {
 		executedCount, _ = strconv.Atoi(countStr)
-		executedCount++
 	}
+	executedCount++
 
 	years, months, days, period, repeats, err := timeutils.ParseDuration(*reminder.Period)
 	if err != nil || repeats == 0 {
@@ -257,7 +257,7 @@ func (s *server) reminderNextExecutionTime(reminder actorstore.Reminder) (next t
 		return next, "", false
 	}
 
-	if repeats > 0 && repeats >= executedCount {
+	if repeats > 0 && executedCount >= repeats {
 		// We have exhausted all repetitions
 		return next, "", false
 	}
@@ -271,8 +271,8 @@ func (s *server) reminderNextExecutionTime(reminder actorstore.Reminder) (next t
 		return next, "", false
 	}
 
-	// Append the execution count if we are tracking that
-	if updatedPeriod != "" && executedCount > 0 {
+	// Append the execution count if we are tracking repetitions
+	if updatedPeriod != "" && countStr != "" && executedCount > 0 {
 		updatedPeriod += "||" + strconv.Itoa(executedCount)
 	}
 
