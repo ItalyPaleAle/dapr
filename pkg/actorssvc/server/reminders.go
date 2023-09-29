@@ -95,7 +95,7 @@ func (s *server) enqueueReminder(r *actorstore.FetchedReminder) error {
 	return nil
 }
 
-func (s *server) executeReminder(r *actorstore.FetchedReminder) {
+func (s *server) executeReminder(fr *actorstore.FetchedReminder) {
 	// Executing reminders is a multi-step process
 	// First, we fetch the reminder again, to be sure that the data we have in-memory is up-to-date:
 	// it is possible, for example, that another instance of the actors service may have modified the reminder in the database
@@ -105,20 +105,20 @@ func (s *server) executeReminder(r *actorstore.FetchedReminder) {
 	// Third, and last, we remove the reminder from the reminders table. However, if the reminder is repeating (and hasn't reached its TTL), then we update its execution time instead.
 
 	ctx := context.Background()
-	log.Debugf("Executing reminder '%s'…", r.Key())
+	log.Debugf("Executing reminder '%s'…", fr.Key())
 	start := time.Now()
 
 	// Start by retrieving the reminder's data
-	reminder, err := s.store.GetReminderWithLease(ctx, r)
+	reminder, err := s.store.GetReminderWithLease(ctx, fr)
 	if err != nil {
 		if errors.Is(err, actorstore.ErrReminderNotFound) {
 			// If the reminder can't be found now, it means that either the lease was lost, or more likely the reminder was modified in the database
 			// In either case, we can ignore that error.
-			log.Debugf("Reminder '%s' was modified in the store and will not be executed", r.Key())
+			log.Debugf("Reminder '%s' was modified in the store and will not be executed", fr.Key())
 			return
 		}
 
-		log.Errorf("Failed to retrieve reminder '%s' with lease: %v", r.Key(), err)
+		log.Errorf("Failed to retrieve reminder '%s' with lease: %v", fr.Key(), err)
 		return
 	}
 
@@ -133,11 +133,11 @@ func (s *server) executeReminder(r *actorstore.FetchedReminder) {
 		if errors.Is(err, actorstore.ErrNoActorHost) {
 			// If there's no host capable of serving this reminder, it means that the host has disconnected since we fetched the reminder
 			// In this case, we can ignore the error
-			log.Debugf("Reminder '%s' cannot be executed on any host currently connected to this instance and will be retried later", r.Key())
+			log.Debugf("Reminder '%s' cannot be executed on any host currently connected to this instance and will be retried later", fr.Key())
 			return
 		}
 
-		log.Errorf("Failed to lookup actor host for reminder '%s': %v", r.Key(), err)
+		log.Errorf("Failed to lookup actor host for reminder '%s': %v", fr.Key(), err)
 		return
 	}
 
@@ -152,7 +152,7 @@ func (s *server) executeReminder(r *actorstore.FetchedReminder) {
 	s.connectedHostsLock.RUnlock()
 	if !ok {
 		// Same situation as above: the host has disconnected since we fetched the reminder
-		log.Debugf("Reminder '%s' cannot be executed on any host currently connected to this instance and will be retried later", r.Key())
+		log.Debugf("Reminder '%s' cannot be executed on any host currently connected to this instance and will be retried later", fr.Key())
 		return
 	}
 
@@ -163,25 +163,56 @@ func (s *server) executeReminder(r *actorstore.FetchedReminder) {
 	case connHostInfo.serverMsgCh <- serverMsg:
 		// All good - nop
 	case <-sendCtx.Done():
-		log.Errorf("Failed to send reminder '%s' to actor host: %v", r.Key(), ctx.Err())
+		log.Errorf("Failed to send reminder '%s' to actor host: %v", fr.Key(), ctx.Err())
 		return
 	}
 
 	// Lastly, remove the reminder from the store (or update the execution time for repeating reminders)
-	nextRepetition, updatedPeriod, doesRepeat := s.reminderNextRepetition(reminder)
+	nextExecutionTime, updatedPeriod, doesRepeat := s.reminderNextExecutionTime(reminder)
 	if doesRepeat {
-		// TODO: Update the reminder
-		_ = nextRepetition
-		_ = updatedPeriod
+		updateReq := actorstore.UpdateReminderWithLeaseRequest{
+			ExecutionTime: nextExecutionTime,
+			TTL:           reminder.TTL,
+		}
+		if updatedPeriod != "" {
+			updateReq.Period = &updatedPeriod
+		}
+
+		// If the reminder is scheduled to be repeated within the fetch ahead interval, we do not release the lease
+		if nextExecutionTime.Sub(s.clock.Now()) <= s.opts.RemindersFetchAheadInterval {
+			updateReq.KeepLease = true
+		}
+
+		err = s.store.UpdateReminderWithLease(ctx, fr, updateReq)
+
+		// If the reminder can't be found, it means that it's been deleted or updated in parallel
+		// In this case, we can ignore the error
+		if err != nil && !errors.Is(err, actorstore.ErrReminderNotFound) {
+			log.Errorf("Failed to update reminder '%s': %v", fr.Key(), err)
+			return
+		}
+
+		// If we still have the lease, re-enqueue the reminder
+		if updateReq.KeepLease {
+			newFr := actorstore.NewFetchedReminder(fr.Key(), nextExecutionTime, fr.Lease())
+			err = s.processor.Enqueue(&newFr)
+			if err != nil {
+				// Log the warning only
+				log.Warnf("Failed to re-enqueue repeating reminder '%s': %v", fr.Key(), err)
+			}
+		}
 	} else {
-		err = s.store.DeleteReminderWithLease(ctx, r)
-		if err != nil {
-			log.Errorf("Failed to delete reminder '%s': %v", r.Key(), ctx.Err())
+		err = s.store.DeleteReminderWithLease(ctx, fr)
+
+		// If the reminder can't be found, it means that it's been deleted or updated in parallel
+		// In this case, we can ignore the error
+		if err != nil && !errors.Is(err, actorstore.ErrReminderNotFound) {
+			log.Errorf("Failed to delete reminder '%s': %v", fr.Key(), err)
 			return
 		}
 	}
 
-	log.Debugf("Reminder '%s' has been executed in %v", r.Key(), time.Since(start))
+	log.Debugf("Reminder '%s' has been executed in %v", fr.Key(), time.Since(start))
 }
 
 func (s *server) fetchReminders(ctx context.Context) ([]*actorstore.FetchedReminder, error) {
@@ -200,7 +231,7 @@ func (s *server) fetchReminders(ctx context.Context) ([]*actorstore.FetchedRemin
 	return s.store.FetchNextReminders(ctx, req)
 }
 
-func (s *server) reminderNextRepetition(reminder actorstore.Reminder) (next time.Time, updatedPeriod string, doesRepeat bool) {
+func (s *server) reminderNextExecutionTime(reminder actorstore.Reminder) (next time.Time, updatedPeriod string, doesRepeat bool) {
 	// Reminder does not repeat
 	if reminder.Period == nil || *reminder.Period == "" {
 		return next, "", false
@@ -241,7 +272,7 @@ func (s *server) reminderNextRepetition(reminder actorstore.Reminder) (next time
 	}
 
 	// Append the execution count if we are tracking that
-	if executedCount > 0 {
+	if updatedPeriod != "" && executedCount > 0 {
 		updatedPeriod += "||" + strconv.Itoa(executedCount)
 	}
 
