@@ -25,6 +25,7 @@ import (
 
 	"github.com/dapr/components-contrib/actorstore"
 	actorsv1pb "github.com/dapr/dapr/pkg/proto/actors/v1"
+	"github.com/dapr/kit/logger"
 )
 
 // ConnectHost is used by the Dapr sidecar to register itself as an actor host.
@@ -48,7 +49,9 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 		log.Errorf("Failed to register actor host: %v", err)
 		return fmt.Errorf("failed to register actor host: %w", err)
 	}
-	log.Debugf("Registered actor host: id='%s' appID='%s' address='%s' actorTypes=%v", actorHostID, handshakeMsg.AppId, handshakeMsg.Address, handshakeMsg.GetActorTypeNames())
+	if log.IsOutputLevelEnabled(logger.DebugLevel) {
+		log.Debugf("Registered actor host: id='%s' info=[%s]", actorHostID, handshakeMsg.LogInfo())
+	}
 
 	// Send the relevant configuration to the actor host
 	err = stream.Send(s.opts.GetActorHostConfigurationMessage())
@@ -100,7 +103,9 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 					errCh <- status.Errorf(codes.InvalidArgument, "Invalid request: %v", rErr)
 					return
 				}
-				log.Debugf("Received registration update from actor host id='%s'", actorHostID)
+				if log.IsOutputLevelEnabled(logger.DebugLevel) {
+					log.Debugf("Received registration update from actor host: id='%s' updated-info=[%s]", actorHostID, handshakeMsg.LogInfo())
+				}
 				clientMsgCh <- msg.RegisterActorHost
 			default:
 				// Assume all other messages are a ping

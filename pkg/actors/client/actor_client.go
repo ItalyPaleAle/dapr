@@ -180,6 +180,18 @@ func (a *ActorClient) establishGrpcConnection(ctx context.Context) error {
 // It must be invoked by a caller that owns the lock.
 func (a *ActorClient) startConnectHost() {
 	go func() {
+		// If there's no appHealthCh, something that happens when there's no app channel, we must assume that the app is always healthy
+		if a.appHealthCh == nil {
+			for {
+				select {
+				case <-a.runningCtx.Done():
+					return
+				default:
+					a.startConnectHostHealthy()
+				}
+			}
+		}
+
 		for {
 			select {
 			case healthy, ok := <-a.appHealthCh:
@@ -190,19 +202,24 @@ func (a *ActorClient) startConnectHost() {
 				}
 				if healthy {
 					// If we got a healthy signal, start the ConnectHost stream
-					// Until this method returns, signals in the channel will be handled by the loop within this method
-					err := a.establishConnectHost(a.actorTypes)
-					if err != nil {
-						// TODO: Handle errors better and restart the connection
-						log.Errorf("Error from ConnectHost: %v", err)
-					}
+					// Until this method returns, signals in the appHealthCh channel will be handled by the loop within this method
+					a.startConnectHostHealthy()
 				}
 			case <-a.runningCtx.Done():
 				return
 			}
 		}
 	}()
+
 	a.addActorTypeCh = make(chan struct{}, 1)
+}
+
+func (a *ActorClient) startConnectHostHealthy() {
+	err := a.establishConnectHost(a.actorTypes)
+	if err != nil {
+		// TODO: Handle errors better and restart the connection
+		log.Errorf("Error from ConnectHost: %v", err)
+	}
 }
 
 func (a *ActorClient) establishConnectHost(actorTypes []*actorsv1pb.ActorHostType) error {

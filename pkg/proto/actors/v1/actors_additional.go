@@ -16,6 +16,7 @@ package actors
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -76,6 +77,11 @@ func (x *RegisterActorHost) ValidateUpdateMessage() error {
 		return errors.New(errPrefix + "property 'api_level' cannot be updated")
 	}
 	return nil
+}
+
+// LogInfo returns a message with information on the actor host that can be used for logging and debugging.
+func (x *RegisterActorHost) LogInfo() string {
+	return fmt.Sprintf("appID='%s' address='%s' actorTypes='%s'", x.GetAppId(), x.GetAddress(), strings.Join(x.GetActorTypeNames(), ","))
 }
 
 // GetActorTypeNames returns the list of all the names of supported actor types.
