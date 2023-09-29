@@ -195,6 +195,9 @@ func (x *ReminderRef) Validate() error {
 
 // GetKey returns the reminder's key.
 func (x *ReminderRef) GetKey() string {
+	if x == nil {
+		return ""
+	}
 	return x.ActorType + "||" + x.ActorId + "||" + x.Name
 }
 

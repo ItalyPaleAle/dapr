@@ -38,8 +38,12 @@ func (s *server) CreateReminder(ctx context.Context, req *actorsv1pb.CreateRemin
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid reminder in request: %v", err)
 	}
 
+	delay := reminder.GetExecutionTimeDelay(s.clock.Now())
+
+	log.Debugf("Invoked CreateReminder: key='%s' executionTime='%v' delay='%v' period='%s' ttl='%v' data='%d bytes'", reminder.GetKey(), reminder.ExecutionTime, delay, reminder.Period, reminder.Ttl, len(reminder.Data))
+
 	// If the reminder is scheduled to be executed in the fetchAhead interval, and it can be delivered to an actor host connected to this instance, acquire a lease too
-	if reminder.GetExecutionTimeDelay(s.clock.Now()) > s.opts.RemindersFetchAheadInterval {
+	if delay > s.opts.RemindersFetchAheadInterval {
 		err := s.store.CreateReminder(ctx, req.ToActorStoreRequest())
 		if err != nil {
 			log.Errorf("Failed to create reminder %s: %v", reminder.GetKey(), err)
@@ -90,6 +94,8 @@ func (s *server) GetReminder(ctx context.Context, req *actorsv1pb.GetReminderReq
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid reminder reference in request: %v", err)
 	}
 
+	log.Debugf("Invoked GetReminder with key='%s'", req.GetRef().GetKey())
+
 	res, err := s.store.GetReminder(ctx, req.Ref.ToActorStoreReminderRef())
 	if err != nil {
 		if errors.Is(err, actorstore.ErrReminderNotFound) {
@@ -132,6 +138,8 @@ func (s *server) DeleteReminder(ctx context.Context, req *actorsv1pb.DeleteRemin
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid reminder reference in request: %v", err)
 	}
+
+	log.Debugf("Invoked DeleteReminder with key='%s'", req.GetRef().GetKey())
 
 	err = s.store.DeleteReminder(ctx, req.Ref.ToActorStoreReminderRef())
 	if err != nil {
