@@ -92,7 +92,7 @@ func (s *server) Init(ctx context.Context, opts Options) (err error) {
 
 	// If reminder processing is enabled, start polling for reminder in background
 	if s.opts.EnableReminders {
-		go s.pollForReminders(ctx)
+		go s.startReminders(ctx)
 	}
 
 	// Create the gRPC server

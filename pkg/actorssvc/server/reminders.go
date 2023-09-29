@@ -28,7 +28,7 @@ import (
 	timeutils "github.com/dapr/kit/time"
 )
 
-func (s *server) pollForReminders(ctx context.Context) {
+func (s *server) startReminders(ctx context.Context) {
 	log.Infof("Start polling for reminder with interval='%v' fetchAheadInterval='%v' batchSize='%d' leaseDuration='%v'", s.opts.RemindersPollInterval, s.opts.RemindersFetchAheadInterval, s.opts.RemindersFetchAheadBatchSize, s.opts.RemindersLeaseDuration)
 
 	s.processor = queue.NewProcessor[*actorstore.FetchedReminder](s.executeReminder)
@@ -38,6 +38,9 @@ func (s *server) pollForReminders(ctx context.Context) {
 			log.Errorf("Failed to stop queue processor: %v", err)
 		}
 	}()
+
+	// Renew leases for reminders in background
+	go s.renewReminderLeases(ctx)
 
 	ticker := s.clock.NewTicker(s.opts.RemindersPollInterval)
 	defer ticker.Stop()
@@ -229,6 +232,42 @@ func (s *server) fetchReminders(ctx context.Context) ([]*actorstore.FetchedRemin
 	}
 
 	return s.store.FetchNextReminders(ctx, req)
+}
+
+func (s *server) renewReminderLeases(ctx context.Context) {
+	// Renew leases every half of the lease duration, or up to 10s less than the lease duration
+	var renewInterval time.Duration
+	if s.opts.RemindersLeaseDuration >= 20*time.Second {
+		renewInterval = s.opts.RemindersLeaseDuration - 10*time.Second
+	} else {
+		renewInterval = s.opts.RemindersLeaseDuration / 2
+	}
+
+	log.Infof("Renewing leases for reminders every %v", renewInterval)
+
+	ticker := s.clock.NewTicker(renewInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C():
+			// Renew the leases
+			count, err := s.store.RenewReminderLeases(ctx)
+			if err != nil {
+				log.Errorf("failed to renew leases for reminders: %v", err)
+			}
+
+			// We do not check if the number of renewed reminders is the same as the count of reminders we have in the queue, because that's a recipe for failure due to race conditions with reminders being executed at the same time, and reminders being modified by other instances
+			// Let's just use the data for a nice debug log instead
+			if count > 0 {
+				log.Debugf("Renewed leases for %d reminders", count)
+			}
+
+		case <-ctx.Done():
+			// Stop when the context is done
+			return
+		}
+	}
 }
 
 func (s *server) reminderNextExecutionTime(reminder actorstore.Reminder) (next time.Time, updatedPeriod string, doesRepeat bool) {
