@@ -96,7 +96,7 @@ func main() {
 				RemindersPollInterval:        2500 * time.Millisecond,
 				RemindersFetchAheadInterval:  5 * time.Second,
 				RemindersLeaseDuration:       20 * time.Second,
-				RemindersFetchAheadBatchSize: 3,
+				RemindersFetchAheadBatchSize: 50,
 			})
 		},
 		// Healthz server
