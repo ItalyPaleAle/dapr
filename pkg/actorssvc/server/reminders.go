@@ -272,7 +272,7 @@ func (s *server) reminderNextExecutionTime(reminder actorstore.Reminder) (next t
 	}
 
 	// Append the execution count if we are tracking repetitions
-	if updatedPeriod != "" && countStr != "" && executedCount > 0 {
+	if repeats > 0 {
 		updatedPeriod += "||" + strconv.Itoa(executedCount)
 	}
 
