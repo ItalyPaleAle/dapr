@@ -259,7 +259,16 @@ func (a *ActorClient) establishConnectHost(actorTypes []*actorsv1pb.ActorHostTyp
 				msgCh <- msg.ActorHostConfiguration
 
 			case *actorsv1pb.ConnectHostServerStream_ExecuteReminder:
-				panic("TODO: Unimplemented")
+				// Received a reminder to execute
+				if msg.ExecuteReminder == nil {
+					errCh <- errors.New("reminder message has nil ExecuteReminder property")
+					return
+				}
+				if msg.ExecuteReminder.GetReminder() == nil {
+					errCh <- errors.New("reminder message has nil Reminder inside")
+					return
+				}
+				msgCh <- msg.ExecuteReminder
 
 			case *actorsv1pb.ConnectHostServerStream_DeactivateActor:
 				panic("TODO: Unimplemented")
@@ -291,8 +300,21 @@ func (a *ActorClient) establishConnectHost(actorTypes []*actorsv1pb.ActorHostTyp
 				// Update the configuration and reset the ticker
 				config = msg
 				pingTicker.Reset(config.GetPingInterval())
+
 			case *actorsv1pb.ExecuteReminder:
-				panic("TODO: Unimplemented")
+				// Executing the remidner
+				// If the method returns false, we need to stop processing the reminder and delete it (but only if the reminder repeats)
+				if a.executeReminderFn != nil &&
+					!a.executeReminderFn(internal.NewReminderFromProto(msg.Reminder)) &&
+					msg.Reminder.Period != "" {
+					_, err = a.actorsClient.DeleteReminder(ctx, &actorsv1pb.DeleteReminderRequest{
+						Ref: msg.Reminder.GetRef(),
+					})
+					if err != nil {
+						return fmt.Errorf("error while deleting reminder that was canceled after execution: %w", err)
+					}
+				}
+
 			case *actorsv1pb.DeactivateActor:
 				panic("TODO: Unimplemented")
 			}

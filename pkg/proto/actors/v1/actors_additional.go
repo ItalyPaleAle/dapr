@@ -261,6 +261,15 @@ func (x *Reminder) GetExecutionTimeDelay(now time.Time) time.Duration {
 	return x.Delay.AsDuration()
 }
 
+// GetRef returns the ReminderRef for the Reminder object.
+func (x *Reminder) GetRef() *ReminderRef {
+	return &ReminderRef{
+		ActorType: x.ActorType,
+		ActorId:   x.ActorId,
+		Name:      x.Name,
+	}
+}
+
 // ToActorStoreRequest converts the message to an actorstore.ReminderRef object.
 func (x *Reminder) ToActorStoreReminderRef() actorstore.ReminderRef {
 	return actorstore.ReminderRef{
