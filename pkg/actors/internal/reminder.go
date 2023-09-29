@@ -21,7 +21,9 @@ import (
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
+	actorsv1pb "github.com/dapr/dapr/pkg/proto/actors/v1"
 	timeutils "github.com/dapr/kit/time"
 )
 
@@ -97,8 +99,54 @@ func (r *Reminder) UpdateFromTrack(track *ReminderTrack) {
 
 // ScheduledTime returns the time the reminder is scheduled to be executed at.
 // This is implemented to comply with the queueable interface.
-func (r *Reminder) ScheduledTime() time.Time {
+func (r Reminder) ScheduledTime() time.Time {
 	return r.RegisteredTime
+}
+
+// ToProto returns the Reminder protobuf object.
+func (r Reminder) ToProto() *actorsv1pb.Reminder {
+	p := &actorsv1pb.Reminder{
+		ActorType:     r.ActorType,
+		ActorId:       r.ActorID,
+		Name:          r.Name,
+		ExecutionTime: timestamppb.New(r.RegisteredTime),
+		Period:        r.Period.String(),
+	}
+
+	if !r.ExpirationTime.IsZero() {
+		p.Ttl = timestamppb.New(r.ExpirationTime)
+	}
+
+	if len(r.Data) > 0 {
+		p.Data = r.Data
+	}
+
+	return p
+}
+
+// NewReminderFromProto returns a Reminder object from the protobuf object.
+func NewReminderFromProto(p *actorsv1pb.Reminder) *Reminder {
+	r := &Reminder{
+		ActorType:      p.ActorType,
+		ActorID:        p.ActorId,
+		Name:           p.Name,
+		RegisteredTime: p.ExecutionTime.AsTime(),
+	}
+
+	if p.Period != "" {
+		// We can ignore errors here because we know the period is valid
+		r.Period, _ = NewReminderPeriod(p.Period)
+	}
+
+	if p.Ttl != nil && p.Ttl.IsValid() {
+		r.ExpirationTime = p.Ttl.AsTime()
+	}
+
+	if len(p.Data) > 0 {
+		r.Data = p.Data
+	}
+
+	return r
 }
 
 func (r *Reminder) MarshalJSON() ([]byte, error) {

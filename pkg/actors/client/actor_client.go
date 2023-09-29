@@ -396,15 +396,40 @@ func (a *ActorClient) connectHostHandshake(stream actorsv1pb.Actors_ConnectHostC
 }
 
 func (a *ActorClient) CreateReminder(ctx context.Context, reminder *internal.Reminder) error {
-	panic("unimplemented")
+	_, err := a.actorsClient.CreateReminder(ctx, &actorsv1pb.CreateReminderRequest{
+		Reminder: reminder.ToProto(),
+	})
+	if err != nil {
+		return fmt.Errorf("error from actors service: %w", err)
+	}
+	return nil
 }
 
 func (a *ActorClient) GetReminder(ctx context.Context, req *internal.GetReminderRequest) (*internal.Reminder, error) {
-	panic("unimplemented")
+	res, err := a.actorsClient.GetReminder(ctx, &actorsv1pb.GetReminderRequest{
+		Ref: req.ToRefProto(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("error from actors service: %w", err)
+	}
+
+	reminder := res.GetReminder()
+	if reminder == nil {
+		return nil, errors.New("reminder is nil in response")
+	}
+
+	return internal.NewReminderFromProto(res.Reminder), nil
 }
 
 func (a *ActorClient) DeleteReminder(ctx context.Context, req internal.DeleteReminderRequest) error {
-	panic("unimplemented")
+	_, err := a.actorsClient.DeleteReminder(ctx, &actorsv1pb.DeleteReminderRequest{
+		Ref: req.ToRefProto(),
+	})
+
+	if err != nil {
+		return fmt.Errorf("error from actors service: %w", err)
+	}
+	return nil
 }
 
 // AddHostedActorType registers an actor type by adding it to the list of known actor types (if it's not already registered).

@@ -16,6 +16,7 @@ package server
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -105,8 +106,10 @@ func (s *server) GetReminder(ctx context.Context, req *actorsv1pb.GetReminderReq
 		Name:          req.Ref.Name,
 		ExecutionTime: timestamppb.New(res.ExecutionTime),
 	}
-	if res.Period != nil {
-		reminder.Period = *res.Period
+	if res.Period != nil && *res.Period != "" {
+		// Internally, for reminders that have a finite amount of repetitions, we add a counter at the end
+		// We need to remove that
+		reminder.Period, _, _ = strings.Cut(*res.Period, "||")
 	}
 	if res.TTL != nil {
 		reminder.Ttl = timestamppb.New(*res.TTL)
