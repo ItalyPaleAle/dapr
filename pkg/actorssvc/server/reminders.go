@@ -252,7 +252,13 @@ func (s *server) renewReminderLeases(ctx context.Context) {
 		select {
 		case <-ticker.C():
 			// Renew the leases
-			count, err := s.store.RenewReminderLeases(ctx)
+			s.connectedHostsLock.RLock()
+			req := actorstore.RenewReminderLeasesRequest{
+				Hosts:      s.connectedHostsIDs,
+				ActorTypes: s.connectedHostsActorTypes,
+			}
+			s.connectedHostsLock.RUnlock()
+			count, err := s.store.RenewReminderLeases(ctx, req)
 			if err != nil {
 				log.Errorf("failed to renew leases for reminders: %v", err)
 			}

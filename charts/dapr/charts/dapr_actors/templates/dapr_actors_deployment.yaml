@@ -76,6 +76,7 @@ spec:
           capabilities:
             add: ["SYS_PTRACE"]
   {{- else }}
+          readOnlyRootFilesystem: true
           capabilities:
             drop: ["ALL"]
   {{- end }}
@@ -150,6 +151,8 @@ spec:
           {{- end }}
           - "--log-level"
           - "{{ .Values.logLevel }}"
+          - "--mode"
+          - "kubernetes"
           - "--enable-mtls"
           - "--trust-anchors-file"
           - "/var/run/secrets/dapr.io/tls/ca.crt"

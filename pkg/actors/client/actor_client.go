@@ -158,6 +158,7 @@ func (a *ActorClient) establishGrpcConnection(ctx context.Context) error {
 	}
 
 	// Dial the gRPC connection
+	log.Debugf("Establishing connection with Actors service at address %s…", a.config.ActorsServiceAddress)
 	ctx, cancel := context.WithTimeout(ctx, dialTimeout)
 	defer cancel()
 	a.conn, err = grpc.DialContext(ctx, a.config.ActorsServiceAddress,
@@ -209,6 +210,7 @@ func (a *ActorClient) establishConnectHost(actorTypes []*actorsv1pb.ActorHostTyp
 	defer cancel()
 
 	// Establish the stream connection
+	log.Debugf("Establishing ConnectHost stream with Actors service…")
 	stream, err := a.actorsClient.ConnectHost(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to establish ConnectHost stream: %w", err)
@@ -219,6 +221,8 @@ func (a *ActorClient) establishConnectHost(actorTypes []*actorsv1pb.ActorHostTyp
 	if err != nil {
 		return fmt.Errorf("handshake error: %w", err)
 	}
+
+	defer log.Debugf("Disconnected from ConnectHost stream with Actors service")
 
 	// Ticker for pings
 	pingTicker := time.NewTicker(config.GetPingInterval())
@@ -324,14 +328,29 @@ func (a *ActorClient) establishConnectHost(actorTypes []*actorsv1pb.ActorHostTyp
 			// First, get the list of actor types, which requires getting a lock
 			// By the time we get a lock it's possible that the list of actor types has been modified since we read from the channel, but this should not be a problem because the list is append-only. In the worst case scenario, we'll get a second message on `addActorTypeCh` and we'll re-submit the (same) list again shortly.
 			a.lock.Lock()
+			actorTypes := a.actorTypes
+			a.lock.Unlock()
+
+			if log.IsOutputLevelEnabled(logger.DebugLevel) {
+				actorTypeNames := make([]string, len(actorTypes))
+				for i, at := range actorTypes {
+					if at != nil {
+						actorTypeNames[i] = at.GetActorType()
+					}
+					if actorTypeNames[i] == "" {
+						actorTypeNames[i] = "(nil)"
+					}
+				}
+				log.Debugf("Updating list of supported actor types with Actors service: %v", actorTypeNames)
+			}
+
 			err = stream.Send(&actorsv1pb.ConnectHostClientStream{
 				Message: &actorsv1pb.ConnectHostClientStream_RegisterActorHost{
 					RegisterActorHost: &actorsv1pb.RegisterActorHost{
-						ActorTypes: a.actorTypes,
+						ActorTypes: actorTypes,
 					},
 				},
 			})
-			a.lock.Unlock()
 			if err != nil {
 				return fmt.Errorf("error while updating the list of supported actor types: %w", err)
 			}
@@ -385,6 +404,19 @@ func (a *ActorClient) connectHostHandshake(stream actorsv1pb.Actors_ConnectHostC
 		}
 		msgCh <- msg
 	}()
+
+	if log.IsOutputLevelEnabled(logger.DebugLevel) {
+		actorTypeNames := make([]string, len(actorTypes))
+		for i, at := range actorTypes {
+			if at != nil {
+				actorTypeNames[i] = at.GetActorType()
+			}
+			if actorTypeNames[i] == "" {
+				actorTypeNames[i] = "(nil)"
+			}
+		}
+		log.Debugf("Sending list of supported actor types to Actors service: %v", actorTypeNames)
+	}
 
 	// Send the first message to register this actor host
 	err := stream.Send(&actorsv1pb.ConnectHostClientStream{

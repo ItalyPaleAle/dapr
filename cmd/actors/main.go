@@ -28,6 +28,7 @@ import (
 	"github.com/dapr/dapr/pkg/concurrency"
 	"github.com/dapr/dapr/pkg/health"
 	"github.com/dapr/dapr/pkg/metrics"
+	"github.com/dapr/dapr/pkg/modes"
 	"github.com/dapr/dapr/pkg/security"
 	"github.com/dapr/dapr/pkg/signals"
 	"github.com/dapr/kit/logger"
@@ -67,6 +68,7 @@ func main() {
 		TrustAnchorsFile:        opts.TrustAnchorsFile,
 		AppID:                   "dapr-actors",
 		MTLSEnabled:             opts.MTLSEnabled,
+		Mode:                    modes.DaprMode(opts.Mode),
 	})
 	if err != nil {
 		log.Fatal(err)

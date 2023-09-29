@@ -25,6 +25,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/dapr/dapr/pkg/metrics"
+	"github.com/dapr/dapr/pkg/modes"
 	"github.com/dapr/dapr/pkg/security"
 	securityConsts "github.com/dapr/dapr/pkg/security/consts"
 	"github.com/dapr/kit/logger"
@@ -52,6 +53,8 @@ const (
 type Options struct {
 	Port        int
 	HealthzPort int
+
+	Mode string
 
 	StoreName     string
 	StoreOpts     []string
@@ -81,6 +84,8 @@ func New() *Options {
 
 	fs.IntVar(&opts.Port, "port", DefaultPort, "The port for the sentry server to listen on")
 	fs.IntVar(&opts.HealthzPort, "healthz-port", DefaultHealthzPort, "The port for the healthz server to listen on")
+
+	fs.StringVar(&opts.Mode, "mode", string(modes.StandaloneMode), "Runtime mode for the Actors service")
 
 	fs.StringVar(&opts.StoreName, "store-name", "", "Name of the store driver")
 	fs.StringArrayVar(&opts.StoreOpts, "store-opt", nil, "Option for the store driver, in the format 'key=value'; can be repeated")
