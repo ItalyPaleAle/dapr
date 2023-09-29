@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -114,6 +113,7 @@ type actorsRuntime struct {
 	placement            internal.PlacementService
 	grpcConnectionFn     GRPCConnectionFn
 	actorsConfig         Config
+	actorSvcClient       *client.ActorClient
 	timers               internal.TimersProvider
 	actorsReminders      internal.RemindersProvider
 	actorsTable          *sync.Map
@@ -157,17 +157,11 @@ func NewActors(opts ActorsOpts) ActorRuntime {
 }
 
 func newActorsWithClock(opts ActorsOpts, clock clock.WithTicker) ActorRuntime {
-	remindersProvider := reminders.NewRemindersProvider(clock, internal.RemindersProviderOpts{
-		StoreName: opts.StateStoreName,
-		Config:    opts.Config.Config,
-	})
-
 	a := &actorsRuntime{
 		appChannel:           opts.AppChannel,
 		grpcConnectionFn:     opts.GRPCConnectionFn,
 		actorsConfig:         opts.Config,
 		timers:               timers.NewTimersProvider(clock),
-		actorsReminders:      remindersProvider,
 		tracingSpec:          opts.TracingSpec,
 		resiliency:           opts.Resiliency,
 		storeName:            opts.StateStoreName,
@@ -184,11 +178,34 @@ func newActorsWithClock(opts ActorsOpts, clock clock.WithTicker) ActorRuntime {
 		closeCh:         make(chan struct{}),
 	}
 
-	a.timers.SetExecuteTimerFn(a.executeTimer)
+	// Init reminders
+	// For actors v2, we initialize the client here too
+	switch a.actorsConfig.GetActorsVersion() {
+	case internal.ActorsV1:
+		a.actorsReminders = reminders.NewRemindersProvider(a.clock, internal.RemindersProviderOpts{
+			StoreName: a.storeName,
+			Config:    a.actorsConfig.Config,
+		})
+
+	case internal.ActorsV2:
+		a.actorSvcClient = client.NewActorClient(client.ActorClientOpts{
+			Security:    a.sec,
+			AppID:       a.actorsConfig.Config.AppID,
+			AppHealthFn: a.getAppHealthCheckChan,
+			Config:      a.actorsConfig.Config,
+			Clock:       a.clock,
+		})
+
+		// The Actors service client is a provider for reminders too
+		a.actorsReminders = a.actorSvcClient
+	}
+
 	a.actorsReminders.SetExecuteReminderFn(a.executeReminder)
 	a.actorsReminders.SetResiliencyProvider(a.resiliency)
 	a.actorsReminders.SetStateStoreProviderFn(a.stateStore)
 	a.actorsReminders.SetLookupActorFn(a.isActorLocallyHosted)
+
+	a.timers.SetExecuteTimerFn(a.executeTimer)
 
 	return a
 }
@@ -239,11 +256,10 @@ func (a *actorsRuntime) Init(ctx context.Context) (err error) {
 		}
 	}
 
-	hostname := net.JoinHostPort(a.actorsConfig.Config.HostAddress, strconv.Itoa(a.actorsConfig.Config.Port))
-
 	a.actorsReminders.Init(ctx)
 	a.timers.Init(ctx)
 
+	// Init placement if needed
 	if a.placement == nil {
 		switch a.actorsConfig.GetActorsVersion() {
 		case internal.ActorsV1:
@@ -251,7 +267,7 @@ func (a *actorsRuntime) Init(ctx context.Context) (err error) {
 				ServerAddrs:     a.actorsConfig.Config.PlacementAddresses,
 				Security:        a.sec,
 				AppID:           a.actorsConfig.Config.AppID,
-				RuntimeHostname: hostname,
+				RuntimeHostname: a.actorsConfig.GetRuntimeHostname(),
 				PodName:         a.actorsConfig.Config.PodName,
 				ActorTypes:      a.actorsConfig.Config.HostedActorTypes.ListActorTypes(),
 				Resiliency:      a.resiliency,
@@ -263,14 +279,9 @@ func (a *actorsRuntime) Init(ctx context.Context) (err error) {
 			})
 
 		case internal.ActorsV2:
-			ac := client.NewActorClient(client.ActorClientOpts{
-				ServiceAddress: a.actorsConfig.ActorsServiceAddress,
-				Security:       a.sec,
-				AppID:          a.actorsConfig.Config.AppID,
-				Address:        hostname,
-				AppHealthFn:    a.getAppHealthCheckChan,
-			})
-			a.placement = ac
+			// The Actors service client provides placement services
+			a.placement = a.actorSvcClient
+
 			for _, actorType := range a.actorsConfig.Config.HostedActorTypes.ListActorTypes() {
 				err = a.placement.AddHostedActorType(actorType, a.actorsConfig.GetIdleTimeoutForType(actorType))
 				if err != nil {

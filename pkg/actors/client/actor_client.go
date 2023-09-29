@@ -27,6 +27,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	kclock "k8s.io/utils/clock"
 
 	"github.com/dapr/dapr/pkg/actors/internal"
 	diag "github.com/dapr/dapr/pkg/diagnostics"
@@ -41,51 +42,68 @@ var log = logger.NewLogger("dapr.runtime.actors.client")
 
 const dialTimeout = 20 * time.Second
 
-var _ internal.PlacementService = (*ActorClient)(nil)
+var (
+	_ internal.PlacementService  = (*ActorClient)(nil)
+	_ internal.RemindersProvider = (*ActorClient)(nil)
+)
 
 // ActorClient is a client for the Actors service.
 // It manages the placement of actors in the cluster as well as offers reminders services.
 type ActorClient struct {
-	actorsClient   actorsv1pb.ActorsClient
-	conn           *grpc.ClientConn
-	address        string
-	appID          string
-	serviceAddress string
-	security       security.Handler
-	lock           sync.Mutex
-	actorTypes     []*actorsv1pb.ActorHostType
-	addActorTypeCh chan struct{}
-	appHealthFn    func(ctx context.Context) <-chan bool
-	appHealthCh    <-chan bool
-	resiliency     resiliency.Provider
-	running        atomic.Bool
-	runningCtx     context.Context
-	runningCancel  context.CancelFunc
-	cache          *actorscache.Cache[*actorsv1pb.LookupActorResponse]
+	actorsClient      actorsv1pb.ActorsClient
+	conn              *grpc.ClientConn
+	appID             string
+	security          security.Handler
+	lock              sync.Mutex
+	executeReminderFn internal.ExecuteReminderFn
+	config            internal.Config
+	actorTypes        []*actorsv1pb.ActorHostType
+	addActorTypeCh    chan struct{}
+	appHealthFn       func(ctx context.Context) <-chan bool
+	appHealthCh       <-chan bool
+	resiliency        resiliency.Provider
+	running           atomic.Bool
+	runningCtx        context.Context
+	runningCancel     context.CancelFunc
+	cache             *actorscache.Cache[*actorsv1pb.LookupActorResponse]
+	clock             kclock.Clock
 }
 
 // ActorClientOpts contains options for NewActorClient.
 type ActorClientOpts struct {
-	Address        string
-	AppID          string
-	ServiceAddress string
-	Security       security.Handler
-	Resiliency     resiliency.Provider
-	AppHealthFn    func(ctx context.Context) <-chan bool
+	AppID       string
+	Security    security.Handler
+	Resiliency  resiliency.Provider
+	AppHealthFn func(ctx context.Context) <-chan bool
+	Config      internal.Config
+	Clock       kclock.Clock
 }
 
 // NewActorClient initializes a new ActorClient object.
 func NewActorClient(opts ActorClientOpts) *ActorClient {
 	// We do not init addActorTypeCh here
 	return &ActorClient{
-		address:        opts.Address,
-		appID:          opts.AppID,
-		serviceAddress: opts.ServiceAddress,
-		security:       opts.Security,
-		resiliency:     opts.Resiliency,
-		appHealthFn:    opts.AppHealthFn,
-		actorTypes:     make([]*actorsv1pb.ActorHostType, 0),
+		appID:       opts.AppID,
+		security:    opts.Security,
+		resiliency:  opts.Resiliency,
+		appHealthFn: opts.AppHealthFn,
+		config:      opts.Config,
+		clock:       opts.Clock,
+		actorTypes:  make([]*actorsv1pb.ActorHostType, 0),
 	}
+}
+
+func (a *ActorClient) SetExecuteReminderFn(fn internal.ExecuteReminderFn) {
+	a.executeReminderFn = fn
+}
+
+func (a *ActorClient) SetResiliencyProvider(resiliency resiliency.Provider) {
+	a.resiliency = resiliency
+}
+
+func (a *ActorClient) Init(ctx context.Context) error {
+	// No-op in this implementation
+	return nil
 }
 
 // Start the service.
@@ -142,7 +160,7 @@ func (a *ActorClient) establishGrpcConnection(ctx context.Context) error {
 	// Dial the gRPC connection
 	ctx, cancel := context.WithTimeout(ctx, dialTimeout)
 	defer cancel()
-	a.conn, err = grpc.DialContext(ctx, a.serviceAddress,
+	a.conn, err = grpc.DialContext(ctx, a.config.ActorsServiceAddress,
 		grpc.WithUnaryInterceptor(unaryClientInterceptor),
 		a.security.GRPCDialOptionMTLS(actorsID),
 		grpc.WithReturnConnectionError(),
@@ -350,7 +368,7 @@ func (a *ActorClient) connectHostHandshake(stream actorsv1pb.Actors_ConnectHostC
 	err := stream.Send(&actorsv1pb.ConnectHostClientStream{
 		Message: &actorsv1pb.ConnectHostClientStream_RegisterActorHost{
 			RegisterActorHost: &actorsv1pb.RegisterActorHost{
-				Address:    a.address,
+				Address:    a.config.GetRuntimeHostname(),
 				AppId:      a.appID,
 				ApiLevel:   internal.ActorAPILevel,
 				ActorTypes: actorTypes,
@@ -375,6 +393,18 @@ func (a *ActorClient) connectHostHandshake(stream actorsv1pb.Actors_ConnectHostC
 		}
 		return msg, nil
 	}
+}
+
+func (a *ActorClient) CreateReminder(ctx context.Context, reminder *internal.Reminder) error {
+	panic("unimplemented")
+}
+
+func (a *ActorClient) GetReminder(ctx context.Context, req *internal.GetReminderRequest) (*internal.Reminder, error) {
+	panic("unimplemented")
+}
+
+func (a *ActorClient) DeleteReminder(ctx context.Context, req internal.DeleteReminderRequest) error {
+	panic("unimplemented")
 }
 
 // AddHostedActorType registers an actor type by adding it to the list of known actor types (if it's not already registered).
@@ -483,4 +513,20 @@ func createActorRef(actorType, actorID string) *actorsv1pb.ActorRef {
 		ActorType: actorType,
 		ActorId:   actorID,
 	}
+}
+
+func (a *ActorClient) SetStateStoreProviderFn(fn internal.StateStoreProviderFn) {
+	// SetStateStoreProviderFn is a no-op in this implementation.
+}
+
+func (a *ActorClient) SetLookupActorFn(fn internal.LookupActorFn) {
+	// SetLookupActorFn is a no-op in this implementation.
+}
+
+func (a *ActorClient) OnPlacementTablesUpdated(ctx context.Context) {
+	// OnPlacementTablesUpdated is a no-op in this implementation.
+}
+
+func (a *ActorClient) DrainRebalancedReminders(actorType string, actorID string) {
+	// DrainRebalancedReminders is a no-op in this implementation.
 }

@@ -14,7 +14,9 @@ limitations under the License.
 package internal
 
 import (
+	"net"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -58,6 +60,10 @@ func (c Config) GetActorsVersion() ActorsVersion {
 		return ActorsV1
 	}
 	return ActorsV2
+}
+
+func (c Config) GetRuntimeHostname() string {
+	return net.JoinHostPort(c.HostAddress, strconv.Itoa(c.Port))
 }
 
 // Remap of daprAppConfig.EntityConfig but with more useful types for actors.go.
