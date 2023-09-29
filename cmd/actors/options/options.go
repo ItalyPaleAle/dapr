@@ -37,6 +37,16 @@ const (
 	DefaultHealthzPort = 8080
 	// DefaultHostHealthCheckInterval is the default interval between pings received from an actor host.
 	DefaultHostHealthCheckInterval = 30 * time.Second
+	// DefaultRemindersPollInterval is the default polling interval for reminders.
+	// Clusters with lots of high-frequency reminders may want to set this to a lower value.
+	DefaultRemindersPollInterval = 2500 * time.Millisecond
+	// DefaultRemindersFetchAheadInterval is the default duration for pre-fetching reminders.
+	// The fetch ahead interval must be greater than the poll interval.
+	DefaultRemindersFetchAheadInterval = 5 * time.Second
+	// DefaultRemindersLeaseDuration is the default duration for leases in the reminders table.
+	DefaultRemindersLeaseDuration = 20 * time.Second
+	// DefaultRemindersFetchAheadBatchSize is the default batch size for pre-fetching reminders.
+	DefaultRemindersFetchAheadBatchSize = 50
 )
 
 type Options struct {
@@ -53,7 +63,12 @@ type Options struct {
 	SentryAddress    string
 
 	HostHealthCheckInterval time.Duration
-	NoReminders             bool
+
+	NoReminders                  bool
+	RemindersPollInterval        time.Duration
+	RemindersFetchAheadInterval  time.Duration
+	RemindersLeaseDuration       time.Duration
+	RemindersFetchAheadBatchSize int
 
 	Logger  logger.Options
 	Metrics *metrics.Options
@@ -72,7 +87,12 @@ func New() *Options {
 	fs.StringVar(&opts.StoreOptsFile, "store-opts-file", "", "Path to a file containing options for the store, with each line having its own 'key=value'")
 
 	fs.DurationVar(&opts.HostHealthCheckInterval, "host-healthcheck-interval", DefaultHostHealthCheckInterval, "Interval for expecting health checks from actor hosts")
+
 	fs.BoolVar(&opts.NoReminders, "no-reminders", false, "If true, does not enable reminders functionality in the service")
+	fs.DurationVar(&opts.RemindersPollInterval, "reminders-poll-interval", DefaultRemindersPollInterval, "Polling interval for fetching reminders from the store. Clusters with lots of high-frequency reminders may want to use smaller values, at the expense of increased load on the store")
+	fs.DurationVar(&opts.RemindersFetchAheadInterval, "reminders-fetch-ahead-interval", DefaultRemindersFetchAheadInterval, "Pre-fetches reminders that are set to be executed up to this interval in the future. Must be greater than the polling interval.")
+	fs.DurationVar(&opts.RemindersLeaseDuration, "reminders-lease-duration", DefaultRemindersLeaseDuration, "Duration for leases acquired in the reminders table")
+	fs.IntVar(&opts.RemindersFetchAheadBatchSize, "reminders-fetch-ahead-batch-size", DefaultRemindersFetchAheadBatchSize, "Maximum number of reminders fetched in each batch. Clusters with lots of reminders should either scale the Actors service horizontally or increase this value.")
 
 	fs.BoolVar(&opts.MTLSEnabled, "enable-mtls", false, "Enable mTLS")
 	fs.StringVar(&opts.TrustDomain, "trust-domain", "localhost", "Trust domain for the Dapr control plane (for mTLS)")
