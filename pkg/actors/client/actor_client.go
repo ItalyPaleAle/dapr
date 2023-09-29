@@ -11,7 +11,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package placement
+package client
 
 import (
 	"context"
@@ -21,23 +21,37 @@ import (
 	"sync/atomic"
 	"time"
 
+	grpcMiddleware "github.com/grpc-ecosystem/go-grpc-middleware"
+	grpcRetry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
+	"github.com/spiffe/go-spiffe/v2/spiffeid"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	"github.com/dapr/dapr/pkg/actors/internal"
+	diag "github.com/dapr/dapr/pkg/diagnostics"
 	actorsv1pb "github.com/dapr/dapr/pkg/proto/actors/v1"
 	"github.com/dapr/dapr/pkg/resiliency"
+	"github.com/dapr/dapr/pkg/security"
 	"github.com/dapr/dapr/utils/actorscache"
 	"github.com/dapr/kit/logger"
 )
 
-var log = logger.NewLogger("dapr.runtime.actors.placementv2")
+var log = logger.NewLogger("dapr.runtime.actors.client")
 
-// actorPlacement is used to interact with the actors service to manage the placement of actors in the cluster.
-type actorPlacement struct {
+const dialTimeout = 20 * time.Second
+
+var _ internal.PlacementService = (*ActorClient)(nil)
+
+// ActorClient is a client for the Actors service.
+// It manages the placement of actors in the cluster as well as offers reminders services.
+type ActorClient struct {
 	actorsClient   actorsv1pb.ActorsClient
+	conn           *grpc.ClientConn
 	address        string
 	appID          string
+	serviceAddress string
+	security       security.Handler
 	lock           sync.Mutex
 	actorTypes     []*actorsv1pb.ActorHostType
 	addActorTypeCh chan struct{}
@@ -50,102 +64,106 @@ type actorPlacement struct {
 	cache          *actorscache.Cache[*actorsv1pb.LookupActorResponse]
 }
 
-// ActorPlacementOpts contains options for NewActorPlacement.
-type ActorPlacementOpts struct {
-	ActorsClient actorsv1pb.ActorsClient
-	Address      string
-	AppID        string
-	Resiliency   resiliency.Provider
-	AppHealthFn  func(ctx context.Context) <-chan bool
+// ActorClientOpts contains options for NewActorClient.
+type ActorClientOpts struct {
+	Address        string
+	AppID          string
+	ServiceAddress string
+	Security       security.Handler
+	Resiliency     resiliency.Provider
+	AppHealthFn    func(ctx context.Context) <-chan bool
 }
 
-// NewActorPlacement initializes ActorPlacement for the actor service.
-func NewActorPlacement(opts ActorPlacementOpts) internal.PlacementService {
+// NewActorClient initializes a new ActorClient object.
+func NewActorClient(opts ActorClientOpts) *ActorClient {
 	// We do not init addActorTypeCh here
-	return &actorPlacement{
-		actorsClient: opts.ActorsClient,
-		address:      opts.Address,
-		appID:        opts.AppID,
-		resiliency:   opts.Resiliency,
-		appHealthFn:  opts.AppHealthFn,
-		actorTypes:   make([]*actorsv1pb.ActorHostType, 0),
+	return &ActorClient{
+		address:        opts.Address,
+		appID:          opts.AppID,
+		serviceAddress: opts.ServiceAddress,
+		security:       opts.Security,
+		resiliency:     opts.Resiliency,
+		appHealthFn:    opts.AppHealthFn,
+		actorTypes:     make([]*actorsv1pb.ActorHostType, 0),
 	}
-}
-
-// AddHostedActorType registers an actor type by adding it to the list of known actor types (if it's not already registered).
-func (p *actorPlacement) AddHostedActorType(actorType string, idleTimeout time.Duration) error {
-	// We need a lock here
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
-	for _, t := range p.actorTypes {
-		if t.ActorType == actorType {
-			return fmt.Errorf("actor type %s already registered", actorType)
-		}
-	}
-
-	// Add the actor type to the slice
-	proto := &actorsv1pb.ActorHostType{
-		ActorType:   actorType,
-		IdleTimeout: uint32(idleTimeout.Seconds()),
-	}
-	p.actorTypes = append(p.actorTypes, proto)
-
-	// If the service hasn't started yet, just return
-	if !p.running.Load() {
-		return nil
-	}
-
-	// Check if we are already connected to ConnectHost
-	if p.addActorTypeCh == nil {
-		// Need to connect
-		p.startConnectHost()
-	} else {
-		// We are already connected so just send to the channel that there's an update to the actor types we support
-		// This is a buffered channel with capacity of 1, which allows us to batch changes
-		p.addActorTypeCh <- struct{}{}
-	}
-	return nil
 }
 
 // Start the service.
 // If there's any hosted actor type, establishes the ConnectHost stream with the actors service.
-func (p *actorPlacement) Start(ctx context.Context) error {
-	if !p.running.CompareAndSwap(false, true) {
+func (a *ActorClient) Start(ctx context.Context) error {
+	if !a.running.CompareAndSwap(false, true) {
 		return errors.New("already started")
 	}
 
-	p.runningCtx, p.runningCancel = context.WithCancel(ctx)
+	a.runningCtx, a.runningCancel = context.WithCancel(ctx)
 
 	// Init the cache
 	// This has a max TTL of 5s
-	p.cache = actorscache.NewCache[*actorsv1pb.LookupActorResponse](actorscache.CacheOptions{
+	a.cache = actorscache.NewCache[*actorsv1pb.LookupActorResponse](actorscache.CacheOptions{
 		MaxTTL: 5,
 	})
 
 	// Start checking app's health
-	p.appHealthCh = p.appHealthFn(ctx)
+	a.appHealthCh = a.appHealthFn(ctx)
+
+	// Establish the connection with the Actors service
+	a.establishGrpcConnection(ctx)
 
 	// If we have actor types registered, start the ConnectHost stream right away
-	p.lock.Lock()
-	if len(p.actorTypes) > 0 {
-		p.startConnectHost()
+	a.lock.Lock()
+	if len(a.actorTypes) > 0 {
+		a.startConnectHost()
 	}
-	p.lock.Unlock()
+	a.lock.Unlock()
 
 	// Block until context is canceled
-	<-p.runningCtx.Done()
+	<-a.runningCtx.Done()
+
+	return nil
+}
+
+// Establishes a connection to the gRPC endpoint of the Actors service and creates a new client
+func (a *ActorClient) establishGrpcConnection(ctx context.Context) error {
+	var unaryClientInterceptor grpc.UnaryClientInterceptor
+	if diag.DefaultGRPCMonitoring.IsEnabled() {
+		unaryClientInterceptor = grpcMiddleware.ChainUnaryClient(
+			grpcRetry.UnaryClientInterceptor(),
+			diag.DefaultGRPCMonitoring.UnaryClientInterceptor(),
+		)
+	} else {
+		unaryClientInterceptor = grpcRetry.UnaryClientInterceptor()
+	}
+
+	actorsID, err := spiffeid.FromSegments(a.security.ControlPlaneTrustDomain(), "ns", a.security.ControlPlaneNamespace(), "dapr-actors")
+	if err != nil {
+		return err
+	}
+
+	// Dial the gRPC connection
+	ctx, cancel := context.WithTimeout(ctx, dialTimeout)
+	defer cancel()
+	a.conn, err = grpc.DialContext(ctx, a.serviceAddress,
+		grpc.WithUnaryInterceptor(unaryClientInterceptor),
+		a.security.GRPCDialOptionMTLS(actorsID),
+		grpc.WithReturnConnectionError(),
+	)
+	if err != nil {
+		return err
+	}
+
+	// Create the client
+	a.actorsClient = actorsv1pb.NewActorsClient(a.conn)
 
 	return nil
 }
 
 // Starts the ConnectHost stream and sends the current list of actor types.
 // It must be invoked by a caller that owns the lock.
-func (p *actorPlacement) startConnectHost() {
+func (a *ActorClient) startConnectHost() {
 	go func() {
 		for {
 			select {
-			case healthy, ok := <-p.appHealthCh:
+			case healthy, ok := <-a.appHealthCh:
 				// If the second value is false, it means the channel is closed
 				// That happens when the context is canceled
 				if !ok {
@@ -154,32 +172,32 @@ func (p *actorPlacement) startConnectHost() {
 				if healthy {
 					// If we got a healthy signal, start the ConnectHost stream
 					// Until this method returns, signals in the channel will be handled by the loop within this method
-					err := p.establishConnectHost(p.actorTypes)
+					err := a.establishConnectHost(a.actorTypes)
 					if err != nil {
 						// TODO: Handle errors better and restart the connection
 						log.Errorf("Error from ConnectHost: %v", err)
 					}
 				}
-			case <-p.runningCtx.Done():
+			case <-a.runningCtx.Done():
 				return
 			}
 		}
 	}()
-	p.addActorTypeCh = make(chan struct{}, 1)
+	a.addActorTypeCh = make(chan struct{}, 1)
 }
 
-func (p *actorPlacement) establishConnectHost(actorTypes []*actorsv1pb.ActorHostType) error {
-	ctx, cancel := context.WithCancel(p.runningCtx)
+func (a *ActorClient) establishConnectHost(actorTypes []*actorsv1pb.ActorHostType) error {
+	ctx, cancel := context.WithCancel(a.runningCtx)
 	defer cancel()
 
 	// Establish the stream connection
-	stream, err := p.actorsClient.ConnectHost(ctx)
+	stream, err := a.actorsClient.ConnectHost(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to establish ConnectHost stream: %w", err)
 	}
 
 	// Perform the handshake and receive the configuration
-	config, err := p.connectHostHandshake(stream, actorTypes)
+	config, err := a.connectHostHandshake(stream, actorTypes)
 	if err != nil {
 		return fmt.Errorf("handshake error: %w", err)
 	}
@@ -231,7 +249,7 @@ func (p *actorPlacement) establishConnectHost(actorTypes []*actorsv1pb.ActorHost
 			default:
 				// Assume all other messages are a "pong" (response to ping)
 				// TODO: Remove this debug log
-				log.Debugf("Received pong from actor service")
+				log.Debugf("Received pong from actors service")
 				msgCh <- nil
 			}
 		}
@@ -261,24 +279,24 @@ func (p *actorPlacement) establishConnectHost(actorTypes []*actorsv1pb.ActorHost
 				panic("TODO: Unimplemented")
 			}
 
-		case <-p.addActorTypeCh:
+		case <-a.addActorTypeCh:
 			// We need to communicate to the actors service that there's new actor types we support
 			// First, get the list of actor types, which requires getting a lock
 			// By the time we get a lock it's possible that the list of actor types has been modified since we read from the channel, but this should not be a problem because the list is append-only. In the worst case scenario, we'll get a second message on `addActorTypeCh` and we'll re-submit the (same) list again shortly.
-			p.lock.Lock()
+			a.lock.Lock()
 			err = stream.Send(&actorsv1pb.ConnectHostClientStream{
 				Message: &actorsv1pb.ConnectHostClientStream_RegisterActorHost{
 					RegisterActorHost: &actorsv1pb.RegisterActorHost{
-						ActorTypes: p.actorTypes,
+						ActorTypes: a.actorTypes,
 					},
 				},
 			})
-			p.lock.Unlock()
+			a.lock.Unlock()
 			if err != nil {
 				return fmt.Errorf("error while updating the list of supported actor types: %w", err)
 			}
 
-		case healthy, ok := <-p.appHealthCh:
+		case healthy, ok := <-a.appHealthCh:
 			// If the second value is false, it means the channel is closed
 			// That happens when the context is canceled, in which case the service is shutting down
 			if !ok {
@@ -303,7 +321,7 @@ func (p *actorPlacement) establishConnectHost(actorTypes []*actorsv1pb.ActorHost
 	}
 }
 
-func (p *actorPlacement) connectHostHandshake(stream actorsv1pb.Actors_ConnectHostClient, actorTypes []*actorsv1pb.ActorHostType) (*actorsv1pb.ActorHostConfiguration, error) {
+func (a *ActorClient) connectHostHandshake(stream actorsv1pb.Actors_ConnectHostClient, actorTypes []*actorsv1pb.ActorHostType) (*actorsv1pb.ActorHostConfiguration, error) {
 	// To start, we expect callers to send a message of type RegisterActorHost
 	// We give callers 5s before disconnecting them
 	msgCh := make(chan *actorsv1pb.ActorHostConfiguration)
@@ -332,8 +350,8 @@ func (p *actorPlacement) connectHostHandshake(stream actorsv1pb.Actors_ConnectHo
 	err := stream.Send(&actorsv1pb.ConnectHostClientStream{
 		Message: &actorsv1pb.ConnectHostClientStream_RegisterActorHost{
 			RegisterActorHost: &actorsv1pb.RegisterActorHost{
-				Address:    p.address,
-				AppId:      p.appID,
+				Address:    a.address,
+				AppId:      a.appID,
 				ApiLevel:   internal.ActorAPILevel,
 				ActorTypes: actorTypes,
 			},
@@ -344,7 +362,7 @@ func (p *actorPlacement) connectHostHandshake(stream actorsv1pb.Actors_ConnectHo
 	}
 
 	// Expect a response within 3s
-	ctx, cancel := context.WithTimeout(p.runningCtx, 3*time.Second)
+	ctx, cancel := context.WithTimeout(a.runningCtx, 3*time.Second)
 	defer cancel()
 	select {
 	case <-ctx.Done():
@@ -359,30 +377,69 @@ func (p *actorPlacement) connectHostHandshake(stream actorsv1pb.Actors_ConnectHo
 	}
 }
 
-// Closes shuts down server stream gracefully.
-func (p *actorPlacement) Close() error {
-	if !p.running.CompareAndSwap(true, false) {
+// AddHostedActorType registers an actor type by adding it to the list of known actor types (if it's not already registered).
+func (a *ActorClient) AddHostedActorType(actorType string, idleTimeout time.Duration) error {
+	// We need a lock here
+	a.lock.Lock()
+	defer a.lock.Unlock()
+
+	for _, t := range a.actorTypes {
+		if t.ActorType == actorType {
+			return fmt.Errorf("actor type %s already registered", actorType)
+		}
+	}
+
+	// Add the actor type to the slice
+	proto := &actorsv1pb.ActorHostType{
+		ActorType:   actorType,
+		IdleTimeout: uint32(idleTimeout.Seconds()),
+	}
+	a.actorTypes = append(a.actorTypes, proto)
+
+	// If the service hasn't started yet, just return
+	if !a.running.Load() {
 		return nil
 	}
-	p.cache.Stop()
-	p.runningCancel()
 
+	// Check if we are already connected to ConnectHost
+	if a.addActorTypeCh == nil {
+		// Need to connect
+		a.startConnectHost()
+	} else {
+		// We are already connected so just send to the channel that there's an update to the actor types we support
+		// This is a buffered channel with capacity of 1, which allows us to batch changes
+		a.addActorTypeCh <- struct{}{}
+	}
 	return nil
 }
 
-func (p *actorPlacement) WaitUntilReady(ctx context.Context) error {
+// Closes shuts down server stream gracefully.
+func (a *ActorClient) Close() error {
+	if !a.running.CompareAndSwap(true, false) {
+		return nil
+	}
+
+	var errs []error
+	errs = append(errs, a.conn.Close())
+	a.cache.Stop()
+	a.runningCancel()
+
+	return errors.Join(errs...)
+}
+
+func (a *ActorClient) WaitUntilReady(ctx context.Context) error {
 	// WaitUntilReady is a no-op in this implementation.
 	return nil
 }
 
-func (p *actorPlacement) LookupActor(ctx context.Context, req internal.LookupActorRequest) (res internal.LookupActorResponse, err error) {
+func (a *ActorClient) LookupActor(ctx context.Context, req internal.LookupActorRequest) (res internal.LookupActorResponse, err error) {
 	cacheKey := req.ActorKey()
 
 	// Get the value from the cache if possible
 	var lar *actorsv1pb.LookupActorResponse
 	if !req.NoCache {
 		var ok bool
-		lar, ok = p.cache.Get(cacheKey)
+		lar, ok = a.cache.Get(cacheKey)
 		if !ok {
 			lar = nil
 		}
@@ -390,18 +447,18 @@ func (p *actorPlacement) LookupActor(ctx context.Context, req internal.LookupAct
 
 	// If thre's no cached value, fetch it from the server
 	if lar == nil {
-		lar, err = p.actorsClient.LookupActor(ctx, &actorsv1pb.LookupActorRequest{
+		lar, err = a.actorsClient.LookupActor(ctx, &actorsv1pb.LookupActorRequest{
 			Actor: createActorRef(req.ActorType, req.ActorID),
 		})
 		if err != nil {
 			if status.Code(err) == codes.FailedPrecondition {
 				return res, fmt.Errorf("did not find address for actor %s/%s", req.ActorType, req.ActorID)
 			}
-			return res, fmt.Errorf("error from Actor service: %w", err)
+			return res, fmt.Errorf("error from Actors service: %w", err)
 		}
 
 		// Store in the cache
-		p.cache.Set(cacheKey, lar, int64(lar.IdleTimeout))
+		a.cache.Set(cacheKey, lar, int64(lar.IdleTimeout))
 	}
 
 	// Return
@@ -410,12 +467,13 @@ func (p *actorPlacement) LookupActor(ctx context.Context, req internal.LookupAct
 	return res, nil
 }
 
-func (p *actorPlacement) ReportActorDeactivation(ctx context.Context, actorType, actorID string) error {
-	_, err := p.actorsClient.ReportActorDeactivation(ctx, &actorsv1pb.ReportActorDeactivationRequest{
+// ReportActorDeactivation notifies the Actors service that an actor has been deactivated.
+func (a *ActorClient) ReportActorDeactivation(ctx context.Context, actorType, actorID string) error {
+	_, err := a.actorsClient.ReportActorDeactivation(ctx, &actorsv1pb.ReportActorDeactivationRequest{
 		Actor: createActorRef(actorType, actorID),
 	})
 	if err != nil {
-		return fmt.Errorf("error from Actor service: %w", err)
+		return fmt.Errorf("error from Actors service: %w", err)
 	}
 	return nil
 }

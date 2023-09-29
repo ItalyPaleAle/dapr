@@ -37,7 +37,6 @@ import (
 	"github.com/dapr/dapr/pkg/actors/client"
 	"github.com/dapr/dapr/pkg/actors/internal"
 	"github.com/dapr/dapr/pkg/actors/placement"
-	placementv2 "github.com/dapr/dapr/pkg/actors/placement/v2"
 	"github.com/dapr/dapr/pkg/actors/reminders"
 	"github.com/dapr/dapr/pkg/actors/timers"
 	"github.com/dapr/dapr/pkg/channel"
@@ -47,7 +46,6 @@ import (
 	"github.com/dapr/dapr/pkg/health"
 	invokev1 "github.com/dapr/dapr/pkg/messaging/v1"
 	"github.com/dapr/dapr/pkg/modes"
-	actorsv1pb "github.com/dapr/dapr/pkg/proto/actors/v1"
 	commonv1pb "github.com/dapr/dapr/pkg/proto/common/v1"
 	internalv1pb "github.com/dapr/dapr/pkg/proto/internals/v1"
 	runtimev1pb "github.com/dapr/dapr/pkg/proto/runtime/v1"
@@ -113,8 +111,6 @@ type GRPCConnectionFn func(ctx context.Context, address string, id string, names
 
 type actorsRuntime struct {
 	appChannel           channel.AppChannel
-	actorsServiceClient  actorsv1pb.ActorsClient
-	actorsServiceConn    *grpc.ClientConn
 	placement            internal.PlacementService
 	grpcConnectionFn     GRPCConnectionFn
 	actorsConfig         Config
@@ -243,14 +239,6 @@ func (a *actorsRuntime) Init(ctx context.Context) (err error) {
 		}
 	}
 
-	// If using actors v2, connect to the actors service
-	if a.actorsConfig.GetActorsVersion() == internal.ActorsV2 {
-		a.actorsServiceClient, a.actorsServiceConn, err = client.GetActorsClient(ctx, a.actorsConfig.ActorsServiceAddress, a.sec)
-		if err != nil {
-			return fmt.Errorf("failed to connect to the actors service: %w", err)
-		}
-	}
-
 	hostname := net.JoinHostPort(a.actorsConfig.Config.HostAddress, strconv.Itoa(a.actorsConfig.Config.Port))
 
 	a.actorsReminders.Init(ctx)
@@ -275,12 +263,14 @@ func (a *actorsRuntime) Init(ctx context.Context) (err error) {
 			})
 
 		case internal.ActorsV2:
-			a.placement = placementv2.NewActorPlacement(placementv2.ActorPlacementOpts{
-				ActorsClient: a.actorsServiceClient,
-				AppID:        a.actorsConfig.Config.AppID,
-				Address:      hostname,
-				AppHealthFn:  a.getAppHealthCheckChan,
+			ac := client.NewActorClient(client.ActorClientOpts{
+				ServiceAddress: a.actorsConfig.ActorsServiceAddress,
+				Security:       a.sec,
+				AppID:          a.actorsConfig.Config.AppID,
+				Address:        hostname,
+				AppHealthFn:    a.getAppHealthCheckChan,
 			})
+			a.placement = ac
 			for _, actorType := range a.actorsConfig.Config.HostedActorTypes.ListActorTypes() {
 				err = a.placement.AddHostedActorType(actorType, a.actorsConfig.GetIdleTimeoutForType(actorType))
 				if err != nil {
@@ -1058,9 +1048,6 @@ func (a *actorsRuntime) Close() error {
 		errs := make([]error, 0, 2)
 		if a.placement != nil {
 			errs = append(errs, a.placement.Close())
-		}
-		if a.actorsServiceConn != nil {
-			errs = append(errs, a.actorsServiceConn.Close())
 		}
 		return errors.Join(errs...)
 	}
