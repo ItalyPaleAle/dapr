@@ -207,16 +207,14 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 			return status.Errorf(codes.DeadlineExceeded, "Did not receive a ping in %v", s.opts.HostHealthCheckInterval)
 
 		case <-stream.Context().Done():
-			// Normally, context cancelation indicates that the server is shutting down
+			// Normally, context cancelation indicates that the server or client are shutting down
 			// We consider this equivalent to the client disconnecting
-			// In this case, however, we do not unregister the actor host when this method returns, because the host will likely reconnect shortly after to resume
-			unregisterOnClose = false
-			log.Debugf("Actor host '%s' has disconnected", actorHostID)
+			log.Debugf("Actor host '%s' has disconnected: stream context done", actorHostID)
 			return nil
 
 		case <-s.shutdownCh:
-			// When we get a message on shutdownCh, it also indicates that the server is shutting down
-			// We treat this like the case above
+			// When we get a message on shutdownCh, it indicates that the server is shutting down
+			// In this case, we do not unregister the actor host when this method returns, because the host will likely reconnect shortly after to resume
 			unregisterOnClose = false
 			log.Debugf("Disconnecting from actor host '%s' because server is shutting down", actorHostID)
 			return nil
@@ -224,7 +222,7 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 		case err := <-errCh:
 			// io.EOF or context canceled signifies the client has disconnected
 			if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
-				log.Debugf("Actor host '%s' has disconnected", actorHostID)
+				log.Debugf("Actor host '%s' has disconnected: received EOF", actorHostID)
 				return nil
 			}
 			log.Warnf("Error in ConnectHost stream from actor host '%s': %v", actorHostID, err)
