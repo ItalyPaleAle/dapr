@@ -360,6 +360,33 @@ func constructCompositeKey(keys ...string) string {
 	return strings.Join(keys, daprSeparator)
 }
 
+// Halts an actor, removing it from the actors table and then deactivating it
+func (a *actorsRuntime) haltActor(actorType, actorID string) error {
+	key := constructCompositeKey(actorType, actorID)
+	log.Debugf("Halting actor '%s'", key)
+
+	// Remove the actor from the table
+	// This will forbit more state changes
+	actAny, ok := a.actorsTable.LoadAndDelete(key)
+
+	// If nothing was loaded, the actor was probably already deactivated
+	if !ok || actAny == nil {
+		return nil
+	}
+
+	act := actAny.(*actor)
+	for {
+		// wait until actor is not busy, then deactivate
+		if !act.isBusy() {
+			break
+		}
+
+		a.clock.Sleep(time.Millisecond * 100)
+	}
+
+	return a.deactivateActor(act)
+}
+
 func (a *actorsRuntime) deactivateActor(act *actor) error {
 	ctx := context.Background()
 
@@ -822,21 +849,11 @@ func (a *actorsRuntime) drainRebalancedActors() {
 					}
 				}
 
-				// don't allow state changes
-				a.actorsTable.Delete(key)
-
 				diag.DefaultMonitoring.ActorRebalanced(actorType)
 
-				for {
-					// wait until actor is not busy, then deactivate
-					if !act.isBusy() {
-						err := a.deactivateActor(act)
-						if err != nil {
-							log.Errorf("Failed to deactivate actor %s: %v", actorKey, err)
-						}
-						break
-					}
-					a.clock.Sleep(time.Millisecond * 500)
+				err := a.haltActor(actorType, actorID)
+				if err != nil {
+					log.Errorf("Failed to deactivate actor '%s': %v", actorKey, err)
 				}
 			}
 		}(key, value, &wg)
