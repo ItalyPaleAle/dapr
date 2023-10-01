@@ -496,7 +496,6 @@ func (a *ActorClient) DeleteReminder(ctx context.Context, req internal.DeleteRem
 	_, err := a.actorsClient.DeleteReminder(ctx, &actorsv1pb.DeleteReminderRequest{
 		Ref: req.ToRefProto(),
 	})
-
 	if err != nil {
 		return fmt.Errorf("error from actors service: %w", err)
 	}
