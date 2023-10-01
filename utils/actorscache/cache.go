@@ -121,6 +121,21 @@ func (c *Cache[V]) Cleanup() {
 	c.m.Del(keys...)
 }
 
+// Reset removes all entries from the cache.
+func (c *Cache[V]) Reset() {
+	// Look for all keys and then remove them in bulk
+	// This is more efficient than removing keys one-by-one
+	// However, this could lead to a race condition where keys that are updated after ForEach ends are deleted nevertheless.
+	// This is considered acceptable in this case as this is just a cache.
+	keys := make([]string, 0, c.m.Len())
+	c.m.ForEach(func(k string, v cacheEntry[V]) bool {
+		keys = append(keys, k)
+		return true
+	})
+
+	c.m.Del(keys...)
+}
+
 func (c *Cache[V]) startBackgroundCleanup(d time.Duration) {
 	c.runningCh = make(chan struct{})
 	go func() {

@@ -273,6 +273,9 @@ func (a *ActorClient) establishConnectHost(actorTypes []*actorsv1pb.ActorHostTyp
 	defer func() {
 		log.Debugf("Disconnected from ConnectHost stream with Actors service")
 
+		// Also reset the lookup cache, as this indicates a likely failure of the actor placement subsystem
+		a.cache.Reset()
+
 		if a.haltAllActorsFn != nil {
 			haltErr := a.haltAllActorsFn()
 			if haltErr != nil {
