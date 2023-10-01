@@ -139,6 +139,7 @@ spec:
           - "/actors"
           - "--"
           {{- end }}
+          # Store configuration
           - "--store-name"
           - "{{ .Values.store.name }}"
           {{- range .Values.store.options }}
@@ -149,6 +150,35 @@ spec:
           - "--store-opts-file"
           - "/var/run/secrets/dapr.io/actors/options"
           {{- end }}
+          # Placement options
+{{- with .Values.placement.hostHealthCheckInterval }}
+          - "--host-healthcheck-interval"
+          - "{{ . }}"
+{{- end }}
+          # Reminders options
+{{- with .Values.reminders }}
+  {{- if eq .enabled false }}
+          - "--no-reminders"
+  {{- else }}
+    {{- with .pollInterval }}
+          - "--reminders-poll-interval"
+          - "{{ . }}"
+    {{- end }}
+    {{- with .fetchAheadInterval}}
+          - "--reminders-fetch-ahead-interval"
+          - "{{ . }}"
+    {{- end }}
+    {{- with .fetchAheadBatchSize }}
+          - "--reminders-fetch-ahead-batch-size"
+          - "{{ . }}"
+    {{- end -}}
+    {{- with .leaseDuration }}
+          - "--reminders-lease-duration"
+          - "{{ . }}"
+    {{- end -}}
+  {{- end -}}
+{{- end -}}
+          # Other options
           - "--log-level"
           - "{{ .Values.logLevel }}"
           - "--mode"

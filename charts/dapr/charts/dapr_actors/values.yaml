@@ -22,6 +22,16 @@ store:
     secretName: ""
     secretKey: ""
 
+placement:
+  hostHealthCheckInterval: ""
+
+reminders:
+  enabled: true
+  pollInterval: ""
+  fetchAheadInterval: ""
+  fetchAheadBatchSize: 0
+  leaseDuration: ""
+
 ports:
   protocol: TCP
   port: 51101

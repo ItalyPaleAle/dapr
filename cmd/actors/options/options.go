@@ -96,8 +96,8 @@ func New() *Options {
 	fs.BoolVar(&opts.NoReminders, "no-reminders", false, "If true, does not enable reminders functionality in the service")
 	fs.DurationVar(&opts.RemindersPollInterval, "reminders-poll-interval", DefaultRemindersPollInterval, "Polling interval for fetching reminders from the store. Clusters with lots of high-frequency reminders may want to use smaller values, at the expense of increased load on the store")
 	fs.DurationVar(&opts.RemindersFetchAheadInterval, "reminders-fetch-ahead-interval", DefaultRemindersFetchAheadInterval, "Pre-fetches reminders that are set to be executed up to this interval in the future. Must be greater than the polling interval.")
-	fs.DurationVar(&opts.RemindersLeaseDuration, "reminders-lease-duration", DefaultRemindersLeaseDuration, "Duration for leases acquired in the reminders table")
 	fs.IntVar(&opts.RemindersFetchAheadBatchSize, "reminders-fetch-ahead-batch-size", DefaultRemindersFetchAheadBatchSize, "Maximum number of reminders fetched in each batch. Clusters with lots of reminders should either scale the Actors service horizontally or increase this value.")
+	fs.DurationVar(&opts.RemindersLeaseDuration, "reminders-lease-duration", DefaultRemindersLeaseDuration, "Duration for leases acquired in the reminders table")
 
 	fs.BoolVar(&opts.MTLSEnabled, "enable-mtls", false, "Enable mTLS")
 	fs.StringVar(&opts.TrustDomain, "trust-domain", "localhost", "Trust domain for the Dapr control plane (for mTLS)")
