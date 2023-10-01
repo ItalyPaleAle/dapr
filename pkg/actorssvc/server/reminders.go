@@ -136,7 +136,7 @@ func (s *server) executeReminder(fr *actorstore.FetchedReminder) {
 		if errors.Is(err, actorstore.ErrNoActorHost) {
 			// If there's no host capable of serving this reminder, it means that the host has disconnected since we fetched the reminder
 			// In this case, we can ignore the error
-			log.Debugf("Reminder '%s' cannot be executed on any host currently connected to this instance and will be retried later", fr.Key())
+			s.executeReminderRelinquishLease(ctx, fr)
 			return
 		}
 
@@ -155,7 +155,7 @@ func (s *server) executeReminder(fr *actorstore.FetchedReminder) {
 	s.connectedHostsLock.RUnlock()
 	if !ok {
 		// Same situation as above: the host has disconnected since we fetched the reminder
-		log.Debugf("Reminder '%s' cannot be executed on any host currently connected to this instance and will be retried later", fr.Key())
+		s.executeReminderRelinquishLease(ctx, fr)
 		return
 	}
 
@@ -216,6 +216,19 @@ func (s *server) executeReminder(fr *actorstore.FetchedReminder) {
 	}
 
 	log.Debugf("Reminder '%s' has been executed in %v", fr.Key(), time.Since(start))
+}
+
+func (s *server) executeReminderRelinquishLease(ctx context.Context, fr *actorstore.FetchedReminder) {
+	log.Debugf("Reminder '%s' cannot be executed on any host currently connected to this instance and will be retried later", fr.Key())
+
+	err := s.store.RelinquishReminderLease(ctx, fr)
+
+	// Here, we log errors only, since this method is run for cleanup reasons already
+	// If the error is that the reminder can't be found, it means that it's been deleted or updated in parallel
+	// In this case, we can ignore the error
+	if err != nil && !errors.Is(err, actorstore.ErrReminderNotFound) {
+		log.Errorf("Failed to relinquish lease for reminder %s: %w", fr.Key(), err)
+	}
 }
 
 func (s *server) fetchReminders(ctx context.Context) ([]*actorstore.FetchedReminder, error) {
