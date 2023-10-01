@@ -485,6 +485,11 @@ func (p *actorPlacement) ReportActorDeactivation(ctx context.Context, actorType,
 	return nil
 }
 
+func (p *actorPlacement) SetHaltActorFns(haltFn internal.HaltActorFn, haltAllFn internal.HaltAllActorsFn) {
+	// Nop in this implementation
+	return
+}
+
 // addDNSResolverPrefix add the `dns://` prefix to the given addresses
 func addDNSResolverPrefix(addr []string) []string {
 	resolvers := make([]string, 0, len(addr))

@@ -56,6 +56,8 @@ type ActorClient struct {
 	security          security.Handler
 	lock              sync.Mutex
 	executeReminderFn internal.ExecuteReminderFn
+	haltActorFn       internal.HaltActorFn
+	haltAllActorsFn   internal.HaltAllActorsFn
 	config            internal.Config
 	actorTypes        []*actorsv1pb.ActorHostType
 	addActorTypeCh    chan struct{}
@@ -99,6 +101,11 @@ func (a *ActorClient) SetExecuteReminderFn(fn internal.ExecuteReminderFn) {
 
 func (a *ActorClient) SetResiliencyProvider(resiliency resiliency.Provider) {
 	a.resiliency = resiliency
+}
+
+func (a *ActorClient) SetHaltActorFns(haltFn internal.HaltActorFn, haltAllFn internal.HaltAllActorsFn) {
+	a.haltActorFn = haltFn
+	a.haltAllActorsFn = haltAllFn
 }
 
 func (a *ActorClient) Init(ctx context.Context) error {
@@ -187,6 +194,11 @@ func (a *ActorClient) startConnectHost() {
 				case <-a.runningCtx.Done():
 					return
 				default:
+					// Check again to make sure the context isn't canceled at the same time
+					if a.runningCtx.Err() != nil {
+						return
+					}
+
 					a.startConnectHostHealthy()
 				}
 			}
@@ -197,7 +209,7 @@ func (a *ActorClient) startConnectHost() {
 			case healthy, ok := <-a.appHealthCh:
 				// If the second value is false, it means the channel is closed
 				// That happens when the context is canceled
-				if !ok {
+				if !ok || a.runningCtx.Err() != nil {
 					return
 				}
 				if healthy {
@@ -239,7 +251,17 @@ func (a *ActorClient) establishConnectHost(actorTypes []*actorsv1pb.ActorHostTyp
 		return fmt.Errorf("handshake error: %w", err)
 	}
 
-	defer log.Debugf("Disconnected from ConnectHost stream with Actors service")
+	// When we disconnect from ConnectHost, we need to deactivate all actors
+	defer func() {
+		log.Debugf("Disconnected from ConnectHost stream with Actors service")
+
+		if a.haltAllActorsFn != nil {
+			haltErr := a.haltAllActorsFn()
+			if haltErr != nil {
+				log.Errorf("Failed to deactivate all actors: %v", haltErr)
+			}
+		}
+	}()
 
 	// Ticker for pings
 	pingTicker := time.NewTicker(config.GetPingInterval())
@@ -281,10 +303,6 @@ func (a *ActorClient) establishConnectHost(actorTypes []*actorsv1pb.ActorHostTyp
 
 			case *actorsv1pb.ConnectHostServerStream_ExecuteReminder:
 				// Received a reminder to execute
-				if msg.ExecuteReminder == nil {
-					errCh <- errors.New("reminder message has nil ExecuteReminder property")
-					return
-				}
 				if msg.ExecuteReminder.GetReminder() == nil {
 					errCh <- errors.New("reminder message has nil Reminder inside")
 					return
@@ -292,7 +310,11 @@ func (a *ActorClient) establishConnectHost(actorTypes []*actorsv1pb.ActorHostTyp
 				msgCh <- msg.ExecuteReminder
 
 			case *actorsv1pb.ConnectHostServerStream_DeactivateActor:
-				panic("TODO: Unimplemented")
+				// Received a request to deactivate an actor
+				if msg.DeactivateActor.GetActor() == nil {
+					errCh <- errors.New("message to deactivate actor has nil Actor inside")
+				}
+				msgCh <- msg.DeactivateActor
 
 			default:
 				// Assume all other messages are a "pong" (response to ping)
@@ -337,7 +359,13 @@ func (a *ActorClient) establishConnectHost(actorTypes []*actorsv1pb.ActorHostTyp
 				}
 
 			case *actorsv1pb.DeactivateActor:
-				panic("TODO: Unimplemented")
+				// Deactivate an actor
+				if a.haltActorFn != nil {
+					err = a.haltActorFn(msg.Actor.ActorType, msg.Actor.ActorId)
+					if err != nil {
+						return fmt.Errorf("error while halting actor: %w", err)
+					}
+				}
 			}
 
 		case <-a.addActorTypeCh:
@@ -387,10 +415,11 @@ func (a *ActorClient) establishConnectHost(actorTypes []*actorsv1pb.ActorHostTyp
 		case <-stream.Context().Done():
 			// When the context is done, it usually means that the service is shutting down
 			// Let's just return
+			log.Warn("ConnectHost stream ended with stream context done")
 			return nil
 
 		case <-ctx.Done():
-			// Context passed to Start is being closed
+			// Context passed to Start is being closed - the actor client is shutting down
 			// Let's just return
 			return nil
 		}

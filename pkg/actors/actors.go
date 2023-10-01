@@ -320,7 +320,13 @@ func (a *actorsRuntime) Init(ctx context.Context) (err error) {
 					return fmt.Errorf("failed to register actor %s: %w", actorType, err)
 				}
 			}
+
+		default:
+			// Should only happen due to a development-time issue
+			log.Fatalf("Invalid actors version: %v", a.actorsConfig.GetActorsVersion())
 		}
+
+		a.placement.SetHaltActorFns(a.haltActor, a.haltAllActors)
 	}
 
 	a.wg.Add(1)
@@ -385,6 +391,36 @@ func (a *actorsRuntime) haltActor(actorType, actorID string) error {
 	}
 
 	return a.deactivateActor(act)
+}
+
+// Halts all actors
+func (a *actorsRuntime) haltAllActors() error {
+	// Visit all currently active actors and deactivate them
+	errCh := make(chan error)
+	count := atomic.Int32{}
+	a.actorsTable.Range(func(key any, value any) bool {
+		count.Add(1)
+		go func(key any) {
+			actorKey := key.(string)
+			err := a.haltActor(a.getActorTypeAndIDFromKey(actorKey))
+			if err != nil {
+				errCh <- fmt.Errorf("failed to deactivate actor '%s': %v", actorKey, err)
+			}
+			errCh <- nil
+		}(key)
+		return true
+	})
+
+	// Collect all errors, which also waits for all goroutines to return
+	errs := []error{}
+	for i := int32(0); i < count.Load(); i++ {
+		err := <-errCh
+		if err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	return errors.Join(errs...)
 }
 
 func (a *actorsRuntime) deactivateActor(act *actor) error {
@@ -821,7 +857,7 @@ func (a *actorsRuntime) drainRebalancedActors() {
 
 	a.actorsTable.Range(func(key any, value any) bool {
 		wg.Add(1)
-		go func(key any, value any, wg *sync.WaitGroup) {
+		go func(key any, value any) {
 			defer wg.Done()
 			// for each actor, deactivate if no longer hosted locally
 			actorKey := key.(string)
@@ -856,7 +892,7 @@ func (a *actorsRuntime) drainRebalancedActors() {
 					log.Errorf("Failed to deactivate actor '%s': %v", actorKey, err)
 				}
 			}
-		}(key, value, &wg)
+		}(key, value)
 		return true
 	})
 
