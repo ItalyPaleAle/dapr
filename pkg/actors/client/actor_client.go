@@ -21,6 +21,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	grpcMiddleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	grpcRetry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
@@ -189,19 +190,7 @@ func (a *ActorClient) startConnectHost() {
 	go func() {
 		// If there's no appHealthCh, something that happens when there's no app channel, we must assume that the app is always healthy
 		if a.appHealthCh == nil {
-			for {
-				select {
-				case <-a.runningCtx.Done():
-					return
-				default:
-					// Check again to make sure the context isn't canceled at the same time
-					if a.runningCtx.Err() != nil {
-						return
-					}
-
-					a.startConnectHostHealthy()
-				}
-			}
+			a.startConnectHostHealthy()
 		}
 
 		for {
@@ -227,14 +216,40 @@ func (a *ActorClient) startConnectHost() {
 }
 
 func (a *ActorClient) startConnectHostHealthy() {
-	err := a.establishConnectHost(a.actorTypes)
-	if err != nil {
-		// TODO: Handle errors better and restart the connection
-		log.Errorf("Error from ConnectHost: %v", err)
+	bo := backoff.NewExponentialBackOff()
+	bo.MaxElapsedTime = 0 // Retry forever
+	bo.InitialInterval = 500 * time.Millisecond
+	bo.MaxInterval = 5 * time.Second
+
+	for {
+		select {
+		case <-a.runningCtx.Done():
+			return
+		default:
+			// Check again to make sure the context isn't canceled at the same time
+			if a.runningCtx.Err() != nil {
+				return
+			}
+
+			err := a.establishConnectHost(a.actorTypes, bo)
+			if err != nil {
+				log.Errorf("Error from ConnectHost: %v", err)
+			}
+		}
+
+		// Before reconnecting, use a backoff
+		delay := bo.NextBackOff()
+		log.Infof("Will attempt re-establishing ConnectHost in %v", delay)
+		select {
+		case <-time.After(delay):
+			// Nop - can reconnect
+		case <-a.runningCtx.Done():
+			return
+		}
 	}
 }
 
-func (a *ActorClient) establishConnectHost(actorTypes []*actorsv1pb.ActorHostType) error {
+func (a *ActorClient) establishConnectHost(actorTypes []*actorsv1pb.ActorHostType, bo backoff.BackOff) error {
 	ctx, cancel := context.WithCancel(a.runningCtx)
 	defer cancel()
 
@@ -250,6 +265,9 @@ func (a *ActorClient) establishConnectHost(actorTypes []*actorsv1pb.ActorHostTyp
 	if err != nil {
 		return fmt.Errorf("handshake error: %w", err)
 	}
+
+	// After a successful connection, reset the backoff
+	bo.Reset()
 
 	// When we disconnect from ConnectHost, we need to deactivate all actors
 	defer func() {
