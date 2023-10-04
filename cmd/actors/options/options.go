@@ -37,17 +37,17 @@ const (
 	// DefaultHealthzPort is the default port for the healthz server to listen on.
 	DefaultHealthzPort = 8080
 	// DefaultHostHealthCheckInterval is the default interval between pings received from an actor host.
-	DefaultHostHealthCheckInterval = 30 * time.Second
+	DefaultHostHealthCheckInterval = 20 * time.Second
 	// DefaultRemindersPollInterval is the default polling interval for reminders.
 	// Clusters with lots of high-frequency reminders may want to set this to a lower value.
-	DefaultRemindersPollInterval = 2500 * time.Millisecond
+	DefaultRemindersPollInterval = 1500 * time.Millisecond
 	// DefaultRemindersFetchAheadInterval is the default duration for pre-fetching reminders.
 	// The fetch ahead interval must be greater than the poll interval.
-	DefaultRemindersFetchAheadInterval = 5 * time.Second
+	DefaultRemindersFetchAheadInterval = 4 * time.Second
 	// DefaultRemindersLeaseDuration is the default duration for leases in the reminders table.
 	DefaultRemindersLeaseDuration = 20 * time.Second
 	// DefaultRemindersFetchAheadBatchSize is the default batch size for pre-fetching reminders.
-	DefaultRemindersFetchAheadBatchSize = 50
+	DefaultRemindersFetchAheadBatchSize = 40
 )
 
 type Options struct {
