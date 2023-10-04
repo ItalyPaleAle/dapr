@@ -129,12 +129,14 @@ def start_workflow_runtime():
     workflowRuntime.register_activity(state_delete_act)
     workflowRuntime.start()
     workflowClient = DaprWorkflowClient(host=host,port=port)
+    print("Workflow Runtime Started")
     return "Workflow Runtime Started"
 
 # shutdown_workflow_runtime stops the workflow runtime
 @api.route('/shutdown-workflow-runtime', methods=['GET'])
 def shutdown_workflow_runtime():
     workflowRuntime.shutdown()
+    print("Workflow Runtime Shutdown")
     return "Workflow Runtime Shutdown"
 
 # run_workflow runs an instance of workflow and waits for it to complete
@@ -153,38 +155,37 @@ def run_workflow(run_id):
         })
 
     with DaprClient() as d:
-        print("==========Start Workflow:==========")
         try:
+            print(f"{run_id} starting workflow")
             start_resp = d.start_workflow(workflow_component=workflowComponent,
                         workflow_name=workflowName, input=input, workflow_options=workflowOptions)
-            print(f"started workflow with instance_id {start_resp.instance_id}")
+            print(f"{run_id} started workflow with instance_id {start_resp.instance_id}")
             instance_id = start_resp.instance_id
         except DaprInternalError as e:
-            print(f"error starting workflow: {e.message}")
-        
+            print(f"{run_id} error starting workflow: {e.message}")
+
         workflow_state = workflowClient.wait_for_workflow_completion(
                 instance_id=instance_id, timeout_in_seconds=250)
         assert workflow_state.runtime_status == WorkflowStatus.COMPLETED
-        
-        print("==========Get Workflow:==========")
+
         try:
             get_resp = d.get_workflow(instance_id=instance_id, workflow_component=workflowComponent)
-            print(f"workflow instance_id {get_resp.instance_id} runtime_status {get_resp.runtime_status}")
+            print(f"{run_id} workflow instance_id {get_resp.instance_id} runtime_status {get_resp.runtime_status}")
         except DaprInternalError as e:
-            print(f"error getting workflow status: {e.message}")
+            print(f"{run_id} error getting workflow status: {e.message}")
 
-        print("==========Terminate Workflow:==========")
         try:
+            print(f"{run_id} terminating workflow")
             terminate_resp = d.terminate_workflow(instance_id=instance_id, workflow_component=workflowComponent)
         except DaprInternalError as e:
-            print(f"error terminating workflow: {e.message}")
-        
-        print("==========Purge Workflow:==========")
+            print(f"{run_id} error terminating workflow: {e.message}")
+
         try:
+            print(f"{run_id} purging workflow")
             d.purge_workflow(instance_id=instance_id, workflow_component=workflowComponent)
         except DaprInternalError as e:
-            print(f"error purging workflow: {e.message}")
-        
+            print(f"{run_id} error purging workflow: {e.message}")
+
         return "Workflow Run completed"
 
 if __name__ == '__main__':

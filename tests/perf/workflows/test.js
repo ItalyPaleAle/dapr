@@ -20,38 +20,38 @@ const possibleScenarios = {
         executor: 'shared-iterations',
         vus: 50,
         iterations: 500,
-        maxDuration: '250s',     
+        maxDuration: '250s',
     },
     t_100_500: {
         executor: 'shared-iterations',
         vus: 100,
         iterations: 500,
-        maxDuration: '450s',     
-    },   
+        maxDuration: '450s',
+    },
     t_150_500: {
         executor: 'shared-iterations',
         vus: 150,
         iterations: 500,
-        maxDuration: '450s',     
-    },      
+        maxDuration: '450s',
+    },
     t_350_1750: {
         executor: 'shared-iterations',
         vus: 350,
         iterations: 1750,
-        maxDuration: '1200s',     
-    },       
+        maxDuration: '1200s',
+    },
     t_110_550: {
         executor: 'shared-iterations',
         vus: 110,
         iterations: 550,
-        maxDuration: '500s',     
-    }, 
+        maxDuration: '500s',
+    },
     t_100_1000: {
         executor: 'shared-iterations',
         vus: 100,
         iterations: 1000,
-        maxDuration: '500s',     
-    },     
+        maxDuration: '500s',
+    },
 }
 
 let enabledScenarios = {}
@@ -68,19 +68,26 @@ export const options = {
 const DAPR_ADDRESS = `http://127.0.0.1:${__ENV.DAPR_HTTP_PORT}`
 
 function execute() {
-    console.log("Executing the execute function with idInTest: " + `${exec.scenario.iterationInTest}`)
+    console.log(
+        'Executing the execute function with idInTest: ' +
+            `${exec.scenario.iterationInTest}`
+    )
     let data = JSON.stringify({
-        workflow_name : __ENV.WORKFLOW_NAME,
+        workflow_name: __ENV.WORKFLOW_NAME,
         workflow_input: __ENV.WORKFLOW_INPUT,
     })
     let params = {
         headers: {
             'Content-Type': 'application/json',
-          },
-        timeout: '250s'
+        },
+        timeout: '250s',
     }
-    const res =  http.post(`${__ENV.TARGET_URL}/${exec.scenario.iterationInTest}`,data,params)
-    console.log("http response", JSON.stringify(res));
+    const res = http.post(
+        `${__ENV.TARGET_URL}/${exec.scenario.iterationInTest}`,
+        data,
+        params
+    )
+    console.log('http response', JSON.stringify(res))
     return res
 }
 
