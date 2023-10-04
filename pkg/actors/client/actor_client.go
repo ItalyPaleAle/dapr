@@ -51,26 +51,27 @@ var (
 // ActorClient is a client for the Actors service.
 // It manages the placement of actors in the cluster as well as offers reminders services.
 type ActorClient struct {
-	actorsClient      actorsv1pb.ActorsClient
-	conn              *grpc.ClientConn
-	appID             string
-	security          security.Handler
-	lock              sync.Mutex
-	executeReminderFn internal.ExecuteReminderFn
-	haltActorFn       internal.HaltActorFn
-	haltAllActorsFn   internal.HaltAllActorsFn
-	config            internal.Config
-	actorTypes        []*actorsv1pb.ActorHostType
-	addActorTypeCh    chan struct{}
-	appHealthFn       func(ctx context.Context) <-chan bool
-	appHealthCh       <-chan bool
-	resiliency        resiliency.Provider
-	running           atomic.Bool
-	runningCtx        context.Context
-	runningCancel     context.CancelFunc
-	cache             *actorscache.Cache[*actorsv1pb.LookupActorResponse]
-	clock             kclock.Clock
-	wg                sync.WaitGroup
+	actorsClient       actorsv1pb.ActorsClient
+	conn               *grpc.ClientConn
+	appID              string
+	security           security.Handler
+	lock               sync.Mutex
+	executeReminderFn  internal.ExecuteReminderFn
+	haltActorFn        internal.HaltActorFn
+	haltAllActorsFn    internal.HaltAllActorsFn
+	config             internal.Config
+	actorTypes         []*actorsv1pb.ActorHostType
+	addActorTypeCh     chan struct{}
+	appHealthFn        func(ctx context.Context) <-chan bool
+	appHealthCh        <-chan bool
+	resiliency         resiliency.Provider
+	running            atomic.Bool
+	runningCtx         context.Context
+	runningCancel      context.CancelFunc
+	connectHostRunning atomic.Bool
+	cache              *actorscache.Cache[*actorsv1pb.LookupActorResponse]
+	clock              kclock.Clock
+	wg                 sync.WaitGroup
 }
 
 // ActorClientOpts contains options for NewActorClient.
@@ -267,6 +268,8 @@ func (a *ActorClient) establishConnectHost(actorTypes []*actorsv1pb.ActorHostTyp
 		return fmt.Errorf("handshake error: %w", err)
 	}
 
+	a.connectHostRunning.Store(true)
+
 	// After a successful connection, reset the backoff
 	bo.Reset()
 
@@ -283,6 +286,8 @@ func (a *ActorClient) establishConnectHost(actorTypes []*actorsv1pb.ActorHostTyp
 				log.Errorf("Failed to deactivate all actors: %v", haltErr)
 			}
 		}
+
+		a.connectHostRunning.Store(false)
 	}()
 
 	// Ticker for pings
@@ -661,6 +666,11 @@ func (a *ActorClient) LookupActor(ctx context.Context, req internal.LookupActorR
 
 // ReportActorDeactivation notifies the Actors service that an actor has been deactivated.
 func (a *ActorClient) ReportActorDeactivation(ctx context.Context, actorType, actorID string) error {
+	// If ConnectHost isn't running, this instance doesn't have any active actor already
+	if !a.connectHostRunning.Load() {
+		return nil
+	}
+
 	_, err := a.actorsClient.ReportActorDeactivation(ctx, &actorsv1pb.ReportActorDeactivationRequest{
 		Actor: createActorRef(actorType, actorID),
 	})
