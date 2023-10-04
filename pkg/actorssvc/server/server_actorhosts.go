@@ -180,10 +180,13 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 
 			case *actorsv1pb.ReminderBackOff:
 				// The actor host is overloaded and cannot process reminders, so we need to temporarily pause fetching and delivering messages to this actor host
-				d := 5 * time.Second
-				log.Infof("Pausing sending reminders to host '%s' for %v", actorHostID, d)
+				pause := time.Second
+				if reqPause := msg.GetPause(); reqPause != nil && reqPause.IsValid() && reqPause.AsDuration() > 0 {
+					pause = reqPause.AsDuration()
+				}
+				log.Infof("Pausing delivery of reminders to host '%s' for %v", actorHostID, pause)
 				updateHost = true
-				pausedUntil = time.Now().Add(d)
+				pausedUntil = time.Now().Add(pause)
 			}
 			err = s.store.UpdateActorHost(stream.Context(), actorHostID, req)
 			if err != nil {

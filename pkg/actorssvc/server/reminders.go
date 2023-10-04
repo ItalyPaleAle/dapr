@@ -216,7 +216,7 @@ func (s *server) executeReminder(fr *actorstore.FetchedReminder) {
 		}
 	}
 
-	log.Debugf("Reminder '%s' has been executed in %v", fr.Key(), time.Since(start))
+	log.Debugf("Reminder '%s' has been executed on host '%s' in %v", fr.Key(), lar.HostID, time.Since(start))
 }
 
 func (s *server) executeReminderRelinquishLease(ctx context.Context, fr *actorstore.FetchedReminder) {

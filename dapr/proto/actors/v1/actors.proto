@@ -92,9 +92,10 @@ message RegisterActorHost {
 
 // ReminderBackOff is sent by the Dapr sidecar to the Actors service.
 // When the Dapr sidecar sends this message to the Actors service, the Actors service pauses delivering reminders to this Dapr sidecar for a period of time.
-// After the wait, the Actors service attempts to deliver another reminder. If it receives another ReminderBackOff message, the wait increases exponentially until a reminder is accepted sucessfully by the sidecar.
 message ReminderBackOff {
-    // Empty for now
+    // Requested pause duration.
+    // This is optional and defaults to 1s if empty.
+    google.protobuf.Duration pause = 1;
 }
 
 // ActorHostType references a supported actor type.

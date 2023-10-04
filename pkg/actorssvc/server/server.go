@@ -47,10 +47,15 @@ type server struct {
 
 	// This map contains the list of active connections from actor hosts.
 	// We use a "regular" map with a RWMutex instead of a sync.Map because we need to be sure that once we get a channel from the map, it's still valid when we attempt to use it.
-	connectedHosts           connectedHosts
+	connectedHosts     connectedHosts
+	connectedHostsLock sync.RWMutex
+
+	// Cached values of host IDs and actor types for connected hosts.
+	// We maintain a cache here to improve memory usage when we need to fetch reminders etc, and to reduce the duration we need to acquire read locks for.
+	// Note1: When grabbing these slices, make a copy of the pointer while obtaining a (read) lock on connectedHostsLock, for example `hostIDs := s.connectedHostsIDs`. Do not modify the value of these slices in any way.
+	// Note2: These should be used for *reminders* only, as these values exclude hosts that are in a "paused" state due to too many reminders being delivered. If you need to get the list of connected hosts for other purposes, you should iterate through connectedHosts directly (after obtaining the connectedHostsLock!).
 	connectedHostsIDs        []string
 	connectedHostsActorTypes []string
-	connectedHostsLock       sync.RWMutex
 }
 
 // Start starts the server. Blocks until the context is cancelled.
