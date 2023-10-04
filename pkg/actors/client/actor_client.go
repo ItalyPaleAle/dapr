@@ -367,15 +367,16 @@ func (a *ActorClient) establishConnectHost(actorTypes []*actorsv1pb.ActorHostTyp
 
 			case *actorsv1pb.ExecuteReminder:
 				// Executing the remidner
-				// If the method returns false, we need to stop processing the reminder and delete it (but only if the reminder repeats)
-				if a.executeReminderFn != nil &&
-					!a.executeReminderFn(internal.NewReminderFromProto(msg.Reminder)) &&
-					msg.Reminder.Period != "" {
-					_, err = a.actorsClient.DeleteReminder(ctx, &actorsv1pb.DeleteReminderRequest{
-						Ref: msg.Reminder.GetRef(),
-					})
-					if err != nil {
-						return fmt.Errorf("error while deleting reminder that was canceled after execution: %w", err)
+				if a.executeReminderFn != nil {
+					// If the method returns false, we need to stop processing the reminder and delete it (but only if the reminder repeats, otherwise it'd be deleted anyways)
+					ok := a.executeReminderFn(internal.NewReminderFromProto(msg.Reminder))
+					if !ok && msg.Reminder.Period != "" {
+						_, err = a.actorsClient.DeleteReminder(ctx, &actorsv1pb.DeleteReminderRequest{
+							Ref: msg.Reminder.GetRef(),
+						})
+						if err != nil {
+							return fmt.Errorf("error while deleting reminder that was canceled after execution: %w", err)
+						}
 					}
 				}
 

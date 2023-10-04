@@ -94,10 +94,6 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 			case *actorsv1pb.ConnectHostClientStream_RegisterActorHost:
 				// Received a registration update
 				// Validate it before processing it
-				if msg.RegisterActorHost == nil {
-					errCh <- errors.New("registration update message has nil RegisterActorHost property")
-					return
-				}
 				rErr = msg.RegisterActorHost.ValidateUpdateMessage()
 				if rErr != nil {
 					errCh <- status.Errorf(codes.InvalidArgument, "Invalid request: %v", rErr)
@@ -150,10 +146,13 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 		case msgAny := <-clientMsgCh:
 			// Received a message from the client
 			// Any message counts as a ping (at the very least), so update the actor host table
-			var (
-				req               actorstore.UpdateActorHostRequest
-				updatedActorTypes []string
-			)
+			var updatedActorTypes []string
+			req := actorstore.UpdateActorHostRequest{
+				UpdateLastHealthCheck: true,
+			}
+
+			// Check if we have any "special" message that needs additional processing
+			// If a message doesn't match either, we consider it a regular ping
 			switch msg := msgAny.(type) {
 			case *actorsv1pb.RegisterActorHost:
 				// We received a request to update the actor host's registration
@@ -161,9 +160,6 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 				req = msg.ToUpdateActorHostRequest()
 				req.UpdateLastHealthCheck = true
 				updatedActorTypes = msg.GetActorTypeNames()
-			default:
-				// We received a ping
-				req.UpdateLastHealthCheck = true
 			}
 			err = s.store.UpdateActorHost(stream.Context(), actorHostID, req)
 			if err != nil {

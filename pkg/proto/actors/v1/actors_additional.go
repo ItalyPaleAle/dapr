@@ -67,6 +67,9 @@ func (x *RegisterActorHost) ValidateFirstMessage() error {
 // ValidateUpdateMessage validates a message sent to update the registration.
 func (x *RegisterActorHost) ValidateUpdateMessage() error {
 	const errPrefix = "update message validation failed: "
+	if x == nil {
+		return errors.New(errPrefix + "message is nil")
+	}
 	if x.GetAddress() != "" {
 		return errors.New(errPrefix + "property 'address' cannot be updated")
 	}
