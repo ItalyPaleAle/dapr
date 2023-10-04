@@ -143,6 +143,10 @@ func (s *server) DeleteReminder(ctx context.Context, req *actorsv1pb.DeleteRemin
 
 	log.Debugf("Invoked DeleteReminder with key='%s'", req.GetRef().GetKey())
 
+	// Remove from the queue if present
+	// We ignore errors here
+	_ = s.processor.Dequeue(req.Ref.GetKey())
+
 	err = s.store.DeleteReminder(ctx, req.Ref.ToActorStoreReminderRef())
 	if err != nil {
 		if errors.Is(err, actorstore.ErrReminderNotFound) {
@@ -152,10 +156,6 @@ func (s *server) DeleteReminder(ctx context.Context, req *actorsv1pb.DeleteRemin
 		log.Errorf("Failed to delete reminder: %v", err)
 		return nil, status.Errorf(codes.Internal, "failed to delete reminder: %v", err)
 	}
-
-	// Remove from the queue if present
-	// We ignore errors here
-	_ = s.processor.Dequeue(req.Ref.GetKey())
 
 	return &actorsv1pb.DeleteReminderResponse{}, nil
 }

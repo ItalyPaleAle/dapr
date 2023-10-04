@@ -368,16 +368,7 @@ func (a *ActorClient) establishConnectHost(actorTypes []*actorsv1pb.ActorHostTyp
 			case *actorsv1pb.ExecuteReminder:
 				// Executing the remidner
 				if a.executeReminderFn != nil {
-					// If the method returns false, we need to stop processing the reminder and delete it (but only if the reminder repeats, otherwise it'd be deleted anyways)
-					ok := a.executeReminderFn(internal.NewReminderFromProto(msg.Reminder))
-					if !ok && msg.Reminder.Period != "" {
-						_, err = a.actorsClient.DeleteReminder(ctx, &actorsv1pb.DeleteReminderRequest{
-							Ref: msg.Reminder.GetRef(),
-						})
-						if err != nil {
-							return fmt.Errorf("error while deleting reminder that was canceled after execution: %w", err)
-						}
-					}
+					go a.doExecuteReminder(ctx, msg)
 				}
 
 			case *actorsv1pb.DeactivateActor:
@@ -514,6 +505,27 @@ func (a *ActorClient) connectHostHandshake(stream actorsv1pb.Actors_ConnectHostC
 			return nil, fmt.Errorf("invalid ActorHostConfiguration: %w", err)
 		}
 		return msg, nil
+	}
+}
+
+// This method, which should be executed on a goroutine, executes a reminder
+// If needed, stops the repeating reminder at the end.
+func (a *ActorClient) doExecuteReminder(ctx context.Context, msg *actorsv1pb.ExecuteReminder) {
+	ok := a.executeReminderFn(internal.NewReminderFromProto(msg.Reminder))
+
+	// If the method returns false, we need to stop processing the reminder and delete it (but only if the reminder repeats, otherwise it'd be deleted anyways)
+	if !ok && msg.Reminder.Period != "" {
+		_, err := a.actorsClient.DeleteReminder(ctx, &actorsv1pb.DeleteReminderRequest{
+			Ref: msg.Reminder.GetRef(),
+		})
+		if err != nil {
+			// We ignore errors that indicate that the reminder was already deleted
+			if status.Code(err) == codes.NotFound {
+				log.Warnf("Attempted to cancel reminder '%s' after its execution, but the reminder was already deleted", msg.Reminder.GetKey())
+			} else {
+				log.Errorf("Failed to delete reminder that was canceled after execution: %v", err)
+			}
+		}
 	}
 }
 
