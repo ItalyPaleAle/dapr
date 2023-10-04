@@ -13,6 +13,7 @@
 
 from flask import Flask, request
 from time import sleep
+from datetime import datetime
 from dapr.ext.workflow import WorkflowRuntime, DaprWorkflowContext, WorkflowActivityContext, DaprWorkflowClient, WorkflowStatus, when_all
 from dapr.conf import Settings
 from dapr.clients import DaprClient
@@ -33,6 +34,8 @@ actor_statestore_name = "statestore-actorstore"
 
 # state_wf saves a key-value pair of `dataSize` size in the configured statestore, gets it back, validates and then deletes the key
 def state_wf(ctx:DaprWorkflowContext,input):
+    print(f"{datetime.now():%Y-%m-%d %H:%M:%S.%f} [{ctx.instance_id}] Invoked state_wf")
+
     inputObj = json.loads(input)
     dataSize = int(inputObj["data_size"])
     key = inputObj["state_key"]
@@ -77,6 +80,8 @@ def state_delete_act(ctx:WorkflowActivityContext,input):
 
 # sum_series_wf calculates sum of numbers {1..input} by dividing the workload among 5 activties running in series
 def sum_series_wf(ctx:DaprWorkflowContext, input):
+    print(f"{datetime.now():%Y-%m-%d %H:%M:%S.%f} [{ctx.instance_id}] Invoked sum_series_wf")
+
     num = int(input)
     limit = int(num/5)
     sum1 = yield ctx.call_activity(sum_activity,input=f"1,{limit}")
@@ -91,6 +96,8 @@ def sum_series_wf(ctx:DaprWorkflowContext, input):
 
 # sum_parallel_wf calculates sum of numbers {1..input} by dividing the workload among 5 activties running in parallel
 def sum_parallel_wf(ctx:DaprWorkflowContext, input):
+    print(f"{datetime.now():%Y-%m-%d %H:%M:%S.%f} [{ctx.instance_id}] Invoked sum_parallel_wf")
+
     num = int(input)
     limit = int(num/5)
     inputs = [f"1,{limit}",f"{limit+1},{2*limit}",f"{2*limit+1},{3*limit}",f"{3*limit+1},{4*limit}",f"{4*limit+1},{num}"]
@@ -156,13 +163,13 @@ def run_workflow(run_id):
 
     with DaprClient() as d:
         try:
-            print(f"{run_id} starting workflow")
+            print(f"{datetime.now():%Y-%m-%d %H:%M:%S.%f} [{run_id}] starting workflow")
             start_resp = d.start_workflow(workflow_component=workflowComponent,
                         workflow_name=workflowName, input=input, workflow_options=workflowOptions)
-            print(f"{run_id} started workflow with instance_id {start_resp.instance_id}")
+            print(f"{datetime.now():%Y-%m-%d %H:%M:%S.%f} [{run_id}] started workflow with instance_id {start_resp.instance_id}")
             instance_id = start_resp.instance_id
         except DaprInternalError as e:
-            print(f"{run_id} error starting workflow: {e.message}")
+            print(f"{datetime.now():%Y-%m-%d %H:%M:%S.%f} [{run_id}] error starting workflow: {e.message}")
 
         workflow_state = workflowClient.wait_for_workflow_completion(
                 instance_id=instance_id, timeout_in_seconds=250)
@@ -170,22 +177,23 @@ def run_workflow(run_id):
 
         try:
             get_resp = d.get_workflow(instance_id=instance_id, workflow_component=workflowComponent)
-            print(f"{run_id} workflow instance_id {get_resp.instance_id} runtime_status {get_resp.runtime_status}")
+            print(f"{datetime.now():%Y-%m-%d %H:%M:%S.%f} [{run_id}] workflow instance_id {get_resp.instance_id} runtime_status {get_resp.runtime_status}")
         except DaprInternalError as e:
-            print(f"{run_id} error getting workflow status: {e.message}")
+            print(f"{datetime.now():%Y-%m-%d %H:%M:%S.%f} [{run_id}] error getting workflow status: {e.message}")
 
         try:
-            print(f"{run_id} terminating workflow")
+            print(f"{datetime.now():%Y-%m-%d %H:%M:%S.%f} [{run_id}] terminating workflow")
             terminate_resp = d.terminate_workflow(instance_id=instance_id, workflow_component=workflowComponent)
         except DaprInternalError as e:
-            print(f"{run_id} error terminating workflow: {e.message}")
+            print(f"{datetime.now():%Y-%m-%d %H:%M:%S.%f} [{run_id}] error terminating workflow: {e.message}")
 
         try:
-            print(f"{run_id} purging workflow")
+            print(f"{datetime.now():%Y-%m-%d %H:%M:%S.%f} [{run_id}] purging workflow")
             d.purge_workflow(instance_id=instance_id, workflow_component=workflowComponent)
         except DaprInternalError as e:
-            print(f"{run_id} error purging workflow: {e.message}")
+            print(f"{datetime.now():%Y-%m-%d %H:%M:%S.%f} [{run_id}] error purging workflow: {e.message}")
 
+        print(f"{datetime.now():%Y-%m-%d %H:%M:%S.%f} [{run_id}] workflow run complete")
         return "Workflow Run completed"
 
 if __name__ == '__main__':
