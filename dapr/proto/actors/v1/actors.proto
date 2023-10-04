@@ -67,6 +67,9 @@ message ConnectHostClientStream {
         // The first message sent in ConnectHost by the sidecar must contain RegisterActorHost.
         // The sidecar can re-send this message at any time to update its registration.
         RegisterActorHost register_actor_host = 1;
+
+        // Instructs the Actors service to temporarily pause delivering reminders.
+        ReminderBackOff reminder_back_off = 2;
     }
 }
 
@@ -85,6 +88,13 @@ message RegisterActorHost {
     uint32 api_level = 3;
     // List of supported actor types.
     repeated ActorHostType actor_types = 4;
+}
+
+// ReminderBackOff is sent by the Dapr sidecar to the Actors service.
+// When the Dapr sidecar sends this message to the Actors service, the Actors service pauses delivering reminders to this Dapr sidecar for a period of time.
+// After the wait, the Actors service attempts to deliver another reminder. If it receives another ReminderBackOff message, the wait increases exponentially until a reminder is accepted sucessfully by the sidecar.
+message ReminderBackOff {
+    // Empty for now
 }
 
 // ActorHostType references a supported actor type.

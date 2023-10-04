@@ -127,6 +127,7 @@ func (s *server) executeReminder(fr *actorstore.FetchedReminder) {
 
 	// Lookup the host ID for the actor
 	s.connectedHostsLock.RLock()
+	// Note that we are limiting ourselves to non-paused hosts
 	connectedHosts := s.connectedHostsIDs
 	s.connectedHostsLock.RUnlock()
 	lar, err := s.store.LookupActor(ctx, reminder.ActorRef(), actorstore.LookupActorOpts{

@@ -103,6 +103,14 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 					log.Debugf("Received registration update from actor host: id='%s' updated-info=[%s]", actorHostID, handshakeMsg.LogInfo())
 				}
 				clientMsgCh <- msg.RegisterActorHost
+
+			case *actorsv1pb.ConnectHostClientStream_ReminderBackOff:
+				// Received a request to back-off sending reminders
+				log.Debugf("Received a reminder back-off request from actor host '%s'", actorHostID)
+
+				// Send it on clientMsgCh so it can be processed on the main goroutine
+				clientMsgCh <- msg.ReminderBackOff
+
 			default:
 				// Assume all other messages are a ping
 				// TODO: Remove this debug log
@@ -114,9 +122,10 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 
 	// Store a channel in connectedHosts that can be used to send messages to this actor host
 	serverMsgCh := make(chan actorsv1pb.ServerStreamMessage)
+	actorTypes := handshakeMsg.GetActorTypeNames()
 	s.setConnectedHost(actorHostID, connectedHostInfo{
 		serverMsgCh: serverMsgCh,
-		actorTypes:  handshakeMsg.GetActorTypeNames(),
+		actorTypes:  actorTypes,
 	})
 	defer s.removeConnectedHost(actorHostID)
 
@@ -141,12 +150,16 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 
 	// Repeat while the stream is connected
 	emptyResponse := &actorsv1pb.ConnectHostServerStream{}
+	var refreshConnectedHostsCh <-chan time.Time
 	for {
 		select {
 		case msgAny := <-clientMsgCh:
 			// Received a message from the client
 			// Any message counts as a ping (at the very least), so update the actor host table
-			var updatedActorTypes []string
+			var (
+				updateHost  bool
+				pausedUntil time.Time
+			)
 			req := actorstore.UpdateActorHostRequest{
 				UpdateLastHealthCheck: true,
 			}
@@ -159,7 +172,18 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 				// This also counts as a ping
 				req = msg.ToUpdateActorHostRequest()
 				req.UpdateLastHealthCheck = true
-				updatedActorTypes = msg.GetActorTypeNames()
+
+				// Update the cached connectedHosts object
+				// Note that this resets pausedUntil
+				updateHost = true
+				actorTypes = msg.GetActorTypeNames()
+
+			case *actorsv1pb.ReminderBackOff:
+				// The actor host is overloaded and cannot process reminders, so we need to temporarily pause fetching and delivering messages to this actor host
+				d := 5 * time.Second
+				log.Infof("Pausing sending reminders to host '%s' for %v", actorHostID, d)
+				updateHost = true
+				pausedUntil = time.Now().Add(d)
 			}
 			err = s.store.UpdateActorHost(stream.Context(), actorHostID, req)
 			if err != nil {
@@ -175,12 +199,19 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 				return fmt.Errorf("failed to send ping response to actor host: %w", err)
 			}
 
-			// Update the list of cached actor host types
-			if updatedActorTypes != nil {
+			// Update the connectedHosts object if needed
+			if updateHost {
 				s.setConnectedHost(actorHostID, connectedHostInfo{
 					serverMsgCh: serverMsgCh,
-					actorTypes:  updatedActorTypes,
+					actorTypes:  actorTypes,
+					pausedUntil: pausedUntil,
 				})
+
+				// If the host is paused, also set refreshConnectedHostsCh to receive a signal after the host is un-paused, to refresh the local cache
+				d := time.Until(pausedUntil)
+				if d > 0 {
+					refreshConnectedHostsCh = time.After(d)
+				}
 			}
 
 			// Reset the healthcheck timer
@@ -196,6 +227,12 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 				log.Errorf("Failed to send message to actor host: %v", err)
 				return fmt.Errorf("failed to send message to actor host: %w", err)
 			}
+
+		case <-refreshConnectedHostsCh:
+			// We need to refresh the cached connected hosts data
+			// This is because a host that was paused is now back into the rotation
+			s.updateConnectedHostCache()
+			refreshConnectedHostsCh = nil
 
 		case <-healthCheckTimeout.C:
 			// Host hasn't sent a ping in the required amount of time, so we must assume it's offline
