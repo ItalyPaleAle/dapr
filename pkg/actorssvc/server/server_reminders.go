@@ -44,6 +44,7 @@ func (s *server) CreateReminder(ctx context.Context, req *actorsv1pb.CreateRemin
 
 	// If the reminder is scheduled to be executed in the fetchAhead interval, and it can be delivered to an actor host connected to this instance, acquire a lease too
 	if delay > s.opts.RemindersFetchAheadInterval {
+		// This reminder's execution time is beyond the fetchAhead interval, so we just add it
 		err := s.store.CreateReminder(ctx, req.ToActorStoreRequest())
 		if err != nil {
 			log.Errorf("Failed to create reminder %s: %v", reminder.GetKey(), err)

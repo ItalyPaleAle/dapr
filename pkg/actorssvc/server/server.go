@@ -159,23 +159,6 @@ func (s *server) ServiceInfo(ctx context.Context, req *actorsv1pb.ServiceInfoReq
 	}, nil
 }
 
-// Adds or updates a connected host.
-func (s *server) setConnectedHost(actorHostID string, info connectedHostInfo) {
-	// Set in the connectedHosts map then update the cached actor types
-	s.connectedHostsLock.Lock()
-	s.connectedHosts[actorHostID] = info
-	s.connectedHostsIDs, s.connectedHostsActorTypes = s.connectedHosts.updateCachedData(len(s.connectedHostsIDs), len(s.connectedHostsActorTypes))
-	s.connectedHostsLock.Unlock()
-}
-
-// Removes a connected host
-func (s *server) removeConnectedHost(actorHostID string) {
-	s.connectedHostsLock.Lock()
-	delete(s.connectedHosts, actorHostID)
-	s.connectedHostsIDs, s.connectedHostsActorTypes = s.connectedHosts.updateCachedData(len(s.connectedHostsIDs), len(s.connectedHostsActorTypes))
-	s.connectedHostsLock.Unlock()
-}
-
 // Generates a new "process ID" randomly.
 // This identifier has only 32 bits of entropy, which means that collisions are not extremely unlikely.
 // However, pids are only used as additional safeguards when acquiring locks on the reminders table, so in the (still rare) event of a collision, that is tolerable.
@@ -186,39 +169,4 @@ func generatePID() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(pidB), nil
-}
-
-type connectedHosts map[string]connectedHostInfo
-
-type connectedHostInfo struct {
-	serverMsgCh chan actorsv1pb.ServerStreamMessage
-	actorTypes  []string
-}
-
-func (ch connectedHosts) updateCachedData(currentConnectedHostsIDsLen, curActorTypeResLen int) (connectedHostsIDs, actorTypesRes []string) {
-	// For connectedHostsIDs, allocate an initial capacity for the number of hosts
-	connectedHostsIDs = make([]string, 0, len(ch))
-
-	// For actorTypeResLen, allocate an initial capacity equal to the current capacity + 2 for each additional host that was added
-	addedHosts := len(ch) - currentConnectedHostsIDsLen
-	if addedHosts < 0 {
-		addedHosts = 0
-	}
-	actorTypesRes = make([]string, 0, currentConnectedHostsIDsLen+addedHosts*2)
-
-	foundTypes := make(map[string]struct{}, cap(actorTypesRes))
-	for name, info := range ch {
-		connectedHostsIDs = append(connectedHostsIDs, name)
-
-		// Add the actor types avoiding duplicates
-		for _, at := range info.actorTypes {
-			_, ok := foundTypes[at]
-			if ok {
-				continue
-			}
-			foundTypes[at] = struct{}{}
-			actorTypesRes = append(actorTypesRes, at)
-		}
-	}
-	return connectedHostsIDs, actorTypesRes
 }
