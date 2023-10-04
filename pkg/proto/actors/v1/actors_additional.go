@@ -330,11 +330,15 @@ type ClientStreamMessage = isConnectHostClientStream_Message
 
 // NewReminderFromActorStore returns a new Reminder object from an actorstore.Reminder object.
 func NewReminderFromActorStore(r actorstore.Reminder) *Reminder {
-	return &Reminder{
+	res := &Reminder{
 		ActorType:     r.ActorType,
 		ActorId:       r.ActorID,
 		Name:          r.Name,
 		ExecutionTime: timestamppb.New(r.ExecutionTime),
 		Data:          r.Data,
 	}
+	if r.Period != nil {
+		res.Period = *r.Period
+	}
+	return res
 }
