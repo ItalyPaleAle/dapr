@@ -108,7 +108,7 @@ func (s *server) executeReminder(fr *actorstore.FetchedReminder) {
 	// Third, and last, we remove the reminder from the reminders table. However, if the reminder is repeating (and hasn't reached its TTL), then we update its execution time instead.
 
 	ctx := context.Background()
-	log.Debugf("Executing reminder '%s'…", fr.Key())
+	log.Debugf("Executing reminder '%s'", fr.Key())
 	start := time.Now()
 
 	// Start by retrieving the reminder's data

@@ -70,6 +70,7 @@ type ActorClient struct {
 	runningCancel     context.CancelFunc
 	cache             *actorscache.Cache[*actorsv1pb.LookupActorResponse]
 	clock             kclock.Clock
+	wg                sync.WaitGroup
 }
 
 // ActorClientOpts contains options for NewActorClient.
@@ -368,6 +369,7 @@ func (a *ActorClient) establishConnectHost(actorTypes []*actorsv1pb.ActorHostTyp
 			case *actorsv1pb.ExecuteReminder:
 				// Executing the remidner
 				if a.executeReminderFn != nil {
+					a.wg.Add(1)
 					go a.doExecuteReminder(ctx, msg)
 				}
 
@@ -611,6 +613,8 @@ func (a *ActorClient) Close() error {
 	errs = append(errs, a.conn.Close())
 	a.cache.Stop()
 	a.runningCancel()
+
+	a.wg.Wait()
 
 	return errors.Join(errs...)
 }
