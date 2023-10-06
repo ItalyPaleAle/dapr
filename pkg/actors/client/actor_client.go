@@ -240,6 +240,9 @@ func (a *ActorClient) startConnectHostHealthy() {
 		}
 
 		// Before reconnecting, use a backoff
+		if a.runningCtx.Err() != nil {
+			return
+		}
 		delay := bo.NextBackOff()
 		log.Infof("Will attempt re-establishing ConnectHost in %v", delay)
 		select {
