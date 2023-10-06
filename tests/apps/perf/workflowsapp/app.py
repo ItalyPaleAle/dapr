@@ -171,6 +171,8 @@ def run_workflow(run_id):
         except DaprInternalError as e:
             print(f"{datetime.now():%Y-%m-%d %H:%M:%S.%f} [{run_id}] error starting workflow: {e.message}")
 
+        sleep(0.5)
+
         workflow_state = workflowClient.wait_for_workflow_completion(
                 instance_id=instance_id, timeout_in_seconds=250)
         assert workflow_state.runtime_status == WorkflowStatus.COMPLETED
