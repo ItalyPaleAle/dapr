@@ -280,14 +280,14 @@ func (a *ActorClient) establishConnectHost(actorTypes []*actorsv1pb.ActorHostTyp
 		// Also reset the lookup cache, as this indicates a likely failure of the actor placement subsystem
 		a.cache.Reset()
 
+		a.connectHostRunning.Store(false)
+
 		if a.haltAllActorsFn != nil {
 			haltErr := a.haltAllActorsFn()
 			if haltErr != nil {
 				log.Errorf("Failed to deactivate all actors: %v", haltErr)
 			}
 		}
-
-		a.connectHostRunning.Store(false)
 	}()
 
 	// Ticker for pings
