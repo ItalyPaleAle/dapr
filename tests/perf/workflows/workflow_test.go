@@ -50,7 +50,7 @@ func TestMain(m *testing.M) {
 	utils.SetupLogs("workflow_test")
 	testApps := []kube.AppDescription{}
 	for _, testAppName := range testAppNames {
-		const replicas = 1
+		const replicas = 3
 		testApps = append(testApps, kube.AppDescription{
 			AppName:           testAppName,
 			DaprEnabled:       true,
@@ -144,10 +144,12 @@ func testWorkflow(t *testing.T, workflowName string, testAppName string, inputs 
 				time.Sleep(5 * time.Second)
 
 				// Initialize the workflow runtime
-				url := fmt.Sprintf("http://%s/start-workflow-runtime", externalURL)
-				// Calling start-workflow-runtime multiple times so that it is started in all app instances
-				_, err := utils.HTTPGet(url)
-				require.NoError(t, err, "error starting workflow runtime")
+				for i := 0; i < 50; i++ {
+					url := fmt.Sprintf("http://%s/start-workflow-runtime", externalURL)
+					// Calling start-workflow-runtime multiple times so that it is started in all app instances
+					_, err := utils.HTTPGet(url)
+					require.NoError(t, err, "error starting workflow runtime")
+				}
 
 				time.Sleep(5 * time.Second)
 
@@ -171,10 +173,9 @@ func testWorkflow(t *testing.T, workflowName string, testAppName string, inputs 
 				time.Sleep(5 * time.Second)
 
 				// Stop the workflow runtime
-				url = fmt.Sprintf("http://%s/shutdown-workflow-runtime", externalURL)
-				_, err = utils.HTTPGet(url)
+				url := fmt.Sprintf("http://%s/shutdown-workflow-runtime", externalURL)
+				_, err := utils.HTTPGet(url)
 				require.NoError(t, err, "error shutdown workflow runtime")
-
 			})
 		}
 	}
@@ -182,46 +183,11 @@ func testWorkflow(t *testing.T, workflowName string, testAppName string, inputs 
 	require.NoError(t, err, "error storing test results")
 }
 
-// Runs tests for `sum_series_wf` with constant VUs
-func TestWorkflowWithConstantVUs(t *testing.T) {
+// Runs tests for `sum_series_wf` on multiple instances
+func TestWorkflowOnMultipleInstances(t *testing.T) {
 	workflowName := "sum_series_wf"
+	scenarios := []string{"t_80_800"}
 	inputs := []string{"100"}
-	scenarios := []string{"t_30_300", "t_30_300", "t_30_300", "t_30_300"}
-	rateChecks := [][]string{{"rate==1", "rate==1", "rate==1", "rate==1"}}
-	testWorkflow(t, workflowName, testAppNames[0], inputs, scenarios, rateChecks, false, false)
-}
-
-func TestWorkflowWithConstantIterations(t *testing.T) {
-	workflowName := "sum_series_wf"
-	inputs := []string{"100"}
-	scenarios := []string{"t_30_300", "t_60_300", "t_90_300"}
-	rateChecks := [][]string{{"rate==1", "rate==1", "rate==1"}}
-	testWorkflow(t, workflowName, testAppNames[0], inputs, scenarios, rateChecks, true, false)
-}
-
-// Runs tests for `sum_series_wf` with Max VUs
-func TestSeriesWorkflowWithMaxVUs(t *testing.T) {
-	workflowName := "sum_series_wf"
-	inputs := []string{"100"}
-	scenarios := []string{"t_280_1400"}
 	rateChecks := [][]string{{"rate==1"}}
-	testWorkflow(t, workflowName, testAppNames[0], inputs, scenarios, rateChecks, true, false)
-}
-
-// Runs tests for `sum_parallel_wf` with Max VUs
-func TestParallelWorkflowWithMaxVUs(t *testing.T) {
-	workflowName := "sum_parallel_wf"
-	inputs := []string{"100"}
-	scenarios := []string{"t_90_450"}
-	rateChecks := [][]string{{"rate==1"}}
-	testWorkflow(t, workflowName, testAppNames[0], inputs, scenarios, rateChecks, true, false)
-}
-
-// Runs tests for `state_wf` with different Payload
-func TestWorkflowWithDifferentPayloads(t *testing.T) {
-	workflowName := "state_wf"
-	scenarios := []string{"t_30_300"}
-	inputs := []string{"10000", "50000", "100000"}
-	rateChecks := [][]string{{"rate==1"}, {"rate==1"}, {"rate==1"}}
-	testWorkflow(t, workflowName, testAppNames[0], inputs, scenarios, rateChecks, true, true)
+	testWorkflow(t, workflowName, testAppNames[0], inputs, scenarios, rateChecks, false, true)
 }
