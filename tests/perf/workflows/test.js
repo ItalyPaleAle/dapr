@@ -16,41 +16,41 @@ import exec from 'k6/execution'
 import { check } from 'k6'
 
 const possibleScenarios = {
-    t_50_500: {
+    t_30_300: {
         executor: 'shared-iterations',
-        vus: 50,
-        iterations: 500,
-        maxDuration: '250s',
+        vus: 30,
+        iterations: 300,
+        maxDuration: '200s',
     },
-    t_100_500: {
+    t_60_300: {
         executor: 'shared-iterations',
-        vus: 100,
-        iterations: 500,
+        vus: 60,
+        iterations: 300,
+        maxDuration: '380s',
+    },
+    t_90_300: {
+        executor: 'shared-iterations',
+        vus: 90,
+        iterations: 300,
+        maxDuration: '380s',
+    },
+    t_280_1400: {
+        executor: 'shared-iterations',
+        vus: 280,
+        iterations: 1400,
+        maxDuration: '1000s',
+    },
+    t_90_450: {
+        executor: 'shared-iterations',
+        vus: 90,
+        iterations: 450,
         maxDuration: '450s',
     },
-    t_150_500: {
+    t_80_800: {
         executor: 'shared-iterations',
-        vus: 150,
-        iterations: 500,
-        maxDuration: '450s',
-    },
-    t_350_1750: {
-        executor: 'shared-iterations',
-        vus: 350,
-        iterations: 1750,
-        maxDuration: '1200s',
-    },
-    t_110_550: {
-        executor: 'shared-iterations',
-        vus: 110,
-        iterations: 550,
-        maxDuration: '500s',
-    },
-    t_100_1000: {
-        executor: 'shared-iterations',
-        vus: 100,
-        iterations: 1000,
-        maxDuration: '500s',
+        vus: 80,
+        iterations: 800,
+        maxDuration: '420s',
     },
 }
 
