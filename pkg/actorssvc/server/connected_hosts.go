@@ -88,7 +88,7 @@ func (s *server) updateConnectedHostCache() {
 
 // Returns true if the actor host is currently paused.
 // If the host isn't in the cache, returns true.
-func (s *server) isConnectedHostPaused(actorHostID string) bool {
+func (s *server) isConnectedHostPaused(actorHostID string) bool { //nolint:unused
 	s.connectedHostsLock.RLock()
 	host, ok := s.connectedHosts[actorHostID]
 	s.connectedHostsLock.RUnlock()
