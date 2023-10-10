@@ -360,7 +360,7 @@ func (p *actorPlacement) establishStreamConn(ctx context.Context) (established b
 		}
 
 		// Do not retry to connect if context is canceled
-		if ctx.Err() == nil {
+		if ctx.Err() != nil {
 			return false
 		}
 
