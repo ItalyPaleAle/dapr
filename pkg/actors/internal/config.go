@@ -65,10 +65,6 @@ func (c Config) GetRuntimeHostname() string {
 	return net.JoinHostPort(c.HostAddress, strconv.Itoa(c.Port))
 }
 
-func (c Config) GetRuntimeHostname() string {
-	return net.JoinHostPort(c.HostAddress, strconv.Itoa(c.Port))
-}
-
 // Remap of daprAppConfig.EntityConfig but with more useful types for actors.go.
 type EntityConfig struct {
 	Entities                   []string
