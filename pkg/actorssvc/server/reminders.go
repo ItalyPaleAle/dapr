@@ -87,11 +87,17 @@ func (s *server) scheduleNewReminders(ctx context.Context) error {
 	return nil
 }
 
-func (s *server) enqueueReminder(r *actorstore.FetchedReminder) error {
-	if log.IsOutputLevelEnabled(logger.DebugLevel) {
-		log.Debugf("Scheduling reminder '%s' to be executed at '%v'", r.Key(), r.ScheduledTime())
+func (s *server) enqueueReminder(fr *actorstore.FetchedReminder) error {
+	// If the reminder is to be executed right away, skip the processor
+	if time.Until(fr.ScheduledTime()) < 500*time.Microsecond {
+		go s.executeReminder(fr)
+		return nil
 	}
-	err := s.processor.Enqueue(r)
+
+	if log.IsOutputLevelEnabled(logger.DebugLevel) {
+		log.Debugf("Scheduling reminder '%s' to be executed at '%v'", fr.Key(), fr.ScheduledTime())
+	}
+	err := s.processor.Enqueue(fr)
 	if err != nil {
 		return err
 	}
