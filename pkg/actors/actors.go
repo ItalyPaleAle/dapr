@@ -546,7 +546,8 @@ func (a *actorsRuntime) getOrCreateActor(act *internalv1pb.Actor) *actor {
 	// call newActor, but this is trivial.
 	val, ok := a.actorsTable.Load(key)
 	if !ok {
-		actorInstance := newActor(act.ActorType, act.ActorId,
+		actorInstance := newActor(
+			act.ActorType, act.ActorId,
 			a.actorsConfig.GetReentrancyForType(act.ActorType).MaxStackDepth,
 			a.actorsConfig.GetIdleTimeoutForType(act.ActorType),
 			a.clock,
@@ -1093,7 +1094,7 @@ func (a *actorsRuntime) Close() error {
 
 	if a.closed.CompareAndSwap(false, true) {
 		defer close(a.closeCh)
-		errs := make([]error, 0, 2)
+		errs := []error{}
 		if a.placement != nil {
 			err := a.placement.Close()
 			if err != nil {
