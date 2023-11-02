@@ -46,6 +46,14 @@ func (x *ActorRef) ToInternalActorRef() actorstore.ActorRef {
 	}
 }
 
+// GetKey returns the actor's key.
+func (x *ActorRef) GetKey() string {
+	if x == nil {
+		return ""
+	}
+	return x.ActorType + "||" + x.ActorId
+}
+
 // ValidateFirstMessage validates if the message contains all fields that are required in the first message.
 func (x *RegisterActorHost) ValidateFirstMessage() error {
 	const errPrefix = "first message validation failed: "

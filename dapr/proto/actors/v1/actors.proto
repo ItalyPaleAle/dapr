@@ -152,6 +152,8 @@ message DeactivateActor {
 message LookupActorRequest {
     // Actor reference.
     ActorRef actor = 1;
+    // Always fetch from the database, and do not return cached values if present.
+    bool no_cache = 2;
 }
 
 message LookupActorResponse {

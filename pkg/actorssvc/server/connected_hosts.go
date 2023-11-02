@@ -25,6 +25,7 @@ type connectedHostInfo struct {
 	serverMsgCh chan actorsv1pb.ServerStreamMessage
 	actorTypes  []string
 	pausedUntil time.Time
+	address     string
 }
 
 func (ch connectedHosts) updateCachedData(curConnectedHostsIDsLen, curActorTypeResLen int) (connectedHostsIDs, actorTypesRes []string) {
@@ -84,6 +85,22 @@ func (s *server) updateConnectedHostCache() {
 	s.connectedHostsLock.Lock()
 	s.connectedHostsIDs, s.connectedHostsActorTypes = s.connectedHosts.updateCachedData(len(s.connectedHostsIDs), len(s.connectedHostsActorTypes))
 	s.connectedHostsLock.Unlock()
+}
+
+// Returns true if the given address belongs to an actor host that is currently connected to this instance.
+func (s *server) isHostAddressConnected(address string) bool {
+	if address == "" {
+		return false
+	}
+
+	s.connectedHostsLock.RLock()
+	defer s.connectedHostsLock.RUnlock()
+	for id := range s.connectedHosts {
+		if s.connectedHosts[id].address == address {
+			return true
+		}
+	}
+	return false
 }
 
 // Returns true if the actor host is currently paused.

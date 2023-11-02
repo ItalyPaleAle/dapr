@@ -27,6 +27,7 @@ import (
 
 	"github.com/dapr/components-contrib/actorstore"
 	actorsv1pb "github.com/dapr/dapr/pkg/proto/actors/v1"
+	"github.com/dapr/dapr/utils/actorscache"
 	"github.com/dapr/kit/events/queue"
 	"github.com/dapr/kit/logger"
 )
@@ -41,6 +42,7 @@ type server struct {
 	shutdownCh chan struct{}
 	clock      kclock.WithTicker
 	processor  *queue.Processor[*actorstore.FetchedReminder]
+	cache      *actorscache.Cache[*actorsv1pb.LookupActorResponse]
 
 	// "Process ID", which is generated randomly when the server is initialized.
 	pid string
@@ -99,6 +101,12 @@ func (s *server) Init(ctx context.Context, opts Options) (err error) {
 	if s.opts.EnableReminders {
 		go s.startReminders(ctx)
 	}
+
+	// Init the cache for actors
+	// This has a max TTL of 20s
+	s.cache = actorscache.NewCache[*actorsv1pb.LookupActorResponse](actorscache.CacheOptions{
+		MaxTTL: 20,
+	})
 
 	// Create the gRPC server
 	s.srv = grpc.NewServer(opts.Security.GRPCServerOptionMTLS())

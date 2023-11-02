@@ -126,6 +126,7 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 	s.setConnectedHost(actorHostID, connectedHostInfo{
 		serverMsgCh: serverMsgCh,
 		actorTypes:  actorTypes,
+		address:     handshakeMsg.GetAddress(),
 	})
 	defer s.removeConnectedHost(actorHostID)
 
@@ -208,6 +209,8 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 					serverMsgCh: serverMsgCh,
 					actorTypes:  actorTypes,
 					pausedUntil: pausedUntil,
+					// Address can't change
+					address: handshakeMsg.GetAddress(),
 				})
 
 				// If the host is paused, also set refreshConnectedHostsCh to receive a signal after the host is un-paused, to refresh the local cache
@@ -323,6 +326,18 @@ func (s *server) LookupActor(ctx context.Context, req *actorsv1pb.LookupActorReq
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid actor reference: %v", err)
 	}
 
+	// Get the value from the cache if possible
+	// We use the cache only if the actor host is connected to this instance
+	cacheKey := req.GetActor().GetKey()
+	if !req.NoCache {
+		var ok bool
+		res, ok = s.cache.Get(cacheKey)
+		// We check again here in case the cached value is for a host that has disconnected
+		if ok && s.isHostAddressConnected(res.Address) {
+			return res, nil
+		}
+	}
+
 	lar, err := s.store.LookupActor(ctx, req.Actor.ToInternalActorRef(), actorstore.LookupActorOpts{})
 	if err != nil {
 		if errors.Is(err, actorstore.ErrNoActorHost) {
@@ -337,6 +352,11 @@ func (s *server) LookupActor(ctx context.Context, req *actorsv1pb.LookupActorReq
 		AppId:       lar.AppID,
 		Address:     lar.Address,
 		IdleTimeout: lar.IdleTimeout,
+	}
+
+	// Store the value in the cache, but only if the actor host is connected to this instance
+	if s.isHostAddressConnected(res.Address) {
+		s.cache.Set(cacheKey, res, int64(res.IdleTimeout))
 	}
 
 	return res, nil
