@@ -158,8 +158,9 @@ func (x *RegisterActorHost) ToUpdateActorHostRequest() actorstore.UpdateActorHos
 // ToActorStoreRequest converts the message to an actorstore.ActorHostType object.
 func (x *ActorHostType) ToActorStoreRequest() actorstore.ActorHostType {
 	return actorstore.ActorHostType{
-		ActorType:   x.ActorType,
-		IdleTimeout: x.IdleTimeout,
+		ActorType:                x.ActorType,
+		IdleTimeout:              x.IdleTimeout,
+		ConcurrentRemindersLimit: x.ConcurrentRemindersLimit,
 	}
 }
 

@@ -104,6 +104,9 @@ message ActorHostType {
     string actor_type = 1;
     // Actor idle timeout, in seconds
     uint32 idle_timeout = 2;
+    // Maxium number of reminders concurrently active on a host for the given actor type
+    // A value of 0 means no limit
+    uint32 concurrent_reminders_limit = 3;
 }
 
 // ConnectHostServerStream is sent by the Actors service to the Dapr sidecar.
