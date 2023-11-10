@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -154,8 +155,103 @@ func (s *server) DeleteReminder(ctx context.Context, req *actorsv1pb.DeleteRemin
 		}
 
 		log.Errorf("Failed to delete reminder: %v", err)
-		return nil, status.Errorf(codes.Internal, "failed to delete reminder: %v", err)
+		return nil, status.Errorf(codes.Internal, "Failed to delete reminder: %v", err)
 	}
 
 	return &actorsv1pb.DeleteReminderResponse{}, nil
+}
+
+// CompleteReminder is sent to report that a reminder has been completed.
+// Hosts are expected to inform the Actors service when a reminder is completed, so it's possible to guarantee at-least-once delivery.
+// Repeating reminders are re-queued for the next execution, and non-repeating reminders are deleted.
+func (s *server) CompleteReminder(ctx context.Context, req *actorsv1pb.CompleteReminderRequest) (*actorsv1pb.CompleteReminderResponse, error) {
+	if !s.opts.EnableReminders {
+		return nil, status.Error(codes.PermissionDenied, "Reminders functionality is not enabled")
+	}
+
+	err := req.GetRef().Validate()
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "Invalid reminder reference in request: %v", err)
+	}
+	if req.CompletionToken == "" {
+		return nil, status.Error(codes.InvalidArgument, "Completion token is empty in request")
+	}
+
+	log.Debugf("Invoked CompleteReminder with key='%s'", req.GetRef().GetKey())
+
+	// Get the active reminder from the cache and delete it at the same time
+	// If needed, we can always add it back, and the "happy path" is more efficient
+	// (if this instance were to crash, that would make the lock invalid anyways, so there's no risk there; additionally, this makes duplicate requests fail right away too)
+	arMapKey := req.CompletionToken + "||" + req.Ref.GetKey()
+	ar, ok := s.activeReminders.GetAndDel(arMapKey)
+	if !ok || ar == nil {
+		log.Warnf("Reminder and/or completion token not found: '%s'", ar.fr.Key())
+		return nil, status.Error(codes.NotFound, "Reminder not found")
+	}
+
+	// If the reminder doesn't repeat, or if the request is for the reminder to be stopped, delete the reminder
+	// Otherwise, we'll update its execution time
+	nextExecutionTime, updatedPeriod, doesRepeat := ar.reminderNextExecutionTime(ar.start)
+	if req.StopReminder || !doesRepeat {
+		// Reminder doesn't repeat, so we just delete it
+		err = s.store.DeleteReminderWithLease(ctx, ar.fr)
+
+		if err != nil {
+			if errors.Is(err, actorstore.ErrReminderNotFound) {
+				// If the reminder can't be found, it means that it's been deleted or updated in parallel
+				// In this case, we can ignore the error
+				return &actorsv1pb.CompleteReminderResponse{}, nil
+			}
+
+			// Re-add the object to the map
+			s.activeReminders.Set(arMapKey, ar)
+
+			log.Errorf("Failed to delete reminder '%s': %v", ar.fr.Key(), err)
+			return nil, status.Errorf(codes.Internal, "Failed to delete reminder: %v", err)
+		}
+
+		return &actorsv1pb.CompleteReminderResponse{}, nil
+	}
+
+	// If we're here, the reminder repeats so we need to update it
+	updateReq := actorstore.UpdateReminderWithLeaseRequest{
+		ExecutionTime: nextExecutionTime,
+		TTL:           ar.reminder.TTL,
+	}
+	if updatedPeriod != "" {
+		updateReq.Period = &updatedPeriod
+	}
+
+	// If the reminder is scheduled to be repeated within the fetch ahead interval, we do not relinquish the lease
+	// This will also make us re-enqueue the reminder immediately
+	if nextExecutionTime.Sub(s.clock.Now()) <= s.opts.RemindersFetchAheadInterval {
+		updateReq.KeepLease = true
+	}
+
+	// Perform the update
+	err = s.store.UpdateReminderWithLease(ctx, ar.fr, updateReq)
+	if err != nil {
+		if errors.Is(err, actorstore.ErrReminderNotFound) {
+			// If the reminder can't be found, it means that it's been deleted or updated in parallel
+			// In this case, we can ignore the error
+			return &actorsv1pb.CompleteReminderResponse{}, nil
+		}
+
+		// Re-add the object to the map
+		s.activeReminders.Set(arMapKey, ar)
+
+		log.Errorf("Failed to update reminder '%s': %v", ar.fr.Key(), err)
+		return nil, status.Errorf(codes.Internal, "Failed to update reminder: %v", err)
+	}
+
+	// If we still have the lease, re-enqueue the reminder
+	if updateReq.KeepLease {
+		newFr := actorstore.NewFetchedReminder(ar.fr.Key(), nextExecutionTime, ar.fr.Lease())
+		// This can't really fail
+		_ = s.processor.Enqueue(&newFr)
+	}
+
+	log.Debugf("Reminder '%s' was executed in %dms", req.GetRef().GetKey(), time.Since(ar.start).Milliseconds())
+
+	return &actorsv1pb.CompleteReminderResponse{}, nil
 }

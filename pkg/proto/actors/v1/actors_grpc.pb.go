@@ -33,6 +33,10 @@ type ActorsClient interface {
 	LookupActor(ctx context.Context, in *LookupActorRequest, opts ...grpc.CallOption) (*LookupActorResponse, error)
 	// ReportActorDeactivation is sent to report an actor that has been deactivated.
 	ReportActorDeactivation(ctx context.Context, in *ReportActorDeactivationRequest, opts ...grpc.CallOption) (*ReportActorDeactivationResponse, error)
+	// CompleteReminder is sent to report that a reminder has been completed.
+	// Hosts are expected to inform the Actors service when a reminder is completed, so it's possible to guarantee at-least-once delivery.
+	// Repeating reminders are re-queued for the next execution, and non-repeating reminders are deleted.
+	CompleteReminder(ctx context.Context, in *CompleteReminderRequest, opts ...grpc.CallOption) (*CompleteReminderResponse, error)
 	// CreateReminder creates a new reminder.
 	// If a reminder with the same ID (actor type, actor ID, name) already exists, it's replaced.
 	CreateReminder(ctx context.Context, in *CreateReminderRequest, opts ...grpc.CallOption) (*CreateReminderResponse, error)
@@ -108,6 +112,15 @@ func (c *actorsClient) ReportActorDeactivation(ctx context.Context, in *ReportAc
 	return out, nil
 }
 
+func (c *actorsClient) CompleteReminder(ctx context.Context, in *CompleteReminderRequest, opts ...grpc.CallOption) (*CompleteReminderResponse, error) {
+	out := new(CompleteReminderResponse)
+	err := c.cc.Invoke(ctx, "/dapr.proto.actors.v1.Actors/CompleteReminder", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *actorsClient) CreateReminder(ctx context.Context, in *CreateReminderRequest, opts ...grpc.CallOption) (*CreateReminderResponse, error) {
 	out := new(CreateReminderResponse)
 	err := c.cc.Invoke(ctx, "/dapr.proto.actors.v1.Actors/CreateReminder", in, out, opts...)
@@ -150,6 +163,10 @@ type ActorsServer interface {
 	LookupActor(context.Context, *LookupActorRequest) (*LookupActorResponse, error)
 	// ReportActorDeactivation is sent to report an actor that has been deactivated.
 	ReportActorDeactivation(context.Context, *ReportActorDeactivationRequest) (*ReportActorDeactivationResponse, error)
+	// CompleteReminder is sent to report that a reminder has been completed.
+	// Hosts are expected to inform the Actors service when a reminder is completed, so it's possible to guarantee at-least-once delivery.
+	// Repeating reminders are re-queued for the next execution, and non-repeating reminders are deleted.
+	CompleteReminder(context.Context, *CompleteReminderRequest) (*CompleteReminderResponse, error)
 	// CreateReminder creates a new reminder.
 	// If a reminder with the same ID (actor type, actor ID, name) already exists, it's replaced.
 	CreateReminder(context.Context, *CreateReminderRequest) (*CreateReminderResponse, error)
@@ -174,6 +191,9 @@ func (UnimplementedActorsServer) LookupActor(context.Context, *LookupActorReques
 }
 func (UnimplementedActorsServer) ReportActorDeactivation(context.Context, *ReportActorDeactivationRequest) (*ReportActorDeactivationResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReportActorDeactivation not implemented")
+}
+func (UnimplementedActorsServer) CompleteReminder(context.Context, *CompleteReminderRequest) (*CompleteReminderResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CompleteReminder not implemented")
 }
 func (UnimplementedActorsServer) CreateReminder(context.Context, *CreateReminderRequest) (*CreateReminderResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateReminder not implemented")
@@ -276,6 +296,24 @@ func _Actors_ReportActorDeactivation_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Actors_CompleteReminder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CompleteReminderRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ActorsServer).CompleteReminder(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/dapr.proto.actors.v1.Actors/CompleteReminder",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ActorsServer).CompleteReminder(ctx, req.(*CompleteReminderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Actors_CreateReminder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CreateReminderRequest)
 	if err := dec(in); err != nil {
@@ -348,6 +386,10 @@ var Actors_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReportActorDeactivation",
 			Handler:    _Actors_ReportActorDeactivation_Handler,
+		},
+		{
+			MethodName: "CompleteReminder",
+			Handler:    _Actors_CompleteReminder_Handler,
 		},
 		{
 			MethodName: "CreateReminder",

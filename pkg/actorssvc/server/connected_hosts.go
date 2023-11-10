@@ -14,6 +14,7 @@ limitations under the License.
 package server
 
 import (
+	"strings"
 	"time"
 
 	actorsv1pb "github.com/dapr/dapr/pkg/proto/actors/v1"
@@ -73,11 +74,24 @@ func (s *server) setConnectedHost(actorHostID string, info connectedHostInfo) {
 }
 
 // Removes a connected host.
+// This also removes all active reminders referencs for the given host.
 func (s *server) removeConnectedHost(actorHostID string) {
+	// First, remove the host from the map
 	s.connectedHostsLock.Lock()
 	delete(s.connectedHosts, actorHostID)
 	s.connectedHostsIDs, s.connectedHostsActorTypes = s.connectedHosts.updateCachedData(len(s.connectedHostsIDs), len(s.connectedHostsActorTypes))
 	s.connectedHostsLock.Unlock()
+
+	// Remove all active reminder references
+	// Note we're deleting keys in bulk as that's more efficient with the map than deleting keys one-by-one
+	refs := make([]string, 0)
+	s.activeReminders.ForEach(func(k string, _ *activeReminder) bool {
+		if strings.HasPrefix(k, actorHostID+"||") {
+			refs = append(refs, k)
+		}
+		return true
+	})
+	s.activeReminders.Del(refs...)
 }
 
 // Updates the cached connected hosts data.

@@ -15,8 +15,11 @@ package server
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"time"
@@ -27,6 +30,13 @@ import (
 	"github.com/dapr/kit/logger"
 	timeutils "github.com/dapr/kit/time"
 )
+
+// Type for the data stored in activeRemindersMap
+type activeReminder struct {
+	fr       *actorstore.FetchedReminder
+	reminder actorstore.Reminder
+	start    time.Time
+}
 
 func (s *server) startReminders(ctx context.Context) {
 	log.Infof("Start polling for reminder with interval='%v' fetchAheadInterval='%v' batchSize='%d' leaseDuration='%v'", s.opts.RemindersPollInterval, s.opts.RemindersFetchAheadInterval, s.opts.RemindersFetchAheadBatchSize, s.opts.RemindersLeaseDuration)
@@ -97,10 +107,9 @@ func (s *server) enqueueReminder(fr *actorstore.FetchedReminder) error {
 	if log.IsOutputLevelEnabled(logger.DebugLevel) {
 		log.Debugf("Scheduling reminder '%s' to be executed at '%v'", fr.Key(), fr.ScheduledTime())
 	}
-	err := s.processor.Enqueue(fr)
-	if err != nil {
-		return err
-	}
+
+	// This can't really fail
+	_ = s.processor.Enqueue(fr)
 	return nil
 }
 
@@ -110,8 +119,8 @@ func (s *server) executeReminder(fr *actorstore.FetchedReminder) {
 	// it is possible, for example, that another instance of the actors service may have modified the reminder in the database
 	// before we got to this stage.
 	// Note that after this check completes, the reminder *will* be executed (or attempted to be executed). If someone else modifies the reminder after this check (but before step 3), the original reminder will still be executed (and modifications would only impact subsequent iterations).
-	// Second, we send the reminder to the actor host that is currently hosting the actor (or if the actor is inactive, we activate it in one of the hosts that we are connected to).
-	// Third, and last, we remove the reminder from the reminders table. However, if the reminder is repeating (and hasn't reached its TTL), then we update its execution time instead.
+	// Second, we add the reminder to the active reminders table.
+	// Third, and last, we send the reminder to the actor host that is currently hosting the actor (or if the actor is inactive, we activate it in one of the hosts that we are connected to).
 
 	ctx := context.Background()
 	log.Debugf("Executing reminder '%s'", fr.Key())
@@ -151,10 +160,24 @@ func (s *server) executeReminder(fr *actorstore.FetchedReminder) {
 		return
 	}
 
+	// Get the actors.Reminder object
+	ar := actors.NewReminderFromActorStore(reminder)
+
+	// Generate a completion token, as a simple 64-bit random value with the prefix of the host ID
+	// Collision-resistance isn't important here as there can only be a single reminder with the given actor and name
+	completionTokenBytes := make([]byte, 8)
+	_, err = io.ReadFull(rand.Reader, completionTokenBytes)
+	if err != nil {
+		log.Errorf("Failed to generate random completion token for reminder '%s': %v", fr.Key(), err)
+		return
+	}
+	completionToken := lar.HostID + "||" + base64.RawURLEncoding.EncodeToString(completionTokenBytes)
+
 	// Send the message to the actor host
 	serverMsg := &actors.ConnectHostServerStream_ExecuteReminder{
 		ExecuteReminder: &actors.ExecuteReminder{
-			Reminder: actors.NewReminderFromActorStore(reminder),
+			Reminder:        ar,
+			CompletionToken: completionToken,
 		},
 	}
 	s.connectedHostsLock.RLock()
@@ -166,6 +189,14 @@ func (s *server) executeReminder(fr *actorstore.FetchedReminder) {
 		return
 	}
 
+	// Store the active reminder
+	arMapKey := completionToken + "||" + ar.GetKey()
+	s.activeReminders.Set(arMapKey, &activeReminder{
+		fr:       fr,
+		reminder: reminder,
+		start:    start,
+	})
+
 	// Sanity check to ensure the channel isn't blocked for too long, leading to a goroutine leak
 	sendCtx, sendCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer sendCancel()
@@ -174,55 +205,21 @@ func (s *server) executeReminder(fr *actorstore.FetchedReminder) {
 		// All good - nop
 	case <-sendCtx.Done():
 		log.Errorf("Failed to send reminder '%s' to actor host: %v", fr.Key(), ctx.Err())
+
+		// Remove from the map
+		// Note it can take a few moments for this to appear if the map was being resized when the item was set
+		// We still set a limit on the number of attempts in case the reminder is being deleted in parallel somewhere else
+		for i := 0; i < 10; i++ {
+			_, ok = s.activeReminders.GetAndDel(arMapKey)
+			if ok {
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
 		return
 	}
 
-	// Lastly, remove the reminder from the store (or update the execution time for repeating reminders)
-	nextExecutionTime, updatedPeriod, doesRepeat := s.reminderNextExecutionTime(reminder)
-	if doesRepeat {
-		updateReq := actorstore.UpdateReminderWithLeaseRequest{
-			ExecutionTime: nextExecutionTime,
-			TTL:           reminder.TTL,
-		}
-		if updatedPeriod != "" {
-			updateReq.Period = &updatedPeriod
-		}
-
-		// If the reminder is scheduled to be repeated within the fetch ahead interval, we do not release the lease
-		if nextExecutionTime.Sub(s.clock.Now()) <= s.opts.RemindersFetchAheadInterval {
-			updateReq.KeepLease = true
-		}
-
-		err = s.store.UpdateReminderWithLease(ctx, fr, updateReq)
-
-		// If the reminder can't be found, it means that it's been deleted or updated in parallel
-		// In this case, we can ignore the error
-		if err != nil && !errors.Is(err, actorstore.ErrReminderNotFound) {
-			log.Errorf("Failed to update reminder '%s': %v", fr.Key(), err)
-			return
-		}
-
-		// If we still have the lease, re-enqueue the reminder
-		if updateReq.KeepLease {
-			newFr := actorstore.NewFetchedReminder(fr.Key(), nextExecutionTime, fr.Lease())
-			err = s.processor.Enqueue(&newFr)
-			if err != nil {
-				// Log the warning only
-				log.Warnf("Failed to re-enqueue repeating reminder '%s': %v", fr.Key(), err)
-			}
-		}
-	} else {
-		err = s.store.DeleteReminderWithLease(ctx, fr)
-
-		// If the reminder can't be found, it means that it's been deleted or updated in parallel
-		// In this case, we can ignore the error
-		if err != nil && !errors.Is(err, actorstore.ErrReminderNotFound) {
-			log.Errorf("Failed to delete reminder '%s': %v", fr.Key(), err)
-			return
-		}
-	}
-
-	log.Debugf("Reminder '%s' has been executed on host '%s' in %v", fr.Key(), lar.HostID, time.Since(start))
+	log.Debugf("Reminder '%s' is being executed on host '%s'", fr.Key(), lar.HostID)
 }
 
 func (s *server) executeReminderRelinquishLease(ctx context.Context, fr *actorstore.FetchedReminder) {
@@ -296,7 +293,9 @@ func (s *server) renewReminderLeases(ctx context.Context) {
 	}
 }
 
-func (s *server) reminderNextExecutionTime(reminder actorstore.Reminder) (next time.Time, updatedPeriod string, doesRepeat bool) {
+func (ar activeReminder) reminderNextExecutionTime(start time.Time) (next time.Time, updatedPeriod string, doesRepeat bool) {
+	reminder := ar.reminder
+
 	// Reminder does not repeat
 	if reminder.Period == nil || *reminder.Period == "" {
 		return next, "", false
@@ -328,8 +327,8 @@ func (s *server) reminderNextExecutionTime(reminder actorstore.Reminder) (next t
 	}
 
 	// Calculate the next repetition time
-	// Note this starts from the current time and not the previous execution time
-	next = s.clock.Now().AddDate(years, months, days).Add(period)
+	// Note this starts from the previous execution time
+	next = start.AddDate(years, months, days).Add(period)
 
 	// If the next repetition is after the TTL, we stop repeating
 	if reminder.TTL != nil && !reminder.TTL.IsZero() && next.After(*reminder.TTL) {

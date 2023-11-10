@@ -22,6 +22,7 @@ import (
 	"net"
 	"sync"
 
+	"github.com/alphadose/haxmap"
 	"google.golang.org/grpc"
 	kclock "k8s.io/utils/clock"
 
@@ -52,6 +53,10 @@ type server struct {
 	connectedHosts     connectedHosts
 	connectedHostsLock sync.RWMutex
 
+	// Map that contains the currently-active reminders
+	// The key is a string in the format "hostId||reminderType||reminderId||reminderName||completionKey"
+	activeReminders *haxmap.Map[string, *activeReminder]
+
 	// Cached values of host IDs and actor types for connected hosts.
 	// We maintain a cache here to improve memory usage when we need to fetch reminders etc, and to reduce the duration we need to acquire read locks for.
 	// Note1: When grabbing these slices, make a copy of the pointer while obtaining a (read) lock on connectedHostsLock, for example `hostIDs := s.connectedHostsIDs`. Do not modify the value of these slices in any way.
@@ -77,6 +82,7 @@ func (s *server) Init(ctx context.Context, opts Options) (err error) {
 	s.opts = opts
 	s.shutdownCh = make(chan struct{})
 	s.connectedHosts = make(connectedHosts)
+	s.activeReminders = haxmap.New[string, *activeReminder]()
 
 	s.clock = opts.clock
 	if s.clock == nil {

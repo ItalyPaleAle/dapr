@@ -523,19 +523,16 @@ func (a *ActorClient) connectHostHandshake(stream actorsv1pb.Actors_ConnectHostC
 func (a *ActorClient) doExecuteReminder(ctx context.Context, msg *actorsv1pb.ExecuteReminder) {
 	ok := a.executeReminderFn(internal.NewReminderFromProto(msg.Reminder))
 
-	// If the method returns false, we need to stop processing the reminder and delete it (but only if the reminder repeats, otherwise it'd be deleted anyways)
-	if !ok && msg.Reminder.Period != "" {
-		_, err := a.actorsClient.DeleteReminder(ctx, &actorsv1pb.DeleteReminderRequest{
-			Ref: msg.Reminder.GetRef(),
-		})
-		if err != nil {
-			// We ignore errors that indicate that the reminder was already deleted
-			if status.Code(err) == codes.NotFound {
-				log.Warnf("Attempted to cancel reminder '%s' after its execution, but the reminder was already deleted", msg.Reminder.GetKey())
-			} else {
-				log.Errorf("Failed to delete reminder that was canceled after execution: %v", err)
-			}
-		}
+	// Send a message that the reminder was completed
+	_, err := a.actorsClient.CompleteReminder(ctx, &actorsv1pb.CompleteReminderRequest{
+		Ref:             msg.Reminder.GetRef(),
+		CompletionToken: msg.CompletionToken,
+		// If the method returns false, we need to stop processing the reminder and delete it
+		// (If the reminder doesn't repeat, this has no effect anyways)
+		StopReminder: !ok,
+	})
+	if err != nil {
+		log.Errorf("Failed to complete reminder: %v", err)
 	}
 }
 

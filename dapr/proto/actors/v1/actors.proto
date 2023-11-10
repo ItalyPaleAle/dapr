@@ -36,6 +36,11 @@ service Actors {
     // ReportActorDeactivation is sent to report an actor that has been deactivated.
     rpc ReportActorDeactivation(ReportActorDeactivationRequest) returns (ReportActorDeactivationResponse) {}
 
+    // CompleteReminder is sent to report that a reminder has been completed.
+    // Hosts are expected to inform the Actors service when a reminder is completed, so it's possible to guarantee at-least-once delivery.
+    // Repeating reminders are re-queued for the next execution, and non-repeating reminders are deleted.
+    rpc CompleteReminder(CompleteReminderRequest) returns (CompleteReminderResponse) {}
+
     // CreateReminder creates a new reminder.
     // If a reminder with the same ID (actor type, actor ID, name) already exists, it's replaced.
     rpc CreateReminder(CreateReminderRequest) returns (CreateReminderResponse) {}
@@ -125,7 +130,7 @@ message ConnectHostServerStream {
     }
 }
 
-// ActorHostConfiguration is one of the messages that cna be sent by ConnectHostServerStream.
+// ActorHostConfiguration is one of the messages that can be sent by ConnectHostServerStream.
 // It contains certain configuration options for the actor subsystem.
 // This is normally sent in response to the first message from the actor host, but can be sent as update at any time.
 message ActorHostConfiguration {
@@ -133,14 +138,17 @@ message ActorHostConfiguration {
     uint32 health_check_interval = 1;
 }
 
-// ExecuteReminder is one of the messages that cna be sent by ConnectHostServerStream.
-// It is sent to tell the sidecar to execute a reminder.
-// The sidecar is expected to respond right away, and process the reminder asynchronously.
+// ExecuteReminder is one of the messages that can be sent by ConnectHostServerStream.
+// It is sent to tell the actor host to execute a reminder.
+// The actor host is expected to respond right away, and process the reminder asynchronously.
 message ExecuteReminder {
-    // Reminder that is to be executed
+    // Reminder that is to be executed.
     Reminder reminder = 1; 
+    // Token that the actor host needs to send back to confirm the reminder was executed completely.
+    string completion_token = 2;
 }
 
+// ActorRef contains the reference to an actor.
 message ActorRef {
   string actor_type = 1;
   string actor_id = 2;
@@ -199,6 +207,20 @@ message Reminder {
     google.protobuf.Timestamp ttl = 7;
     // Can be empty
     bytes data = 8;
+}
+
+message CompleteReminderRequest {
+    // Reminder reference.
+    ReminderRef ref = 1;
+    // Token that was sent with the ExecuteReminder message.
+    string completion_token = 2;
+    // When true, repeating reminders are deleted after being executed.
+    // This is a no-op if the reminder doesn't repeat.
+    bool stop_reminder = 3;
+}
+
+message CompleteReminderResponse {
+    // Empty for now
 }
 
 message CreateReminderRequest {
