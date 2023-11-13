@@ -327,7 +327,6 @@ TEST_WITH_RACE=./pkg/acl/... \
 ./pkg/channel/... \
 ./pkg/client/... \
 ./pkg/components/... \
-./pkg/concurrency/... \
 ./pkg/config/... \
 ./pkg/cors/... \
 ./pkg/diagnostics/... \
@@ -353,7 +352,6 @@ TEST_WITH_RACE=./pkg/acl/... \
 ./pkg/scopes/... \
 ./pkg/security/... \
 ./pkg/sentry/... \
-./pkg/signals/... \
 ./pkg/validation/... \
 ./utils/...
 
