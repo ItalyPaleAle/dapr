@@ -162,6 +162,11 @@ jobs:
       run: |
         make build-push-e2e-app-all
 
+    - name: Init test environment
+      run: |
+        make setup-helm-init
+        make create-test-namespace
+
     - name: Setup Redis
       run: |
         make setup-test-env-redis
@@ -177,11 +182,9 @@ jobs:
     - name: Setup postgres
       run: |
         make setup-test-env-postgres
+
     - name: Setup Dapr
       run: |
-        make setup-helm-init
-        make create-test-namespace
-  
         export HA_MODE=false
         if [[ "${{ matrix.actors }}" == "v2" ]]; then
           # These values are valid for the Postgres deployed by the Dapr tests
