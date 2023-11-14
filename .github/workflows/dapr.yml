@@ -191,29 +191,14 @@ jobs:
             sidecar_flavor: "allcomponents"
           - os: ubuntu-latest
             target_os: linux
-            target_arch: amd64
-            job_name: "Linux/amd64"
-            sidecar_flavor: "stablecomponents"
-          - os: ubuntu-latest
-            target_os: linux
             target_arch: arm64
             job_name: "Linux/arm64"
             sidecar_flavor: "allcomponents"
           - os: ubuntu-latest
             target_os: linux
-            target_arch: arm64
-            job_name: "Linux/arm64"
-            sidecar_flavor: "stablecomponents"
-          - os: ubuntu-latest
-            target_os: linux
             target_arch: arm
             job_name: "Linux/arm"
             sidecar_flavor: "allcomponents"
-          - os: ubuntu-latest
-            target_os: linux
-            target_arch: arm
-            job_name: "Linux/arm"
-            sidecar_flavor: "stablecomponents"
           - os: windows-2019
             target_os: windows
             target_arch: amd64
@@ -368,30 +353,15 @@ jobs:
         with:
           name: dapr_linux_amd64_allcomponents
           path: ${{ env.ARTIFACT_DIR }}
-      - name: "download artifact: dapr_linux_amd64_stablecomponents"
-        uses: actions/download-artifact@master
-        with:
-          name: dapr_linux_amd64_stablecomponents
-          path: ${{ env.ARTIFACT_DIR }}
       - name: "download artifact: dapr_linux_arm_allcomponents"
         uses: actions/download-artifact@master
         with:
           name: dapr_linux_arm_allcomponents
           path: ${{ env.ARTIFACT_DIR }}
-      - name: "download artifact: dapr_linux_arm_stablecomponents"
-        uses: actions/download-artifact@master
-        with:
-          name: dapr_linux_arm_stablecomponents
-          path: ${{ env.ARTIFACT_DIR }}
       - name: "download artifact: dapr_linux_arm64_allcomponents"
         uses: actions/download-artifact@master
         with:
           name: dapr_linux_arm64_allcomponents
-          path: ${{ env.ARTIFACT_DIR }}
-      - name: "download artifact: dapr_linux_arm64_stablecomponents"
-        uses: actions/download-artifact@master
-        with:
-          name: dapr_linux_arm64_stablecomponents
           path: ${{ env.ARTIFACT_DIR }}
       - name: "download artifact: dapr_windows_amd64_allcomponents"
         uses: actions/download-artifact@master
