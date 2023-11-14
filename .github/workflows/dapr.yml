@@ -125,9 +125,6 @@ jobs:
             target_os: windows
             target_arch: amd64
             windows_version: ltsc2022
-          - os: macOS-latest
-            target_os: darwin
-            target_arch: amd64
     env:
       GOOS: "${{ matrix.target_os }}"
       GOARCH: "${{ matrix.target_arch }}"
@@ -200,9 +197,6 @@ jobs:
             target_os: windows
             target_arch: amd64
             windows_version: ltsc2022
-          - os: macOS-latest
-            target_os: darwin
-            target_arch: amd64
     env:
       GOOS: "${{ matrix.target_os }}"
       GOARCH: "${{ matrix.target_arch }}"
@@ -302,16 +296,6 @@ jobs:
             target_arch: amd64
             windows_version: ltsc2022
             job_name: "Windows LTSC 2022"
-            sidecar_flavor: "allcomponents"
-          - os: macOS-latest
-            target_os: darwin
-            target_arch: amd64
-            job_name: "macOS/Intel"
-            sidecar_flavor: "allcomponents"
-          - os: macOS-latest
-            target_os: darwin
-            target_arch: arm64
-            job_name: "macOS/Apple Silicon"
             sidecar_flavor: "allcomponents"
     steps:
       - name: Set up QEMU
