@@ -64,7 +64,7 @@ jobs:
       # Container registry where to cache e2e test images
       DAPR_CACHE_REGISTRY: "dapre2eacr.azurecr.io"
       PULL_POLICY: IfNotPresent
-      K8S_VERSION: v1.27.7
+      K8S_VERSION: v1.27.3
       KIND_VERSION: v0.20.0
       DAPR_TEST_CONFIG_STORE: postgres
     strategy:
