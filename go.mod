@@ -10,7 +10,7 @@ require (
 	github.com/argoproj/argo-rollouts v1.4.1
 	github.com/cenkalti/backoff/v4 v4.2.1
 	github.com/cloudevents/sdk-go/v2 v2.14.0
-	github.com/dapr/components-contrib v1.12.1-0.20231106194303-88eb49c838c2
+	github.com/dapr/components-contrib v1.12.1-0.20231114193638-934e86c4f7c4
 	github.com/dapr/kit v0.12.2-0.20231031211530-0e1fd37fc4b3
 	github.com/evanphx/json-patch/v5 v5.7.0
 	github.com/go-chi/chi/v5 v5.0.10
@@ -31,6 +31,7 @@ require (
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/hashicorp/raft v1.4.0
 	github.com/hashicorp/raft-boltdb v0.0.0-20230125174641-2a8082862702
+	github.com/jackc/pgerrcode v0.0.0-20220416144525-469b46aa5efa
 	github.com/jackc/pgx/v5 v5.4.3
 	github.com/jhump/protoreflect v1.15.2
 	github.com/kelseyhightower/envconfig v1.4.0
@@ -259,7 +260,6 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/influxdata/influxdb-client-go/v2 v2.12.3 // indirect
 	github.com/influxdata/line-protocol v0.0.0-20210922203350-b1ad95c89adf // indirect
-	github.com/jackc/pgerrcode v0.0.0-20220416144525-469b46aa5efa // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20221227161230-091c0ba34f0a // indirect
 	github.com/jackc/puddle/v2 v2.2.1 // indirect
@@ -452,8 +452,7 @@ replace github.com/microcosm-cc/bluemonday => github.com/microcosm-cc/bluemonday
 // Uncomment for local development for testing with changes in the components-contrib repository.
 // Don't commit with this uncommented!
 //
-replace github.com/dapr/components-contrib => ../components-contrib
-
+// replace github.com/dapr/components-contrib => ../components-contrib
 //
 // Then, run `make modtidy` in this repository.
 // This ensures that go.mod and go.sum are up-to-date.

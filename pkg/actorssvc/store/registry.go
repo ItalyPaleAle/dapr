@@ -17,7 +17,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dapr/components-contrib/actorstore"
+	"github.com/dapr/dapr/pkg/actorssvc/components/actorstore"
 	"github.com/dapr/kit/logger"
 )
 

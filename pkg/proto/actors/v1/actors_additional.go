@@ -21,7 +21,7 @@ import (
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/dapr/components-contrib/actorstore"
+	"github.com/dapr/dapr/pkg/actorssvc/components/actorstore"
 	timeutils "github.com/dapr/kit/time"
 )
 

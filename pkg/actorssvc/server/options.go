@@ -19,8 +19,8 @@ import (
 
 	kclock "k8s.io/utils/clock"
 
-	"github.com/dapr/components-contrib/actorstore"
 	"github.com/dapr/components-contrib/metadata"
+	"github.com/dapr/dapr/pkg/actorssvc/components/actorstore"
 	loader "github.com/dapr/dapr/pkg/actorssvc/store"
 	actorsv1pb "github.com/dapr/dapr/pkg/proto/actors/v1"
 	"github.com/dapr/dapr/pkg/security"

@@ -26,8 +26,8 @@ import (
 	"google.golang.org/grpc"
 	kclock "k8s.io/utils/clock"
 
-	"github.com/dapr/components-contrib/actorstore"
 	"github.com/dapr/dapr/pkg/actors/cache"
+	"github.com/dapr/dapr/pkg/actorssvc/components/actorstore"
 	actorsv1pb "github.com/dapr/dapr/pkg/proto/actors/v1"
 	"github.com/dapr/kit/events/queue"
 	"github.com/dapr/kit/logger"

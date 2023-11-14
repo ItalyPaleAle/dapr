@@ -74,7 +74,7 @@ func (s *server) setConnectedHost(actorHostID string, info connectedHostInfo) {
 }
 
 // Removes a connected host.
-// This also removes all active reminders referencs for the given host.
+// This also removes all active reminders references for the given host.
 func (s *server) removeConnectedHost(actorHostID string) {
 	// First, remove the host from the map
 	s.connectedHostsLock.Lock()

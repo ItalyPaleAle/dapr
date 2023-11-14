@@ -23,7 +23,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/dapr/components-contrib/actorstore"
+	"github.com/dapr/dapr/pkg/actorssvc/components/actorstore"
 	actorsv1pb "github.com/dapr/dapr/pkg/proto/actors/v1"
 )
 

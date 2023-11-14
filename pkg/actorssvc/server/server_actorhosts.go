@@ -23,7 +23,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/dapr/components-contrib/actorstore"
+	"github.com/dapr/dapr/pkg/actorssvc/components/actorstore"
 	actorsv1pb "github.com/dapr/dapr/pkg/proto/actors/v1"
 	"github.com/dapr/kit/logger"
 )

@@ -24,7 +24,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dapr/components-contrib/actorstore"
+	"github.com/dapr/dapr/pkg/actorssvc/components/actorstore"
 	"github.com/dapr/dapr/pkg/proto/actors/v1"
 	"github.com/dapr/kit/events/queue"
 	"github.com/dapr/kit/logger"

@@ -1,3 +1,5 @@
+//go:build !conftests && !e2e
+
 /*
 Copyright 2023 The Dapr Authors
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,13 +13,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package components
+package actorstore
 
-import (
-	"github.com/dapr/dapr/pkg/actorssvc/components/actorstore/postgresql"
-	loader "github.com/dapr/dapr/pkg/actorssvc/store"
-)
-
-func init() {
-	loader.DefaultRegistry.RegisterStore(postgresql.NewPostgreSQLActorStore, "postgresql", "postgres", "pg")
+// StoreConfTests is empty when there's no "conftests" or "e2e" build tag.
+// See actorstore_conftests.go for more information
+type StoreConfTests interface {
+	// Empty when there's no "conftests" build tag
 }
