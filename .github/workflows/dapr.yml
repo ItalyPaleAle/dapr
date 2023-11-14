@@ -103,7 +103,6 @@ jobs:
           make gen-proto check-proto-diff
   unit-tests:
     name: Unit tests
-    needs: lint
     runs-on: "${{ matrix.os }}"
     strategy:
       fail-fast: false
