@@ -39,7 +39,7 @@ jobs:
           git config user.name "daprweb@microsoft.com"
           # Update origin with token
           git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git
-          git checkout ${REL_BRANCH} || git checkout master
+          git checkout ${REL_BRANCH} || git checkout main
           echo "BASE_BRANCH=$(git branch --show-current)" >> $GITHUB_ENV
           git checkout -b pr-release-notes-${REL_VERSION}
           git add .

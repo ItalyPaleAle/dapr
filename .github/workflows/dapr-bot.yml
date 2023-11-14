@@ -5,6 +5,7 @@ on:
   #  types: [created]
   #issues:
   #  types: [labeled]
+  workflow_dispatch:
 
 jobs:
   daprbot:

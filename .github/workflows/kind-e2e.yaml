@@ -19,11 +19,13 @@ on:
   # On pull requests
   pull_request:
     branches:
+      - main
       - master
       - 'release-*'
       - 'feature/*'
   push:
     branches:
+      - main
       - master
       - 'release-*'
       - 'feature/*'
@@ -58,10 +60,13 @@ jobs:
       # Useful for upgrade/downgrade/compatibility tests
       # TODO: Make this auto-populated based on GitHub's releases.
       DAPR_TEST_N_MINUS_1_IMAGE: "ghcr.io/dapr/daprd:1.12.0"
-      DAPR_TEST_N_MINUS_2_IMAGE: "ghcr.io/dapr/daprd:1.11.4"
+      DAPR_TEST_N_MINUS_2_IMAGE: "ghcr.io/dapr/daprd:1.11.5"
       # Container registry where to cache e2e test images
       DAPR_CACHE_REGISTRY: "dapre2eacr.azurecr.io"
       PULL_POLICY: IfNotPresent
+      K8S_VERSION: v1.27.7
+      KIND_VERSION: v0.20.0
+      DAPR_TEST_CONFIG_STORE: postgres
     strategy:
       fail-fast: false # Keep running if one leg fails.
       matrix:
@@ -69,19 +74,8 @@ jobs:
         # This is attempting to make it a bit clearer what's being tested.
         # See: https://github.com/kubernetes-sigs/kind/releases/tag/v0.11.1
         include:
-        - k8s-version: v1.23.13
-          kind-version: v0.17.0
-          kind-image-sha: sha256:ef453bb7c79f0e3caba88d2067d4196f427794086a7d0df8df4f019d5e336b61
-          dapr-test-config-store: "postgres"
-        - k8s-version: v1.24.7
-          kind-version: v0.17.0
-          kind-image-sha: sha256:577c630ce8e509131eab1aea12c022190978dd2f745aac5eb1fe65c0807eb315
-          dapr-test-config-store: "redis"
-        - k8s-version: v1.25.3
-          kind-version: v0.17.0
-          kind-image-sha: sha256:f52781bc0d7a19fb6c405c2af83abfeb311f130707a0e219175677e366cc45d1
-          mode: non-ha
-          dapr-test-config-store: "redis"
+        - actors: v1
+        - actors: v2
     steps:
     - name: Check out code
       uses: actions/checkout@v3
@@ -104,13 +98,13 @@ jobs:
         kind: Cluster
         nodes:
         - role: control-plane
-          image: kindest/node:${{ matrix.k8s-version }}@${{ matrix.kind-image-sha }}
+          image: kindest/node:${{ env.K8S_VERSION }}
         - role: worker
-          image: kindest/node:${{ matrix.k8s-version }}@${{ matrix.kind-image-sha }}
+          image: kindest/node:${{ env.K8S_VERSION }}
         - role: worker
-          image: kindest/node:${{ matrix.k8s-version }}@${{ matrix.kind-image-sha }}
+          image: kindest/node:${{ env.K8S_VERSION }}
         - role: worker
-          image: kindest/node:${{ matrix.k8s-version }}@${{ matrix.kind-image-sha }}
+          image: kindest/node:${{ env.K8S_VERSION }}
         containerdConfigPatches:
         - |-
           [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:$REGISTRY_PORT"]
@@ -121,15 +115,15 @@ jobs:
         cat kind.yaml
 
         # Set log target directories
-        echo "DAPR_CONTAINER_LOG_PATH=$GITHUB_WORKSPACE/container_logs/${{ matrix.k8s-version }}_${{ matrix.mode }}" >> $GITHUB_ENV
-        echo "DAPR_TEST_LOG_PATH=$GITHUB_WORKSPACE/test_logs/${{ matrix.k8s-version }}_${{ matrix.mode }}" >> $GITHUB_ENV
+        echo "DAPR_CONTAINER_LOG_PATH=$GITHUB_WORKSPACE/container_logs/${{ env.K8S_VERSION }}" >> $GITHUB_ENV
+        echo "DAPR_TEST_LOG_PATH=$GITHUB_WORKSPACE/test_logs/${{ env.K8S_VERSION }}" >> $GITHUB_ENV
 
     - name: Create KinD Cluster
-      uses: helm/kind-action@v1.5.0
+      uses: helm/kind-action@v1.8.0
       with:
         config: kind.yaml
         cluster_name: kind
-        version: ${{ matrix.kind-version }}
+        version: ${{ env.KIND_VERSION }}
 
     - name: Get KinD info
       run: |
@@ -172,11 +166,14 @@ jobs:
       run: |
         make setup-helm-init
         make create-test-namespace
-        export ADDITIONAL_HELM_SET="dapr_operator.logLevel=debug,dapr_operator.watchInterval=20s"
-        if [[ "${{ matrix.mode }}" == "ha" ]]; then
-          export HA_MODE=true
-        else
-          export HA_MODE=false
+
+        export HA_MODE=false
+        if [[ "${{ matrix.actors }}" == "v2" ]]; then
+          # These values are valid for the Postgres deployed by the Dapr tests
+          echo -n "connectionString=host=dapr-postgres-postgresql.${DAPR_NAMESPACE}.svc.cluster.local user=postgres password=example port=5432 connect_timeout=10 database=dapr_test" > postgres
+          kubectl create secret generic postgres-actors -n ${DAPR_NAMESPACE} --from-file=postgres
+
+          export ADDITIONAL_HELM_SET="global.actors.v2=true,dapr_actors.logLevel=debug,dapr_actors.store.name=postgresql,dapr_actors.store.optionsFile.secretName=postgres-actors,dapr_actors.store.optionsFile.secretKey=postgres"
         fi
         make docker-deploy-k8s
 
@@ -199,8 +196,6 @@ jobs:
     - name: Setup test components
       run: |
         make setup-test-components
-      env:
-        DAPR_TEST_CONFIG_STORE: ${{ matrix.dapr-test-config-store }}
 
     - name: Free up some diskspace
       run: |
@@ -209,8 +204,6 @@ jobs:
     - name: Run tests
       run: |
         make test-e2e-all
-      env:
-        DAPR_TEST_CONFIG_STORE: ${{ matrix.dapr-test-config-store }}
 
     - name: Save control plane logs
       if: always()
@@ -229,14 +222,14 @@ jobs:
       if: always()
       uses: actions/upload-artifact@master
       with:
-        name: ${{ matrix.k8s-version }}_${{ matrix.mode}}_container_logs
+        name: ${{ matrix.k8s-version }}_container_logs
         path: ${{ env.DAPR_CONTAINER_LOG_PATH }}
 
     - name: Upload test logs
       if: always()
       uses: actions/upload-artifact@master
       with:
-        name: ${{ matrix.k8s-version }}_${{ matrix.mode}}_test_logs
+        name: ${{ matrix.k8s-version }}_test_logs
         path: ${{ env.DAPR_TEST_LOG_PATH }}
 
     - name: Upload test results
@@ -244,5 +237,5 @@ jobs:
       uses: actions/upload-artifact@master
       with:
         #TODO: .json suffix can be removed from artifact name after test analytics scripts are updated
-        name: ${{ matrix.k8s-version }}_${{ matrix.mode }}_test_e2e.json
+        name: ${{ matrix.k8s-version }}_test_e2e.json
         path: ${{ env.TEST_OUTPUT_FILE_PREFIX }}_e2e.*

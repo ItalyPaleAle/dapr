@@ -19,6 +19,7 @@ on:
     - cron: "00 22 * * *"
   push:
     branches:
+      - main
       - master
       - release-*
       - feature/*
@@ -26,6 +27,7 @@ on:
       - v*
   pull_request:
     branches:
+      - main
       - master
       - release-*
       - feature/*

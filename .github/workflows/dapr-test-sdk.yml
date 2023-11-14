@@ -57,7 +57,7 @@ jobs:
         if: github.event_name != 'repository_dispatch'
         run: |
           echo "CHECKOUT_REPO=${{ github.repository }}" >> $GITHUB_ENV
-          echo "CHECKOUT_REF=refs/heads/master" >> $GITHUB_ENV
+          echo "CHECKOUT_REF=refs/heads/main" >> $GITHUB_ENV
         shell: bash
       - name: Parse test payload
         if: github.event_name == 'repository_dispatch'
@@ -187,7 +187,7 @@ jobs:
         if: github.event_name != 'repository_dispatch'
         run: |
           echo "CHECKOUT_REPO=${{ github.repository }}" >> $GITHUB_ENV
-          echo "CHECKOUT_REF=refs/heads/master" >> $GITHUB_ENV
+          echo "CHECKOUT_REF=refs/heads/main" >> $GITHUB_ENV
         shell: bash
       - name: Parse test payload
         if: github.event_name == 'repository_dispatch'
@@ -360,7 +360,7 @@ jobs:
         if: github.event_name != 'repository_dispatch'
         run: |
           echo "CHECKOUT_REPO=${{ github.repository }}" >> $GITHUB_ENV
-          echo "CHECKOUT_REF=refs/heads/master" >> $GITHUB_ENV
+          echo "CHECKOUT_REF=refs/heads/main" >> $GITHUB_ENV
         shell: bash
       - name: Parse test payload
         if: github.event_name == 'repository_dispatch'
@@ -486,7 +486,7 @@ jobs:
         if: github.event_name != 'repository_dispatch'
         run: |
           echo "CHECKOUT_REPO=${{ github.repository }}" >> $GITHUB_ENV
-          echo "CHECKOUT_REF=refs/heads/master" >> $GITHUB_ENV
+          echo "CHECKOUT_REF=refs/heads/main" >> $GITHUB_ENV
         shell: bash
       - name: Parse test payload
         if: github.event_name == 'repository_dispatch'
