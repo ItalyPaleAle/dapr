@@ -1,137 +1,77 @@
-<div style="text-align: center"><img src="/img/dapr_logo.svg" height="120px">
-<h2>Any language, any framework, anywhere</h2>
-</div>
+# Project Emmy
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/dapr/dapr)](https://goreportcard.com/report/github.com/dapr/dapr)
-[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/5044/badge)](https://www.bestpractices.dev/projects/5044)
-[![Docker Pulls](https://img.shields.io/docker/pulls/daprio/daprd)](https://hub.docker.com/r/daprio/dapr)
-[![Build Status](https://github.com/dapr/dapr/workflows/dapr/badge.svg?event=push&branch=master)](https://github.com/dapr/dapr/actions?workflow=dapr)
-[![E2E Tests](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/dapr-bot/14e974e8fd6c6eab03a2475beb1d547a/raw/dapr-test-badge.json)](https://github.com/dapr/dapr/actions?workflow=dapr-test&event=schedule)
-[![codecov](https://codecov.io/gh/dapr/dapr/branch/master/graph/badge.svg)](https://codecov.io/gh/dapr/dapr)
-[![Discord](https://img.shields.io/discord/778680217417809931)](https://discord.com/channels/778680217417809931/778680217417809934)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/dapr/dapr/blob/master/LICENSE)
-[![FOSSA Status](https://app.fossa.com/api/projects/custom%2B162%2Fgithub.com%2Fdapr%2Fdapr.svg?type=shield)](https://app.fossa.com/projects/custom%2B162%2Fgithub.com%2Fdapr%2Fdapr?ref=badge_shield)
-[![TODOs](https://badgen.net/https/api.tickgit.com/badgen/github.com/dapr/dapr)](https://www.tickgit.com/browse?repo=github.com/dapr/dapr)
-[![Follow on Twitter](https://img.shields.io/twitter/follow/daprdev.svg?style=social&logo=twitter)](https://twitter.com/intent/follow?screen_name=daprdev)
+Project Emmy is a new actor runtime for Dapr developed internally at Microsoft.
 
-Dapr is a portable, serverless, event-driven runtime that makes it easy for developers to build resilient, stateless and stateful microservices that run on the cloud and edge and embraces the diversity of languages and developer frameworks.
+This repository currently contains a fork of [Dapr](https://github.com/dapr/dapr) with the code for Project Emmy enabled. Eventually, we plan on replacing the fork with a set of patches.
 
-Dapr codifies the *best practices* for building microservice applications into open, independent, building blocks that enable you to build portable applications with the language and framework of your choice. Each building block is independent and you can use one, some, or all of them in your application.
+## How to run Project Emmy
 
-![Dapr overview](./img/overview.png)
+### Clone the code
 
-We are a Cloud Native Computing Foundation (CNCF) incubation project.
-<p align="center"><img src="https://raw.githubusercontent.com/kedacore/keda/main/images/logo-cncf.svg" height="75px"></p>
+First, clone the repositories:
 
-## Goals
+```sh
+git clone https://github.com/serverless-paas-balam/project-emmy dapr
+```
 
-- Enable developers using *any* language or framework to write distributed applications
-- Solve the hard problems developers face building microservice applications by providing best practice building blocks
-- Be community driven, open and vendor neutral
-- Gain new contributors
-- Provide consistency and portability through open APIs
-- Be platform agnostic across cloud and edge
-- Embrace extensibility and provide pluggable components without vendor lock-in
-- Enable IoT and edge scenarios by being highly performant and lightweight
-- Be incrementally adoptable from existing code, with no runtime dependency
+### Run in standalone mode
 
-## How it works
+To run in standalone mode, you first need to have Postgres running.
 
-Dapr injects a side-car (container or process) to each compute unit. The side-car interacts with event triggers and communicates with the compute unit via standard HTTP or gRPC protocols. This enables Dapr to support all existing and future programming languages without requiring you to import frameworks or libraries.
+Perhaps the quickest way is to run this:
 
-Dapr offers built-in state management, reliable messaging (at least once delivery), triggers and bindings through standard HTTP verbs or gRPC interfaces. This allows you to write stateless, stateful and actor-like services following the same programming paradigm. You can freely choose consistency model, threading model and message delivery patterns.
+```sh
+# In the components-contrib folder
+docker-compose -f ./.github/infrastructure/docker-compose-postgresql.yml -p postgresql up -d
+```
 
-Dapr runs natively on Kubernetes, as a self hosted binary on your machine, on an IoT device, or as a container that can be injected into any system, in the cloud or on-premises.
+Next, run the Actors service:
 
-Dapr uses pluggable component state stores and message buses such as Redis as well as gRPC to offer a wide range of communication methods, including direct dapr-to-dapr using gRPC and async Pub-Sub with guaranteed delivery and at-least-once semantics.
+```sh
+# This connection string is valid for the Postgres that was started with Docker above
+PG_CONNSTRING="postgres://postgres:example@localhost:5432/dapr_test"
 
+# In the dapr folder
+go run ./cmd/actors \
+  --store-name "pg" \
+  --store-opt "connectionString=$PG_CONNSTRING" \
+  --log-level debug
+```
 
-## Why Dapr?
+The Actors service listens on port 51101 by default
 
-Writing highly performant, scalable and reliable distributed application is hard. Dapr brings proven patterns and practices to you. It unifies event-driven and actors semantics into a simple, consistent programming model. It supports all programming languages without framework lock-in. You are not exposed to low-level primitives such as threading, concurrency control, partitioning and scaling. Instead, you can write your code by implementing a simple web server using familiar web frameworks of your choice.
+Now you can start daprd processes as usual, but instead of passing `--placement-host-address`, pass the address of the actors serviece using `--actors-service-address`. For example:
 
-Dapr is flexible in threading and state consistency models. You can leverage multi-threading if you choose to, and you can choose among different consistency models. This flexibility enables you to implement advanced scenarios without artificial constraints. Dapr is unique because you can transition seamlessly between platforms and underlying implementations without rewriting your code.
+```
+go run \
+  -tags allcomponents \
+  ./cmd/daprd \
+  --app-id myapp \
+  --app-port 3000 \
+  --dapr-http-port 3603 \
+  --dapr-grpc-port 60003 \
+  --resources-path ./resources \
+  --log-level debug \
+  --actors-service-address localhost:51101 
+```
 
-## Features
+> Note: using the Dapr CLI is not supported yet.
 
-* Event-driven Pub-Sub system with pluggable providers and at-least-once semantics
-* Input and output bindings with pluggable providers
-* State management with pluggable data stores
-* Consistent service-to-service discovery and invocation
-* Opt-in stateful models: Strong/Eventual consistency, First-write/Last-write wins
-* Cross platform virtual actors
-* Secret management to retrieve secrets from secure key vaults
-* Rate limiting
-* Built-in [Observability](https://docs.dapr.io/concepts/observability-concept/) support
-* Runs natively on Kubernetes using a dedicated Operator and CRDs
-* Supports all programming languages via HTTP and gRPC
-* Multi-Cloud, open components (bindings, pub-sub, state) from Azure, AWS, GCP
-* Runs anywhere, as a process or containerized
-* Lightweight (58MB binary, 4MB physical memory)
-* Runs as a sidecar - removes the need for special SDKs or libraries
-* Dedicated CLI - developer friendly experience with easy debugging
-* Clients for Java, .NET Core, Go, Javascript, Python, Rust and C++
+### Run in Kubernetes
 
-## Get Started using Dapr
+This involves deploying Dapr to Kubernetes from source in the usual way.
 
-See our [Getting Started](https://docs.dapr.io/getting-started/) guide over in our docs.
+Next, create a Kubernetes secret where you store the connection string for Postgres.
 
-## Quickstarts and Samples
+```sh
+# These values are valid for the Postgres deployed by the Dapr tests
+echo -n "connectionString=host=dapr-postgres-postgresql.dapr-tests.svc.cluster.local user=postgres password=example port=5432 connect_timeout=10 database=dapr_test" > postgres
+kubectl create secret generic postgres-actors -n dapr-tests --from-file=postgres
+```
 
-* See the [quickstarts repository](https://github.com/dapr/quickstarts) for code examples that can help you get started with Dapr.
-* Explore additional samples in the Dapr [samples repository](https://github.com/dapr/samples).
+When running Helm, make sure to add these options to enable Actors v2:
 
-## Community
-We want your contributions and suggestions! One of the easiest ways to contribute is to participate in discussions on the mailing list, chat on IM or the bi-weekly community calls.
-For more information on the community engagement, developer and contributing guidelines and more, head over to the [Dapr community repo](https://github.com/dapr/community#dapr-community).
-
-### Contact Us
-
-Reach out with any questions you may have and we'll make sure to answer them as soon as possible!
-
-| Platform  | Link        |
-|:----------|:------------|
-| 💬 Instant Message Chat (preferred) | [![Discord Banner](https://discord.com/api/guilds/778680217417809931/widget.png?style=banner2)](https://aka.ms/dapr-discord)
-| 📧 Mailing List | https://groups.google.com/forum/#!forum/dapr-dev
-| 🐤 Twitter | [@daprdev](https://twitter.com/daprdev)
-
-### Community Call
-
-Every two weeks we host a community call to showcase new features, review upcoming milestones, and engage in a Q&A. All are welcome!
-
-📞 Visit https://aka.ms/dapr-community-call for upcoming dates and the meeting link.
-
-### Videos and Podcasts
-
-We have a variety of keynotes, podcasts, and presentations available to reference and learn from.
-
-📺 Visit https://docs.dapr.io/contributing/presentations/ for previous talks and slide decks.
-
-### Contributing to Dapr
-
-See the [Development Guide](https://docs.dapr.io/contributing/) to get started with building and developing.
-
-## Repositories
-
-| Repo | Description |
-|:-----|:------------|
-| [Dapr](https://github.com/dapr/dapr) | The main repository that you are currently in. Contains the Dapr runtime code and overview documentation.
-| [CLI](https://github.com/dapr/cli) | The Dapr CLI allows you to setup Dapr on your local dev machine or on a Kubernetes cluster, provides debugging support, launches and manages Dapr instances.
-| [Docs](https://docs.dapr.io) | The documentation for Dapr.
-| [Quickstarts](https://github.com/dapr/quickstarts) | This repository contains a series of simple code samples that highlight the main Dapr capabilities.
-| [Samples](https://github.com/dapr/samples) | This repository holds community maintained samples for various Dapr use cases.
-| [Components-contrib ](https://github.com/dapr/components-contrib) | The purpose of components contrib is to provide open, community driven reusable components for building distributed applications.
-| [Dashboard ](https://github.com/dapr/dashboard) | General purpose dashboard for Dapr
-| [Go-sdk](https://github.com/dapr/go-sdk) | Dapr SDK for Go
-| [Java-sdk](https://github.com/dapr/java-sdk) | Dapr SDK for Java
-| [JS-sdk](https://github.com/dapr/js-sdk) | Dapr SDK for JavaScript
-| [Python-sdk](https://github.com/dapr/python-sdk) | Dapr SDK for Python
-| [Dotnet-sdk](https://github.com/dapr/dotnet-sdk) | Dapr SDK for .NET
-| [Rust-sdk](https://github.com/dapr/rust-sdk) | Dapr SDK for Rust
-| [Cpp-sdk](https://github.com/dapr/cpp-sdk) | Dapr SDK for C++
-| [PHP-sdk](https://github.com/dapr/php-sdk) | Dapr SDK for PHP
-
-
-## Code of Conduct
-
-Please refer to our [Dapr Community Code of Conduct](https://github.com/dapr/community/blob/master/CODE-OF-CONDUCT.md)
+```sh
+ADDITIONAL_HELM_SET="global.actors.v2=true,dapr_actors.logLevel=debug,dapr_actors.store.name=postgresql,dapr_actors.store.optionsFile.secretName=postgres-actors,dapr_actors.store.optionsFile.secretKey=postgres" \
+  make docker-deploy-k8s
+```
