@@ -162,21 +162,6 @@ jobs:
       run: |
         make build-push-e2e-app-all
 
-    - name: Setup Dapr
-      run: |
-        make setup-helm-init
-        make create-test-namespace
-
-        export HA_MODE=false
-        if [[ "${{ matrix.actors }}" == "v2" ]]; then
-          # These values are valid for the Postgres deployed by the Dapr tests
-          echo -n "connectionString=host=dapr-postgres-postgresql.${DAPR_NAMESPACE}.svc.cluster.local user=postgres password=example port=5432 connect_timeout=10 database=dapr_test" > postgres
-          kubectl create secret generic postgres-actors -n ${DAPR_NAMESPACE} --from-file=postgres
-
-          export ADDITIONAL_HELM_SET="global.actors.v2=true,dapr_actors.logLevel=debug,dapr_actors.store.name=postgresql,dapr_actors.store.optionsFile.secretName=postgres-actors,dapr_actors.store.optionsFile.secretKey=postgres"
-        fi
-        make docker-deploy-k8s
-
     - name: Setup Redis
       run: |
         make setup-test-env-redis
@@ -192,6 +177,20 @@ jobs:
     - name: Setup postgres
       run: |
         make setup-test-env-postgres
+    - name: Setup Dapr
+      run: |
+        make setup-helm-init
+        make create-test-namespace
+  
+        export HA_MODE=false
+        if [[ "${{ matrix.actors }}" == "v2" ]]; then
+          # These values are valid for the Postgres deployed by the Dapr tests
+          echo -n "connectionString=host=dapr-postgres-postgresql.${DAPR_NAMESPACE}.svc.cluster.local user=postgres password=example port=5432 connect_timeout=10 database=dapr_test" > postgres
+          kubectl create secret generic postgres-actors -n ${DAPR_NAMESPACE} --from-file=postgres
+  
+          export ADDITIONAL_HELM_SET="global.actors.v2=true,dapr_actors.logLevel=debug,dapr_actors.store.name=postgresql,dapr_actors.store.optionsFile.secretName=postgres-actors,dapr_actors.store.optionsFile.secretKey=postgres"
+        fi
+        make docker-deploy-k8s
 
     - name: Setup test components
       run: |
