@@ -144,7 +144,6 @@ jobs:
 
   integration-tests:
     name: Integration tests
-    needs: lint
     runs-on: "${{ matrix.os }}"
     strategy:
       fail-fast: false
@@ -536,7 +535,7 @@ jobs:
         shell: bash
   helm:
     name: Package Helm Chart
-    needs: [publish, docker-publish]
+    needs: [lint, publish, docker-publish]
     if: github.event_name != 'pull_request'
     env:
       ARTIFACT_DIR: ./release
