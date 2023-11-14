@@ -11,7 +11,7 @@ This repository currently contains a fork of [Dapr](https://github.com/dapr/dapr
 First, clone the repositories:
 
 ```sh
-git clone https://github.com/serverless-paas-balam/project-emmy dapr
+git clone https://github.com/microsoft/project-emmy dapr
 ```
 
 ### Run in standalone mode
