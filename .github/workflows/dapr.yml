@@ -174,7 +174,7 @@ jobs:
   build:
     name: "Build artifacts on ${{ matrix.job_name }} - ${{ matrix.sidecar_flavor }}"
     runs-on: "${{ matrix.os }}"
-    needs: [unit-tests, integration-tests]
+    needs: [lint, unit-tests, integration-tests]
     env:
       GOOS: "${{ matrix.target_os }}"
       GOARCH: "${{ matrix.target_arch }}"
@@ -506,7 +506,7 @@ jobs:
         shell: bash
   helm:
     name: Package Helm Chart
-    needs: [lint, publish, docker-publish]
+    needs: [publish, docker-publish]
     if: github.event_name != 'pull_request'
     env:
       ARTIFACT_DIR: ./release
