@@ -15,9 +15,9 @@ name: dapr-sync-feature-branches
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - master
+  #push:
+  #  branches:
+  #    - master
 jobs:
   merge:
     name: Merge master into feature branches

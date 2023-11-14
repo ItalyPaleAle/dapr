@@ -13,18 +13,18 @@
 
 name: fossa
 on:
-  push:
-    branches:
-      - master
-      - release-*
-      - feature/*
-    tags:
-      - v*
-  pull_request:
-    branches:
-      - master
-      - release-*
-      - feature/*
+  #push:
+  #  branches:
+  #    - master
+  #    - release-*
+  #    - feature/*
+  #  tags:
+  #    - v*
+  #pull_request:
+  #  branches:
+  #    - master
+  #    - release-*
+  #    - feature/*
   workflow_dispatch: {}
 jobs:
   fossa-scan:

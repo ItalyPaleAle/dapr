@@ -15,9 +15,9 @@ name: dapr-dev-container
 
 on:
   workflow_dispatch:
-  schedule:
-    # Run weekly on Tuesdays
-    - cron: "22 03 * * 2"
+  #schedule:
+  #  # Run weekly on Tuesdays
+  #  - cron: "22 03 * * 2"
 
 jobs:
   build:

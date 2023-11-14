@@ -1,10 +1,10 @@
 name: dapr-bot
 
 on:
-  issue_comment:
-    types: [created]
-  issues:
-    types: [labeled]
+  #issue_comment:
+  #  types: [created]
+  #issues:
+  #  types: [labeled]
 
 jobs:
   daprbot:

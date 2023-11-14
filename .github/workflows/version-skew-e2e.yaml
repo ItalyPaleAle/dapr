@@ -15,9 +15,9 @@ name: Version Skew E2E tests on KinD
 
 on:
   # Run when a PR is merged to master.
-  push:
-    branches:
-      - master
+  #push:
+  #  branches:
+  #    - master
   # Dispatch on external events
   repository_dispatch:
     types:
