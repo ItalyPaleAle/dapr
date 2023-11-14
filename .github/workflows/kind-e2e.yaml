@@ -222,14 +222,14 @@ jobs:
       if: always()
       uses: actions/upload-artifact@master
       with:
-        name: ${{ matrix.k8s-version }}_container_logs
+        name: ${{ matrix.actors }}_container_logs
         path: ${{ env.DAPR_CONTAINER_LOG_PATH }}
 
     - name: Upload test logs
       if: always()
       uses: actions/upload-artifact@master
       with:
-        name: ${{ matrix.k8s-version }}_test_logs
+        name: ${{ matrix.actors }}_test_logs
         path: ${{ env.DAPR_TEST_LOG_PATH }}
 
     - name: Upload test results
@@ -237,5 +237,5 @@ jobs:
       uses: actions/upload-artifact@master
       with:
         #TODO: .json suffix can be removed from artifact name after test analytics scripts are updated
-        name: ${{ matrix.k8s-version }}_test_e2e.json
+        name: ${{ matrix.actors }}_test_e2e.json
         path: ${{ env.TEST_OUTPUT_FILE_PREFIX }}_e2e.*
