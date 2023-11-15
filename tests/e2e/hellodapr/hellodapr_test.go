@@ -104,7 +104,7 @@ func TestMain(m *testing.M) {
 			AppMemoryRequest:  "100Mi",
 		})
 	}
-	if os.Getenv("DAPR_TEST_N_MINUS_1_IMAGE") != "" && && os.Getenv("ACTORS_VERSION") != "v2" {
+	if os.Getenv("DAPR_TEST_N_MINUS_1_IMAGE") != "" && os.Getenv("ACTORS_VERSION") != "v2" {
 		testApps = append(testApps, kube.AppDescription{
 			AppName:           "hellon1dapr",
 			DaprEnabled:       true,
@@ -150,14 +150,14 @@ func TestHelloDapr(t *testing.T) {
 			"hellon2dapr",
 			"blue",
 			"Hello blue dapr!",
-			os.Getenv("DAPR_TEST_N_MINUS_2_IMAGE") != "" && !skipMixedTests,
+			os.Getenv("DAPR_TEST_N_MINUS_2_IMAGE") != "" && os.Getenv("ACTORS_VERSION") != "v2",
 		},
 		{
 			"n minus 1",
 			"hellon1dapr",
 			"blue",
 			"Hello blue dapr!",
-			os.Getenv("DAPR_TEST_N_MINUS_1_IMAGE") != "" && !skipMixedTests,
+			os.Getenv("DAPR_TEST_N_MINUS_1_IMAGE") != "" && os.Getenv("ACTORS_VERSION") != "v2",
 		},
 		{
 			"envTest dapr",
