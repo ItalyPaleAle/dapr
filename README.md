@@ -6,6 +6,43 @@ This repository currently contains a fork of [Dapr](https://github.com/dapr/dapr
 
 ## How to run Project Emmy
 
+In Kubernetes, Project Emmy can be installed using Helm.
+
+First, create a Kubernetes secret where you store the connection string for Postgres.
+
+```sh
+# These values are valid for the Postgres deployed by the Dapr tests
+echo -n "connectionString=host=dapr-postgres-postgresql.dapr-tests.svc.cluster.local user=postgres password=example port=5432 connect_timeout=10 database=dapr_test" > postgres
+kubectl create secret generic postgres-actors -n dapr-tests --from-file=postgres
+```
+
+You can then install Project Emmy using Helm. Make sure to set `globals.actors.v2=true`:
+
+```sh
+# Set version 0.0.0 to use the "edge" builds
+VERSION=0.0.0
+NAMESPACE=dapr-tests
+kubectl create namespace $NAMESPACE || true
+helm upgrade \
+  --install \
+  dapr \
+  --namespace=dapr-tests \
+  --wait --timeout 5m0s \
+  --set global.ha.enabled=false \
+  --set global.logAsJson=true \
+  --set global.mtls.enabled=true \
+  --set global.actors.v2=true \
+  --set dapr_actors.logLevel=debug \
+  --set dapr_actors.store.name=postgresql \
+  --set dapr_actors.store.optionsFile.secretName=postgres-actors \
+  --set dapr_actors.store.optionsFile.secretKey=postgres \
+  --set dapr_actors.replicaCount=2 \
+  oci://ghcr.io/microsoft/project-emmy/chart/dapr \
+  --version $VERSION
+```
+
+## Building and running from source
+
 ### Clone the code
 
 First, clone the repositories:
