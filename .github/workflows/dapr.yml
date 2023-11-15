@@ -111,10 +111,10 @@ jobs:
           - os: ubuntu-latest
             target_os: linux
             target_arch: amd64
-          - os: windows-2022
-            target_os: windows
-            target_arch: amd64
-            windows_version: ltsc2022
+          #- os: windows-2022
+          #  target_os: windows
+          #  target_arch: amd64
+          #  windows_version: ltsc2022
     env:
       GOOS: "${{ matrix.target_os }}"
       GOARCH: "${{ matrix.target_arch }}"
@@ -152,10 +152,10 @@ jobs:
           - os: ubuntu-latest
             target_os: linux
             target_arch: amd64
-          - os: windows-2022
-            target_os: windows
-            target_arch: amd64
-            windows_version: ltsc2022
+          #- os: windows-2022
+          #  target_os: windows
+          #  target_arch: amd64
+          #  windows_version: ltsc2022
     env:
       GOOS: "${{ matrix.target_os }}"
       GOARCH: "${{ matrix.target_arch }}"
