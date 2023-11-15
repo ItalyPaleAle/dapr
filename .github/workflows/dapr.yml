@@ -567,30 +567,22 @@ jobs:
           username: ${{ secrets.DOCKER_REGISTRY_ID }}
           password: ${{ secrets.DOCKER_REGISTRY_PASS }}
       - name: GitHub Container Registry login
-        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Push Helm chart to Docker Hub
-        uses: appany/helm-oci-chart-releaser@v0.4.1
-        with:
-          name: dapr
-          repository: dapr/chart
-          tag: ${{ env.DAPR_VERSION_HELM }}
-          path: charts/dapr
-          registry: ${{ secrets.DOCKER_REGISTRY }}
-          registry_username: ${{ secrets.DOCKER_REGISTRY_ID }}
-          registry_password: ${{ secrets.DOCKER_REGISTRY_PASS }}
+        if: env.DOCKER_REGISTRY_ID != ''
+        run: |
+          helm registry login -u "${{ secrets.DOCKER_REGISTRY_ID }}" -p "${{ secrets.DOCKER_REGISTRY_PASS }}" "${{ secrets.DOCKER_REGISTRY }}"
+          helm push \
+            ${{ env.ARTIFACT_DIR }}/${{ env.HELM_PACKAGE_DIR }}/dapr-${{ env.DAPR_VERSION_HELM }}.tgz \
+            oci://${{ secrets.DOCKER_REGISTRY }}/chart
       - name: Push Helm chart to GHCR
-        uses: appany/helm-oci-chart-releaser@v0.4.1
-        with:
-          name: dapr
-          repository: dapr/chart
-          tag: ${{ env.DAPR_VERSION_HELM }}
-          path: charts/dapr
-          registry: ghcr.io
-          registry_username: ${{ secrets.repository_owner }}
-          registry_password: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          helm registry login -u "${{ github.repository_owner }}" -p "${{ secrets.GITHUB_TOKEN }}" ghcr.io
+          helm push \
+            ${{ env.ARTIFACT_DIR }}/${{ env.HELM_PACKAGE_DIR }}/dapr-${{ env.DAPR_VERSION_HELM }}.tgz \
+            oci://ghcr.io/${{ env.REPO_OWNER }}/chart
 
