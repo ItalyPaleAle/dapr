@@ -538,6 +538,12 @@ jobs:
         run: |
           mkdir -p ${{ env.ARTIFACT_DIR }}/${{ env.HELM_PACKAGE_DIR }}
           echo ${REL_VERSION} > ${{ env.ARTIFACT_DIR }}/${{ env.HELM_PACKAGE_DIR }}/${{ env.DAPR_VERSION_ARTIFACT }}
+
+          if [[ "$REL_VERSION" == "edge" || "$REL_VERSION" == "nightly"* ]]; then
+            echo "DAPR_VERSION_HELM=0.0.0" >>${GITHUB_ENV}
+          else
+          echo "DAPR_VERSION_HELM=$REL_VERSION" >>${GITHUB_ENV}
+          fi
       - name: Package Helm chart
         if: ${{ env.LATEST_RELEASE }} == "true" && env.DOCKER_REGISTRY != ''
         env:
@@ -572,7 +578,7 @@ jobs:
         with:
           name: dapr
           repository: dapr/chart
-          tag: ${{ env.REL_VERSION }}
+          tag: ${{ env.DAPR_VERSION_HELM }}
           path: charts/dapr
           registry: ${{ secrets.DOCKER_REGISTRY }}
           registry_username: ${{ secrets.DOCKER_REGISTRY_ID }}
@@ -582,7 +588,7 @@ jobs:
         with:
           name: dapr
           repository: dapr/chart
-          tag: ${{ env.REL_VERSION }}
+          tag: ${{ env.DAPR_VERSION_HELM }}
           path: charts/dapr
           registry: ghcr.io
           registry_username: ${{ secrets.repository_owner }}
