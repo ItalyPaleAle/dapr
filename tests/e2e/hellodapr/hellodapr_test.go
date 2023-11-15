@@ -40,10 +40,7 @@ type appResponse struct {
 
 const numHealthChecks = 60 // Number of times to check for endpoint health per app.
 
-var (
-	tr             *runner.TestRunner
-	skipMixedTests bool
-)
+var tr *runner.TestRunner
 
 func TestMain(m *testing.M) {
 	utils.SetupLogs("hellodapr")
@@ -93,8 +90,7 @@ func TestMain(m *testing.M) {
 	// Append test apps for Dapr versions N-2 and N-1 if present
 	// These are used to detect regressions in the control plane
 	// These tests are skipped when using actors v2
-	skipMixedTests = os.Getenv("ACTORS_VERSION") == "" || os.Getenv("ACTORS_VERSION") == "v1"
-	if os.Getenv("DAPR_TEST_N_MINUS_2_IMAGE") != "" && !skipMixedTests {
+	if os.Getenv("DAPR_TEST_N_MINUS_2_IMAGE") != "" && os.Getenv("ACTORS_VERSION") != "v2" {
 		testApps = append(testApps, kube.AppDescription{
 			AppName:           "hellon2dapr",
 			DaprEnabled:       true,
@@ -108,7 +104,7 @@ func TestMain(m *testing.M) {
 			AppMemoryRequest:  "100Mi",
 		})
 	}
-	if os.Getenv("DAPR_TEST_N_MINUS_1_IMAGE") != "" && !skipMixedTests {
+	if os.Getenv("DAPR_TEST_N_MINUS_1_IMAGE") != "" && && os.Getenv("ACTORS_VERSION") != "v2" {
 		testApps = append(testApps, kube.AppDescription{
 			AppName:           "hellon1dapr",
 			DaprEnabled:       true,
