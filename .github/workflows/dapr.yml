@@ -212,13 +212,13 @@ jobs:
             sidecar_flavor: "allcomponents"
     steps:
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v1
+        uses: docker/setup-qemu-action@v3
         if: matrix.target_os == 'linux' && github.event_name != 'pull_request'
         with:
           image: tonistiigi/binfmt:latest
           platforms: arm64
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
         if: matrix.target_os == 'linux' && github.event_name != 'pull_request'
         with:
           version: v0.10.1 # Don't use latest since it broke our workflow once
