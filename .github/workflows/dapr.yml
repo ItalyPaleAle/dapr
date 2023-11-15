@@ -573,7 +573,7 @@ jobs:
           name: dapr
           repository: dapr/chart
           tag: ${{ env.REL_VERSION }}
-          path: ${{ env.ARTIFACT_DIR }}/${{ env.HELM_PACKAGE_DIR }}/${{ env.DAPR_VERSION_ARTIFACT }}
+          path: charts/dapr
           registry: ${{ secrets.DOCKER_REGISTRY }}
           registry_username: ${{ secrets.DOCKER_REGISTRY_ID }}
           registry_password: ${{ secrets.DOCKER_REGISTRY_PASS }}
@@ -583,7 +583,7 @@ jobs:
           name: dapr
           repository: dapr/chart
           tag: ${{ env.REL_VERSION }}
-          path: ${{ env.ARTIFACT_DIR }}/${{ env.HELM_PACKAGE_DIR }}/${{ env.DAPR_VERSION_ARTIFACT }}
+          path: charts/dapr
           registry: ghcr.io
           registry_username: ${{ secrets.repository_owner }}
           registry_password: ${{ secrets.GITHUB_TOKEN }}
