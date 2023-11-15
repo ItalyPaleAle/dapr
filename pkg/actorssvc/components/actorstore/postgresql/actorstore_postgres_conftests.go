@@ -45,12 +45,18 @@ func (p *PostgreSQL) Cleanup() error {
 		}
 	}
 
-	// Functions and other resources
-	p.logger.Infof("Removing function %s", p.metadata.FunctionName(pgFunctionFetchReminders))
-	_, err := p.db.Exec(context.Background(), fmt.Sprintf("DROP FUNCTION IF EXISTS %s(interval,interval,uuid[],text[],interval,integer);", p.metadata.FunctionName(pgFunctionFetchReminders)))
-	if err != nil {
-		p.logger.Errorf("Failed to remove function fetch_reminders: %v", err)
-		errs = append(errs, err)
+	// Functions
+	for _, fn := range []string{
+		p.metadata.FunctionName(pgFunctionFetchReminders) + "(interval,interval,uuid[],text[],interval,integer)",
+		p.metadata.TablePrefix + "enforce_min_api_level()",
+		p.metadata.TablePrefix + "update_metadata_min_api_level()",
+	} {
+		p.logger.Infof("Removing function %s", fn)
+		_, err := p.db.Exec(context.Background(), fmt.Sprintf("DROP FUNCTION IF EXISTS %s;", fn))
+		if err != nil {
+			p.logger.Errorf("Failed to remove function %s: %v", fn, err)
+			errs = append(errs, err)
+		}
 	}
 
 	return errors.Join(errs...)

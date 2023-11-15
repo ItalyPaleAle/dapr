@@ -55,7 +55,7 @@ BEGIN
         WHERE
           %[5]s.host_id = hat.host_id
           AND rr.actor_type = hat.actor_type
-          AND rr.reminder_lease_time >= CURRENT_TIMESTAMP - lease_duration
+          AND rr.reminder_lease_time >= now() - lease_duration
       ) AS count,
       hat.actor_concurrent_reminders AS max
     FROM %[4]s AS hat
@@ -77,7 +77,7 @@ BEGIN
     SELECT
       rr.reminder_id,
       rr.actor_type, rr.actor_id, %[5]s.host_id,
-      EXTRACT(EPOCH FROM rr.reminder_execution_time - CURRENT_TIMESTAMP)::int AS reminder_delay,
+      EXTRACT(EPOCH FROM rr.reminder_execution_time - now())::int AS reminder_delay,
       row_number() OVER (
         PARTITION BY %[5]s.host_id, rr.actor_type ORDER BY rr.reminder_execution_time ASC
       ) AS row_number,
@@ -86,15 +86,15 @@ BEGIN
     LEFT JOIN %[5]s
       USING (actor_type, actor_id)
     LEFT JOIN %[3]s
-      ON %[5]s.host_id = %[3]s.host_id AND %[3]s.host_last_healthcheck >= CURRENT_TIMESTAMP - health_check_interval
+      ON %[5]s.host_id = %[3]s.host_id AND %[3]s.host_last_healthcheck >= now() - health_check_interval
     LEFT JOIN temp_capacities
       ON %[3]s.host_id = temp_capacities.host_id AND rr.actor_type = temp_capacities.actor_type
     WHERE 
-      rr.reminder_execution_time < CURRENT_TIMESTAMP + fetch_ahead_interval
+      rr.reminder_execution_time < now() + fetch_ahead_interval
       AND (
         rr.reminder_lease_id IS NULL
         OR rr.reminder_lease_time IS NULL
-        OR rr.reminder_lease_time < CURRENT_TIMESTAMP - lease_duration
+        OR rr.reminder_lease_time < now() - lease_duration
       )
       AND (
         (
@@ -163,7 +163,7 @@ BEGIN
     INSERT INTO %[5]s
       (actor_type, actor_id, host_id, actor_activation, actor_idle_timeout)
     SELECT 
-      r.actor_type, r.actor_id, a_host_id, (CURRENT_TIMESTAMP + GREATEST(r.reminder_delay, 0) * interval '1 second'),
+      r.actor_type, r.actor_id, a_host_id, (now() + GREATEST(r.reminder_delay, 0) * interval '1 second'),
       (
         SELECT hat.actor_idle_timeout
         FROM %[4]s AS hat

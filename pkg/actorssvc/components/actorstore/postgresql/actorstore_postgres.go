@@ -113,7 +113,7 @@ func (p *PostgreSQL) performMigrations(ctx context.Context) error {
 		func(ctx context.Context) error {
 			p.logger.Infof("Creating tables for actors state. Hosts table: '%s'. Hosts actor types table: '%s'. Actors table: '%s'", hostsTable, hostsActorTypesTable, actorsTable)
 			_, err := p.db.Exec(ctx,
-				fmt.Sprintf(migration1Query, hostsTable, hostsActorTypesTable, actorsTable),
+				fmt.Sprintf(migration1Query, hostsTable, hostsActorTypesTable, actorsTable, p.metadata.MetadataTableName, p.metadata.TablePrefix),
 			)
 			if err != nil {
 				return fmt.Errorf("failed to create actors state tables: %w", err)
