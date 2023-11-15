@@ -58,6 +58,7 @@ jobs:
       DAPR_TAG: dev
       DAPR_NAMESPACE: dapr-tests
       # Useful for upgrade/downgrade/compatibility tests
+      # (These tests don't run when Actors v2 is used)
       # TODO: Make this auto-populated based on GitHub's releases.
       DAPR_TEST_N_MINUS_1_IMAGE: "ghcr.io/dapr/daprd:1.12.0"
       DAPR_TEST_N_MINUS_2_IMAGE: "ghcr.io/dapr/daprd:1.11.5"
@@ -148,9 +149,9 @@ jobs:
         docker network connect "kind" $REGISTRY_NAME
 
     - name: Setup Helm
-      uses: azure/setup-helm@v1
+      uses: azure/setup-helm@v3
       with:
-        version: v3.3.4
+        version: v3.13.2
 
     - name: Build and push Dapr
       run: |
@@ -205,6 +206,11 @@ jobs:
 
     - name: Run tests
       run: |
+        # Disable mixed-version test when Actors v2 are enabled
+        if [[ "${{ matrix.actors }}" == "v2" ]]; then
+          export DAPR_TEST_N_MINUS_1_IMAGE=""
+          export DAPR_TEST_N_MINUS_2_IMAGE=""
+        fi
         make test-e2e-all
 
     - name: Save control plane logs
