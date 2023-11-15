@@ -369,16 +369,6 @@ jobs:
         with:
           name: dapr_windows_amd64_allcomponents
           path: ${{ env.ARTIFACT_DIR }}
-      - name: "download artifact: dapr_darwin_amd64_allcomponents"
-        uses: actions/download-artifact@master
-        with:
-          name: dapr_darwin_amd64_allcomponents
-          path: ${{ env.ARTIFACT_DIR }}
-      - name: "download artifact: dapr_darwin_arm64_allcomponents"
-        uses: actions/download-artifact@master
-        with:
-          name: dapr_darwin_arm64_allcomponents
-          path: ${{ env.ARTIFACT_DIR }}
       - name: "download artifact: dapr_grafana_dashboards"
         uses: actions/download-artifact@master
         with:
