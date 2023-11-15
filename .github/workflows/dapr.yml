@@ -314,7 +314,7 @@ jobs:
       - name: Build and push Docker images to GHCR
         if: matrix.target_os != 'darwin' && github.event_name != 'pull_request'
         env:
-          DAPR_REGISTRY: ghcr.io/${{ env.REPO_OWNER }}
+          DAPR_REGISTRY: ghcr.io/${{ env.REPO_OWNER }}/project-emmy
           TARGET_OS: ${{ matrix.target_os }}
           TARGET_ARCH: ${{ matrix.target_arch }}
           WINDOWS_VERSION: ${{ matrix.windows_version }}
@@ -475,14 +475,14 @@ jobs:
         shell: bash
       - name: Build and push Docker multiarch manifest to GHCR
         env:
-          DAPR_REGISTRY: ghcr.io/${{ env.REPO_OWNER }}
+          DAPR_REGISTRY: ghcr.io/${{ env.REPO_OWNER }}/project-emmy
         run: |
           echo "Build Docker multiarch manifest and push to GHCR"
           DAPR_TAG="${{ env.REL_VERSION }}" make docker-publish
       - name: Build and push Docker multiarch Windows manifest to GHCR
         if: matrix.sidecar_flavor == 'allcomponents'
         env:
-          DAPR_REGISTRY: ghcr.io/${{ env.REPO_OWNER }}
+          DAPR_REGISTRY: ghcr.io/${{ env.REPO_OWNER }}/project-emmy
         run: |
           # Publish the `-windows-amd64` manifest.
           # Note, the "latest" tag from the previous step already contains 
@@ -584,5 +584,5 @@ jobs:
           helm registry login -u "${{ github.repository_owner }}" -p "${{ secrets.GITHUB_TOKEN }}" ghcr.io
           helm push \
             ${{ env.ARTIFACT_DIR }}/${{ env.HELM_PACKAGE_DIR }}/dapr-${{ env.DAPR_VERSION_HELM }}.tgz \
-            oci://ghcr.io/${{ env.REPO_OWNER }}/chart
+            oci://ghcr.io/${{ env.REPO_OWNER }}/project-emmy/chart
 
