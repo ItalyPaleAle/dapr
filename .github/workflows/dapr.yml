@@ -174,7 +174,6 @@ jobs:
   build:
     name: "Build artifacts on ${{ matrix.job_name }} - ${{ matrix.sidecar_flavor }}"
     runs-on: "${{ matrix.os }}"
-    needs: [lint, unit-tests, integration-tests]
     env:
       GOOS: "${{ matrix.target_os }}"
       GOARCH: "${{ matrix.target_arch }}"
@@ -331,7 +330,7 @@ jobs:
         shell: bash
   publish:
     name: Publish binaries
-    needs: build
+    needs: [lint, unit-tests, integration-tests, build]
     if: github.event_name != 'pull_request'
     env:
       ARTIFACT_DIR: ./release
@@ -406,7 +405,7 @@ jobs:
         shell: bash
   docker-publish:
     name: Publish docker images
-    needs: build
+    needs: [lint, unit-tests, integration-tests, build]
     if: github.event_name != 'pull_request'
     env:
       DOCKER_REGISTRY: ${{ secrets.DOCKER_REGISTRY }}
