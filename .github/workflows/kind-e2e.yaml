@@ -49,7 +49,7 @@ jobs:
   # not intended to be a complete replacement for our AKS-based E2E
   # workflows.
   e2e:
-    name: e2e
+    name: e2e with actors ${{ matrix.actors }}
     runs-on: ubuntu-latest
     env:
       REGISTRY_PORT: 5000
@@ -68,6 +68,7 @@ jobs:
       K8S_VERSION: v1.27.3
       KIND_VERSION: v0.20.0
       DAPR_TEST_CONFIG_STORE: postgres
+      ACTORS_VERSION: ${{ matrix.actors }}
     strategy:
       fail-fast: false # Keep running if one leg fails.
       matrix:
@@ -206,11 +207,6 @@ jobs:
 
     - name: Run tests
       run: |
-        # Disable mixed-version test when Actors v2 are enabled
-        if [[ "${{ matrix.actors }}" == "v2" ]]; then
-          export DAPR_TEST_N_MINUS_1_IMAGE=""
-          export DAPR_TEST_N_MINUS_2_IMAGE=""
-        fi
         make test-e2e-all
 
     - name: Save control plane logs

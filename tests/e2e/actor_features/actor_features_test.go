@@ -799,7 +799,11 @@ func TestActorFeatures(t *testing.T) {
 		close(quit)
 	})
 
-	t.Run("Actor rebalance to another hostname.", func(t *testing.T) {
+	t.Run("Actor rebalance to another hostname", func(t *testing.T) {
+		if os.Getenv("ACTORS_VERSION") == "v2" {
+			t.Skipf("Skipping actor rebalancing test when using actors v2")
+		}
+
 		// Each test needs to have a different actorID
 		actorIDBase := "1006Instance"
 
