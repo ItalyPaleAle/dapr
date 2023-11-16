@@ -210,7 +210,7 @@ jobs:
 
     - name: Run setup script
       if: matrix.setup-script != ''
-      run: .github/scripts/components-scripts/${{ matrix.setup-script }}
+      run: .github/components-scripts/${{ matrix.setup-script }}
 
     - name: Catch setup failures
       if: failure()
