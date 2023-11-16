@@ -27,7 +27,7 @@ import (
 )
 
 func TestActorStoreConformance(t *testing.T) {
-	const configPath = "../config/actorstore/"
+	const configPath = "./config/actorstore/"
 	tc, err := NewTestConfiguration(filepath.Join(configPath, "tests.yml"))
 	require.NoError(t, err)
 	require.NotNil(t, tc)
