@@ -6,7 +6,7 @@ import { writeFileSync } from 'node:fs'
  * @type {Record<string,ComponentTestProperties>}
  */
 const components = {
-    'state.postgresql.docker': {
+    'actorstore.postgresql': {
         conformance: true,
         conformanceSetup: 'docker-compose.sh postgresql',
     },
