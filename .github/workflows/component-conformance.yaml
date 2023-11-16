@@ -17,13 +17,18 @@ on:
   workflow_dispatch:
   push:
     branches:
+      - 'main'
+      - 'master'
       - 'release-*'
       - 'gh-readonly-queue/main/*'
+      - 'gh-readonly-queue/master/*'
   pull_request:
     branches:
       - 'main'
+      - 'master'
       - 'release-*'
       - 'gh-readonly-queue/main/*'
+      - 'gh-readonly-queue/master/*'
   merge_group:
 
 jobs:
