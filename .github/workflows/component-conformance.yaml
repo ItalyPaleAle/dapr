@@ -229,11 +229,11 @@ jobs:
           KIND_UPPER=SecretStore
         fi
         if [ "${KIND}" = "actorstore" ]; then
-          KIND_UPPER=ActoreStore
+          KIND_UPPER=ActorStore
         fi
 
-        echo "Running tests for Test${KIND_UPPER}Conformance/${KIND}/${NAME} ... "
-        echo "Source Pacakge: " ${{ matrix.source-pkg }}
+        echo "Running tests for Test${KIND_UPPER}Conformance//${NAME} ... "
+        echo "Source Pacakge: ${{ matrix.source-pkg }}"
 
         set +e
         gotestsum --jsonfile ${{ env.TEST_OUTPUT_FILE_PREFIX }}_conformance.json \
@@ -242,7 +242,7 @@ jobs:
           -covermode=set -coverpkg=${{ matrix.source-pkg }}
 
         status=$?
-        echo "Completed tests for Test${KIND_UPPER}Conformance/${KIND}/${NAME} ... "
+        echo "Completed tests for Test${KIND_UPPER}Conformance/${NAME} ... "
         if test $status -ne 0; then
           echo "Setting CONFORMANCE_FAILURE"
           echo "CONFORMANCE_FAILURE=true" >> $GITHUB_ENV
@@ -316,7 +316,7 @@ jobs:
 
     - name: Run destroy script
       if: always() && matrix.destroy-script != ''
-      run: .github/scripts/components-scripts/${{ matrix.destroy-script }}
+      run: .github/components-scripts/${{ matrix.destroy-script }}
 
   post_job:
     name: Post-completion
