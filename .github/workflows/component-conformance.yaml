@@ -189,15 +189,17 @@ jobs:
       uses: actions/setup-go@v4
       with:
         go-version-file: 'go.mod'
+        # Disable caching here, as we only use a subset of the modules used by the repo
+        cache: false
 
     - name: Install Node.js ${{ matrix.nodejs-version }}
       if: matrix.nodejs-version != ''
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.nodejs-version }}
 
     - name: Start KinD
-      uses: helm/kind-action@v1.5.0
+      uses: helm/kind-action@v1.8.0
       if: matrix.require-kind == 'true'
 
     - name: Download Go dependencies
