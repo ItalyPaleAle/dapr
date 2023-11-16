@@ -51,12 +51,12 @@ var (
 // The additional "WHERE" in the "ON CONFLICT" clause is to prevent race conditions with other callers executing the same INSERT ... ON CONFLICT DO UPDATE at the same time
 const lookupActorQuery = `WITH new_row AS (
   INSERT INTO %[3]s (actor_type, actor_id, host_id, actor_idle_timeout, actor_activation)
-    SELECT $1, $2, %[2]s.host_id, %[2]s.actor_idle_timeout, CURRENT_TIMESTAMP
+    SELECT $1, $2, %[2]s.host_id, %[2]s.actor_idle_timeout, now()
       FROM %[2]s, %[1]s
       WHERE
         %[2]s.actor_type = $1
         AND %[1]s.host_id = %[2]s.host_id
-        AND %[1]s.host_last_healthcheck >= CURRENT_TIMESTAMP - $3::interval
+        AND %[1]s.host_last_healthcheck >= now() - $3::interval
         AND NOT EXISTS (
           SELECT %[3]s.host_id
             FROM %[3]s, %[1]s
@@ -64,7 +64,7 @@ const lookupActorQuery = `WITH new_row AS (
               %[3]s.actor_type = $1
               AND %[3]s.actor_id = $2
               AND %[3]s.host_id = %[1]s.host_id
-              AND %[1]s.host_last_healthcheck >= CURRENT_TIMESTAMP - $3::interval
+              AND %[1]s.host_last_healthcheck >= now() - $3::interval
         )
       ORDER BY random() LIMIT 1
     ON CONFLICT (actor_type, actor_id) DO UPDATE
@@ -76,7 +76,7 @@ const lookupActorQuery = `WITH new_row AS (
             FROM %[1]s
             WHERE
               %[3]s.host_id = %[1]s.host_id
-              AND %[1]s.host_last_healthcheck < CURRENT_TIMESTAMP - $3::interval
+              AND %[1]s.host_last_healthcheck < now() - $3::interval
         )
     RETURNING host_id, actor_idle_timeout
 )
@@ -87,13 +87,13 @@ const lookupActorQuery = `WITH new_row AS (
       %[3]s.actor_type = $1
       AND %[3]s.actor_id = $2
       AND %[3]s.host_id = %[1]s.host_id
-      AND %[1]s.host_last_healthcheck >= CURRENT_TIMESTAMP - $3::interval
+      AND %[1]s.host_last_healthcheck >= now() - $3::interval
   UNION ALL
   SELECT %[1]s.host_id, %[1]s.host_app_id, %[1]s.host_address, new_row.actor_idle_timeout
     FROM new_row, %[1]s
     WHERE
       new_row.host_id = %[1]s.host_id
-      AND %[1]s.host_last_healthcheck >= CURRENT_TIMESTAMP - $3::interval
+      AND %[1]s.host_last_healthcheck >= now() - $3::interval
 ) LIMIT 1;`
 
 // Query for looking up an actor, or creating it ex novo, but limited to a set of host IDs.
@@ -104,13 +104,13 @@ const lookupActorQuery = `WITH new_row AS (
 // 4. IDs of actor hosts on which the actor could be activated, as a `string[]`
 const lookupActorQueryWithHostRestriction = `WITH new_row AS (
   INSERT INTO %[3]s (actor_type, actor_id, host_id, actor_idle_timeout, actor_activation)
-    SELECT $1, $2, %[2]s.host_id, %[2]s.actor_idle_timeout, CURRENT_TIMESTAMP
+    SELECT $1, $2, %[2]s.host_id, %[2]s.actor_idle_timeout, now()
       FROM %[2]s, %[1]s
       WHERE
         %[2]s.actor_type = $1
         AND %[1]s.host_id = %[2]s.host_id
         AND %[1]s.host_id = ANY($4)
-        AND %[1]s.host_last_healthcheck >= CURRENT_TIMESTAMP - $3::interval
+        AND %[1]s.host_last_healthcheck >= now() - $3::interval
         AND NOT EXISTS (
           SELECT %[3]s.host_id
             FROM %[3]s, %[1]s
@@ -118,7 +118,7 @@ const lookupActorQueryWithHostRestriction = `WITH new_row AS (
               %[3]s.actor_type = $1
               AND %[3]s.actor_id = $2
               AND %[3]s.host_id = %[1]s.host_id
-              AND %[1]s.host_last_healthcheck >= CURRENT_TIMESTAMP - $3::interval
+              AND %[1]s.host_last_healthcheck >= now() - $3::interval
         )
       ORDER BY random() LIMIT 1
     ON CONFLICT (actor_type, actor_id) DO UPDATE
@@ -130,7 +130,7 @@ const lookupActorQueryWithHostRestriction = `WITH new_row AS (
             FROM %[1]s
             WHERE
               %[3]s.host_id = %[1]s.host_id
-              AND %[1]s.host_last_healthcheck < CURRENT_TIMESTAMP - $3::interval
+              AND %[1]s.host_last_healthcheck < now() - $3::interval
         )
     RETURNING host_id, actor_idle_timeout
 )
@@ -142,13 +142,13 @@ const lookupActorQueryWithHostRestriction = `WITH new_row AS (
       AND %[3]s.actor_id = $2
       AND %[3]s.host_id = %[1]s.host_id
       AND %[1]s.host_id = ANY($4)
-      AND %[1]s.host_last_healthcheck >= CURRENT_TIMESTAMP - $3::interval
+      AND %[1]s.host_last_healthcheck >= now() - $3::interval
   UNION ALL
   SELECT %[1]s.host_id, %[1]s.host_app_id, %[1]s.host_address, new_row.actor_idle_timeout
     FROM new_row, %[1]s
     WHERE
       new_row.host_id = %[1]s.host_id
-      AND %[1]s.host_last_healthcheck >= CURRENT_TIMESTAMP - $3::interval
+      AND %[1]s.host_last_healthcheck >= now() - $3::interval
 ) LIMIT 1;`
 
 // Query for fetching the upcoming reminders.
@@ -175,14 +175,14 @@ const remindersFetchQuery = `
 UPDATE %[1]s
 SET
     reminder_lease_id = gen_random_uuid(),
-    reminder_lease_time = CURRENT_TIMESTAMP,
+    reminder_lease_time = now(),
     reminder_lease_pid = $7
 WHERE reminder_id IN (
     SELECT * FROM %[3]s($1, $2, $3, $4, $5, $6)
 )
 RETURNING
     reminder_id, actor_type, actor_id, reminder_name,
-    EXTRACT(EPOCH FROM reminder_execution_time - CURRENT_TIMESTAMP)::int,
+    EXTRACT(EPOCH FROM reminder_execution_time - now())::int,
     reminder_lease_id
 `
 
@@ -209,7 +209,7 @@ RETURNING
 const createReminderWithLeaseQuery = `WITH c AS (
   SELECT
       gen_random_uuid() AS reminder_lease_id,
-      CURRENT_TIMESTAMP AS reminder_lease_time,
+      now() AS reminder_lease_time,
       $8 AS reminder_lease_pid
   FROM %[2]s
   WHERE
@@ -240,7 +240,7 @@ const createReminderWithLeaseQuery = `WITH c AS (
 INSERT INTO %[1]s
     (actor_type, actor_id, reminder_name, reminder_execution_time, reminder_period, reminder_ttl, reminder_data, reminder_lease_id, reminder_lease_time, reminder_lease_pid)
   SELECT
-    $1, $2, $3, CURRENT_TIMESTAMP + $4::interval, $5, $6, $7, lease.reminder_lease_id, lease.reminder_lease_time, lease.reminder_lease_pid
+    $1, $2, $3, now() + $4::interval, $5, $6, $7, lease.reminder_lease_id, lease.reminder_lease_time, lease.reminder_lease_pid
   FROM lease
   ON CONFLICT (actor_type, actor_id, reminder_name) DO UPDATE SET
     reminder_execution_time = EXCLUDED.reminder_execution_time,
@@ -251,6 +251,6 @@ INSERT INTO %[1]s
     reminder_lease_time = EXCLUDED.reminder_lease_time,
     reminder_lease_pid = EXCLUDED.reminder_lease_pid
   RETURNING reminder_id, actor_type, actor_id, reminder_name,
-    EXTRACT(EPOCH FROM reminder_execution_time - CURRENT_TIMESTAMP)::int,
+    EXTRACT(EPOCH FROM reminder_execution_time - now())::int,
     reminder_lease_id;
 `

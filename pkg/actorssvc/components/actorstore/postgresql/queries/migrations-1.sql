@@ -50,11 +50,11 @@ RETURNS trigger
 AS $func$
 BEGIN
   INSERT INTO %[4]s ("key", "value")
-    SELECT 'actors-api-level', MIN(host_actors_api_level)
+    SELECT 'actors-api-level', COALESCE(MIN(host_actors_api_level), 0)
     FROM %[1]s
   ON CONFLICT ("key") DO UPDATE
     SET value = EXCLUDED.value
-    WHERE EXCLUDED.value > %[4]s.value;
+    WHERE EXCLUDED.value::integer > COALESCE(%[4]s.value, '0')::integer;
   RETURN NULL;
 END;
 $func$ LANGUAGE plpgsql;
@@ -75,8 +75,11 @@ CREATE TRIGGER %[5]supdate_metadata_min_api_level_delete_trigger
 CREATE FUNCTION %[5]senforce_min_api_level()
 RETURNS trigger
 AS $func$
+DECLARE
+  current_version INTEGER;
 BEGIN
-  IF (NEW.host_actors_api_level < (SELECT COALESCE("value", '0')::integer FROM %[4]s WHERE "key" = 'actors-api-level')) THEN
+  SELECT COALESCE("value", '0')::integer INTO current_version FROM %[4]s WHERE "key" = 'actors-api-level';
+  IF NEW.host_actors_api_level < current_version THEN
     RAISE EXCEPTION 'Value of column host_actors_api_level is lower than the current API level in the cluster';
   END IF;
   RETURN NEW;

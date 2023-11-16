@@ -508,6 +508,8 @@ func (a *ActorClient) connectHostHandshake(stream actorsv1pb.Actors_ConnectHostC
 	select {
 	case <-ctx.Done():
 		return nil, fmt.Errorf("timed out waiting for a response from ConnectHost registration message: %w", ctx.Err())
+	case err = <-errCh:
+		return nil, fmt.Errorf("error from actors service: %w", err)
 	case msg := <-msgCh:
 		// Ensure required fields are present
 		err = msg.Validate()

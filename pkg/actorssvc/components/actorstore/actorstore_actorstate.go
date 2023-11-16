@@ -22,6 +22,9 @@ var (
 	// ErrActorHostConflict is returned by AddActorHost when a host is already registered at the same address.
 	ErrActorHostConflict = errors.New("an actor host is already registered at the same address")
 
+	// ErrActorHostAPILevelTooLow is returned by AddActorHost when a host's actor API level is lower than what's in use in the cluster.
+	ErrActorHostAPILevelTooLow = errors.New("the actor API level of this host is lower than the cluster's")
+
 	// ErrActorHostNotFound is returned by RemoveActorHost and UpdateActorHost when the host doesn't exist.
 	ErrActorHostNotFound = errors.New("actor host not found")
 

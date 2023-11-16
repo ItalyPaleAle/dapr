@@ -48,7 +48,7 @@ func (p *PostgreSQL) AddActorHost(ctx context.Context, properties actorstore.Add
 			fmt.Sprintf(
 				`DELETE FROM %s WHERE
 					(host_address = $1 AND host_app_id = $2)
-        			OR host_last_healthcheck < CURRENT_TIMESTAMP - $3::interval`,
+        			OR host_last_healthcheck < now() - $3::interval`,
 				hostsTable,
 			),
 			properties.Address, properties.AppID, p.metadata.Config.FailedInterval(),
@@ -66,17 +66,21 @@ func (p *PostgreSQL) AddActorHost(ctx context.Context, properties actorstore.Add
 				`INSERT INTO %s
 					(host_address, host_app_id, host_actors_api_level, host_last_healthcheck)
 				VALUES
-					($1, $2, $3, CURRENT_TIMESTAMP)
+					($1, $2, $3, now())
 				RETURNING host_id`,
 				hostsTable,
 			),
 			properties.Address, properties.AppID, properties.APILevel,
 		).Scan(&hostID)
 		if err != nil {
-			if isUniqueViolationError(err) {
+			switch {
+			case isUniqueViolationError(err):
 				return "", actorstore.ErrActorHostConflict
+			case isActorHostAPILevelTooLowError(err):
+				return "", actorstore.ErrActorHostAPILevelTooLow
+			default:
+				return "", fmt.Errorf("failed to insert actor host in hosts table: %w", err)
 			}
-			return "", fmt.Errorf("failed to insert actor host in hosts table: %w", err)
 		}
 
 		// Register each supported actor type
@@ -195,10 +199,10 @@ func updateHostsTable(ctx context.Context, db pginterfaces.DBQuerier, actorHostI
 	res, err := db.Exec(queryCtx,
 		fmt.Sprintf(`UPDATE %s
 			SET
-				host_last_healthcheck = CURRENT_TIMESTAMP
+				host_last_healthcheck = now()
 			WHERE
 				host_id = $1 AND
-				host_last_healthcheck >= CURRENT_TIMESTAMP - $2::interval
+				host_last_healthcheck >= now() - $2::interval
 			`, hostsTable),
 		actorHostID, failedInterval,
 	)
