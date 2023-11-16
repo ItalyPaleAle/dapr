@@ -21,7 +21,11 @@ import (
 	"fmt"
 	"time"
 
+	// Blank embed for the import package.
+	_ "embed"
+
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/dapr/dapr/pkg/actorssvc/components/actorstore"
 )
@@ -31,8 +35,34 @@ This file contains additional methods that are only used for testing.
 It is compiled only when the "conftests" tag is enabled
 */
 
-// Cleanup performs a cleanup of test resources.
-func (p *PostgreSQL) Cleanup() error {
+//go:emnbed queries/setup-conformance-tests.sql
+var confTestsSetupQueries string
+
+func init() {
+	modifyConfigFn = func(p *PostgreSQL, config *pgxpool.Config) {
+		// After each connection, we need to set the search order to allow overriding the now() method
+		config.AfterConnect = func(ctx context.Context, c *pgx.Conn) error {
+			p.logger.Debugf("Override search_path in new connection")
+			_, err := c.Exec(context.Background(), `
+SET SESSION search_path = override, pg_catalog, public;
+SET schema 'public';
+`)
+			if err != nil {
+				return fmt.Errorf("failed to set search_path: %w", err)
+			}
+			return nil
+		}
+	}
+}
+
+// SetupConformanceTests performs the setup of test resources.
+func (p *PostgreSQL) SetupConformanceTests() error {
+	_, err := p.db.Exec(context.Background(), confTestsSetupQueries)
+	return err
+}
+
+// CleanupConformanceTests performs the cleanup of test resources.
+func (p *PostgreSQL) CleanupConformanceTests() error {
 	errs := []error{}
 
 	// Tables

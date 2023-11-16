@@ -59,7 +59,10 @@ func ConformanceTests(t *testing.T, props map[string]string, store actorstore.St
 				Properties: props,
 			},
 		})
-		require.NoError(t, err)
+		require.NoError(t, err, "Failed to init")
+
+		err = store.SetupConformanceTests()
+		require.NoError(t, err, "Failed to set up for conformance tests")
 	})
 
 	require.False(t, t.Failed(), "Cannot continue if 'Init' test has failed")
@@ -71,7 +74,7 @@ func ConformanceTests(t *testing.T, props map[string]string, store actorstore.St
 			return
 		}
 
-		cleanupErr := store.Cleanup()
+		cleanupErr := store.CleanupConformanceTests()
 		assert.NoError(t, cleanupErr)
 		cleanupDone = true
 	}

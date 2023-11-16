@@ -32,6 +32,9 @@ import (
 	"github.com/dapr/kit/logger"
 )
 
+// Used in tests to allow modifying the connection's configuration object
+var modifyConfigFn func(p *PostgreSQL, config *pgxpool.Config)
+
 // NewPostgreSQLActorStore creates a new instance of an actor store backed by PostgreSQL
 func NewPostgreSQLActorStore(logger logger.Logger) actorstore.Store {
 	return &PostgreSQL{
@@ -63,6 +66,11 @@ func (p *PostgreSQL) Init(ctx context.Context, md actorstore.Metadata) error {
 	if err != nil {
 		p.logger.Error(err)
 		return err
+	}
+
+	// Allow modifying the config object when running tests
+	if modifyConfigFn != nil {
+		modifyConfigFn(p, config)
 	}
 
 	connCtx, connCancel := context.WithTimeout(ctx, p.metadata.Timeout)
