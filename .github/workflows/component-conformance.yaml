@@ -228,6 +228,9 @@ jobs:
         if [ "${KIND}" = "secretstores" ]; then
           KIND_UPPER=SecretStore
         fi
+        if [ "${KIND}" = "actorstore" ]; then
+          KIND_UPPER=ActoreStore
+        fi
 
         echo "Running tests for Test${KIND_UPPER}Conformance/${KIND}/${NAME} ... "
         echo "Source Pacakge: " ${{ matrix.source-pkg }}
