@@ -90,7 +90,7 @@ BEGIN
     LEFT JOIN temp_capacities
       ON %[3]s.host_id = temp_capacities.host_id AND rr.actor_type = temp_capacities.actor_type
     WHERE 
-      rr.reminder_execution_time < now() + fetch_ahead_interval
+      rr.reminder_execution_time <= now() + fetch_ahead_interval
       AND (
         rr.reminder_lease_id IS NULL
         OR rr.reminder_lease_time IS NULL

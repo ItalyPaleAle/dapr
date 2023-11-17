@@ -16,7 +16,11 @@ limitations under the License.
 package actorstore
 
 import (
+	"fmt"
+	"strings"
 	"time"
+
+	"golang.org/x/exp/slices"
 )
 
 // StoreConfTests is defined here to include the methods that are to be implemented for conftests.
@@ -30,10 +34,10 @@ type StoreConfTests interface {
 	CleanupConformanceTests() error
 
 	// GetAllHosts returns the entire list of hosts in the database.
-	GetAllHosts() (map[string]TestDataHost, error)
+	GetAllHosts() (TestDataHosts, error)
 
 	// GetAllReminders returns the entire list of reminders in the database.
-	GetAllReminders() (map[string]TestDataReminder, error)
+	GetAllReminders() (TestDataReminders, error)
 
 	// LoadActorStateTestData loads all actor state test data in the databas
 	LoadActorStateTestData(testData TestData) error
@@ -52,8 +56,36 @@ type StoreConfTests interface {
 }
 
 type TestData struct {
-	Hosts     map[string]TestDataHost
-	Reminders map[string]TestDataReminder
+	Hosts     TestDataHosts
+	Reminders TestDataReminders
+}
+
+type TestDataHosts map[string]TestDataHost
+
+// String implements fmt.Stringer and is useful for debugging.
+func (t TestDataHosts) String() string {
+	s := make([]string, len(t))
+	i := 0
+	for k, v := range t {
+		s[i] = fmt.Sprintf("Host [id='%s' %v]", k, v)
+		i++
+	}
+	slices.Sort(s)
+	return strings.Join(s, "\n")
+}
+
+type TestDataReminders map[string]TestDataReminder
+
+// String implements fmt.Stringer and is useful for debugging.
+func (t TestDataReminders) String() string {
+	s := make([]string, len(t))
+	i := 0
+	for k, v := range t {
+		s[i] = fmt.Sprintf("Reminder [%s]", v.stringWithID(k))
+		i++
+	}
+	slices.Sort(s)
+	return strings.Join(s, "\n")
 }
 
 type TestDataHost struct {
@@ -69,10 +101,21 @@ func (t TestDataHost) IsActive(now time.Time, hostHealthCheckInterval time.Durat
 	return now.Sub(t.LastHealthCheck) < hostHealthCheckInterval
 }
 
+// String implements fmt.Stringer and is useful for debugging.
+func (t TestDataHost) String() string {
+	return fmt.Sprintf("host[address='%s' appID='%s' apiLevel='%d' lastHealthCheck='%v' actorTypes=[%v]]", t.Address, t.AppID, t.APILevel, t.LastHealthCheck, t.ActorTypes)
+}
+
 type TestDataActorType struct {
 	IdleTimeout              time.Duration
 	ActorIDs                 []string
 	ConcurrentRemindersLimit int
+}
+
+// String implements fmt.Stringer and is useful for debugging.
+func (t TestDataActorType) String() string {
+	actorIDs := strings.Join(t.ActorIDs, ",")
+	return fmt.Sprintf("actorType[actorIDs=[%s] idleTimeout='%v' concurrentRemindersLimit='%d']", actorIDs, t.IdleTimeout, t.ConcurrentRemindersLimit)
 }
 
 type TestDataReminder struct {
@@ -83,6 +126,22 @@ type TestDataReminder struct {
 	LeaseID       *string
 	LeaseTime     *time.Time
 	LeasePID      *string
+}
+
+// String implements fmt.Stringer and is useful for debugging.
+func (t TestDataReminder) String() string {
+	return t.stringWithID("")
+}
+
+func (t TestDataReminder) stringWithID(id string) string {
+	if id != "" {
+		id = " id='" + id + "'"
+	}
+	lease := "nil"
+	if t.LeaseID != nil {
+		lease = fmt.Sprintf("[id='%s' time='%v' pid='%s']", *t.LeaseID, *t.LeaseTime, *t.LeasePID)
+	}
+	return fmt.Sprintf("name='%s||%s||%s'%s executionTime='%v' lease=%v", t.ActorType, t.ActorID, t.Name, id, t.ExecutionTime, lease)
 }
 
 func (t TestData) HostsByActorType(now time.Time, hostHealthCheckInterval time.Duration) map[string][]string {

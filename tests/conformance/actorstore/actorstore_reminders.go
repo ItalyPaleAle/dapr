@@ -17,6 +17,7 @@ package actorstore
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -255,14 +256,19 @@ func remindersTest(store actorstore.Store) func(t *testing.T) {
 		})
 
 		t.Run("Fetch next reminders", func(t *testing.T) {
-			// Relooad reminder test data
-			// This way the delays are as close to test start time as possible
+			// Reload reminder test data
 			t.Run("Load test data", func(t *testing.T) {
-				require.NoError(t, store.LoadReminderTestData(GetTestData()), "Failed to load reminder test data")
+				td := GetTestData()
+				require.NoError(t, store.LoadActorStateTestData(td), "Failed to load actor store test data")
+				require.NoError(t, store.LoadReminderTestData(td), "Failed to load reminder test data")
 			})
 			require.False(t, t.Failed(), "Cannot continue if 'Load test data' test has failed")
 
+			// Subtract 1s as buffer
 			start := store.GetTime().Add(-1 * time.Second)
+
+			// Advance the time by 100ms
+			require.NoError(t, store.AdvanceTime(100*time.Millisecond))
 
 			t.Run("Fetching reminders", func(t *testing.T) {
 				req := actorstore.FetchNextRemindersRequest{
@@ -276,8 +282,8 @@ func remindersTest(store actorstore.Store) func(t *testing.T) {
 					foundKeys := make([]string, expectLen)
 					for i := 0; i < expectLen; i++ {
 						foundKeys[i] = res[i].Key()
-						assert.NotEmpty(t, res[i].Lease())
-						assert.GreaterOrEqualf(t, res[i].ScheduledTime().Unix(), start.Unix(), "Scheduled time=%v - current time=%v", res[i].ScheduledTime(), start)
+						assert.NotEmptyf(t, res[i].Lease(), "reminder=%s", res[i].Key())
+						assert.GreaterOrEqualf(t, res[i].ScheduledTime().Unix(), start.Unix(), "reminder=%s scheduledTime=%v currentTime=%v", res[i].Key(), res[i].ScheduledTime(), start)
 					}
 
 					assert.ElementsMatch(t, expect, foundKeys)
@@ -327,6 +333,8 @@ func remindersTest(store actorstore.Store) func(t *testing.T) {
 
 				// No point in continuing if the tests failed
 				require.False(t, t.Failed(), "Cannot continue if previous test failed")
+
+				fmt.Println(store.GetAllReminders())
 
 				t.Run("Fetch reminders for another host", func(t *testing.T) {
 					// There are 3 reminders that match this request, all overdue

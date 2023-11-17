@@ -123,10 +123,10 @@ func (p *PostgreSQL) CleanupConformanceTests() error {
 }
 
 // GetAllHosts returns the entire list of hosts in the database.
-func (p *PostgreSQL) GetAllHosts() (map[string]actorstore.TestDataHost, error) {
+func (p *PostgreSQL) GetAllHosts() (actorstore.TestDataHosts, error) {
 	// Use a transaction for consistency
 	return executeInTransaction(context.Background(), p.logger, p.db, time.Minute, func(ctx context.Context, tx pgx.Tx) (map[string]actorstore.TestDataHost, error) {
-		res := map[string]actorstore.TestDataHost{}
+		res := actorstore.TestDataHosts{}
 
 		// First, load all hosts
 		rows, err := tx.Query(ctx, "SELECT host_id, host_address, host_app_id, host_actors_api_level, host_last_healthcheck FROM "+p.metadata.TableName(pgTableHosts))
@@ -210,11 +210,11 @@ func (p *PostgreSQL) GetAllHosts() (map[string]actorstore.TestDataHost, error) {
 }
 
 // GetAllReminders returns the entire list of reminders in the database.
-func (p *PostgreSQL) GetAllReminders() (map[string]actorstore.TestDataReminder, error) {
-	res := map[string]actorstore.TestDataReminder{}
+func (p *PostgreSQL) GetAllReminders() (actorstore.TestDataReminders, error) {
+	res := actorstore.TestDataReminders{}
 
 	// First, load all hosts
-	rows, err := p.db.Query(context.Background(), "SELECT reminder_id, actor_type, actor_id, reminder_name, reminder_execution_time, reminder_lease_id, reminder_lease_time, reminder_lease_pid FROM "+p.metadata.TableName(pgTableReminders))
+	rows, err := p.db.Query(context.Background(), "SELECT reminder_id, actor_type, actor_id, reminder_name, reminder_execution_time - now(), reminder_lease_id, reminder_lease_time, reminder_lease_pid FROM "+p.metadata.TableName(pgTableReminders))
 	if err != nil {
 		return nil, fmt.Errorf("failed to load data from the reminders table: %w", err)
 	}
