@@ -26,6 +26,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	clocktesting "k8s.io/utils/clock/testing"
 
 	"github.com/dapr/dapr/pkg/actorssvc/components/actorstore"
 )
@@ -35,18 +36,16 @@ This file contains additional methods that are only used for testing.
 It is compiled only when the "conftests" tag is enabled
 */
 
-//go:emnbed queries/setup-conformance-tests.sql
+//go:embed queries/setup-conformance-tests.sql
 var confTestsSetupQueries string
 
 func init() {
+	// Function to execute after getting the pgxpool.Config object
 	modifyConfigFn = func(p *PostgreSQL, config *pgxpool.Config) {
 		// After each connection, we need to set the search order to allow overriding the now() method
 		config.AfterConnect = func(ctx context.Context, c *pgx.Conn) error {
 			p.logger.Debugf("Override search_path in new connection")
-			_, err := c.Exec(context.Background(), `
-SET SESSION search_path = override, pg_catalog, public;
-SET schema 'public';
-`)
+			_, err := c.Exec(context.Background(), `SET SESSION search_path = override, pg_catalog, public;`)
 			if err != nil {
 				return fmt.Errorf("failed to set search_path: %w", err)
 			}
@@ -55,10 +54,41 @@ SET schema 'public';
 	}
 }
 
+// GetTime returns the current time.
+func (p *PostgreSQL) GetTime() time.Time {
+	return p.clock.Now()
+}
+
+// AdvanceTime makes the time advance by the specified duration.
+func (p *PostgreSQL) AdvanceTime(d time.Duration) error {
+	p.clock.Sleep(d)
+
+	_, err := p.db.Exec(context.Background(), `SELECT override.freeze_time($1, false)`, p.clock.Now())
+	if err != nil {
+		return fmt.Errorf("failed to freeze time: %w", err)
+	}
+	return nil
+}
+
 // SetupConformanceTests performs the setup of test resources.
 func (p *PostgreSQL) SetupConformanceTests() error {
+	// Switch the clock to a mocked one
+	// (This date just feels right :) https://en.wikipedia.org/wiki/2006_FIFA_World_Cup_final )
+	p.clock = clocktesting.NewFakeClock(time.Date(2006, 7, 9, 20, 0, 0, 0, time.UTC))
+
+	// Execute queries for conformance tests
 	_, err := p.db.Exec(context.Background(), confTestsSetupQueries)
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to perform setup queries: %w", err)
+	}
+
+	// Freeze the current time in the database
+	_, err = p.db.Exec(context.Background(), `SELECT override.freeze_time($1, false)`, p.clock.Now())
+	if err != nil {
+		return fmt.Errorf("failed to freeze time: %w", err)
+	}
+
+	return nil
 }
 
 // CleanupConformanceTests performs the cleanup of test resources.
@@ -209,7 +239,7 @@ func (p *PostgreSQL) LoadActorStateTestData(testData actorstore.TestData) error 
 	actors := [][]any{}
 
 	for hostID, host := range testData.Hosts {
-		hosts = append(hosts, []any{hostID, host.Address, host.AppID, host.APILevel, host.LastHealthCheck})
+		hosts = append(hosts, []any{hostID, host.Address, host.AppID, host.APILevel, p.clock.Now().Add(host.LastHealthCheckStore)})
 
 		for actorType, at := range host.ActorTypes {
 			hostsActorTypes = append(hostsActorTypes, []any{hostID, actorType, int(at.IdleTimeout.Seconds()), at.ConcurrentRemindersLimit})
@@ -266,7 +296,7 @@ func (p *PostgreSQL) LoadActorStateTestData(testData actorstore.TestData) error 
 
 // LoadReminderTestData loads all reminder test data in the database.
 func (p *PostgreSQL) LoadReminderTestData(testData actorstore.TestData) error {
-	now := time.Now()
+	now := p.clock.Now()
 
 	reminders := [][]any{}
 	for reminderID, reminder := range testData.Reminders {

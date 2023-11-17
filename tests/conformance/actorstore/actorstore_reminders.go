@@ -48,7 +48,7 @@ func remindersTest(store actorstore.Store) func(t *testing.T) {
 					})
 
 					require.NoError(t, err)
-					assert.InDelta(t, time.Now().Add(r.ExecutionTime).UnixNano(), res.ExecutionTime.UnixNano(), float64(time.Second/2))
+					assert.InDelta(t, store.GetTime().Add(r.ExecutionTime).UnixNano(), res.ExecutionTime.UnixNano(), float64(time.Second/2))
 				})
 
 				t.Run("Error when reminder doesn't exist", func(t *testing.T) {
@@ -100,7 +100,7 @@ func remindersTest(store actorstore.Store) func(t *testing.T) {
 						Name:      "type-D.1.1",
 					}
 					opts := actorstore.ReminderOptions{
-						ExecutionTime: time.Now().Add(time.Minute),
+						ExecutionTime: store.GetTime().Add(time.Minute),
 						Period:        ptr.Of("1m"),
 						Data:          []byte("almeno tu nell'universo"),
 					}
@@ -122,7 +122,7 @@ func remindersTest(store actorstore.Store) func(t *testing.T) {
 				})
 
 				t.Run("Create a new reminder with a delay and TTL", func(t *testing.T) {
-					now := time.Now()
+					now := store.GetTime()
 					ttl := now.Add(time.Hour)
 					ref := actorstore.ReminderRef{
 						ActorType: "type-D",
@@ -151,7 +151,7 @@ func remindersTest(store actorstore.Store) func(t *testing.T) {
 				})
 
 				t.Run("Create a reminder with 0s delay", func(t *testing.T) {
-					now := time.Now()
+					now := store.GetTime()
 					ref := actorstore.ReminderRef{
 						ActorType: "type-D",
 						ActorID:   "type-D.1",
@@ -176,7 +176,7 @@ func remindersTest(store actorstore.Store) func(t *testing.T) {
 				})
 
 				t.Run("Replace an existing reminder", func(t *testing.T) {
-					now := time.Now()
+					now := store.GetTime()
 					ref := actorstore.ReminderRef{
 						ActorType: "type-D",
 						ActorID:   "type-D.1",
@@ -262,7 +262,7 @@ func remindersTest(store actorstore.Store) func(t *testing.T) {
 			})
 			require.False(t, t.Failed(), "Cannot continue if 'Load test data' test has failed")
 
-			start := time.Now().Add(-1 * time.Second)
+			start := store.GetTime().Add(-1 * time.Second)
 
 			t.Run("Fetching reminders", func(t *testing.T) {
 				req := actorstore.FetchNextRemindersRequest{
@@ -314,8 +314,8 @@ func remindersTest(store actorstore.Store) func(t *testing.T) {
 				// No point in continuing if the tests failed
 				require.False(t, t.Failed(), "Cannot continue if previous test failed")
 
-				// Sleep 1s to make more reminders appear
-				time.Sleep(1500 * time.Millisecond)
+				// Advance clock by 1.5s to make more reminders appear
+				require.NoError(t, store.AdvanceTime(1500*time.Millisecond))
 
 				t.Run("Fetch next reminders", func(t *testing.T) {
 					res, err := store.FetchNextReminders(context.Background(), req)

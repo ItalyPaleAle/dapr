@@ -26,7 +26,7 @@ import (
 )
 
 func (p *PostgreSQL) AddActorHost(ctx context.Context, properties actorstore.AddActorHostRequest) (string, error) {
-	if properties.AppID == "" || properties.Address == "" || properties.APILevel <= 0 {
+	if properties.AppID == "" || properties.Address == "" || properties.APILevel < 0 {
 		return "", actorstore.ErrInvalidRequestMissingParameters
 	}
 

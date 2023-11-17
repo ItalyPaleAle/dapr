@@ -32,7 +32,7 @@ func (p *PostgreSQL) GetReminder(ctx context.Context, req actorstore.ReminderRef
 	queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
 	defer queryCancel()
 
-	q := fmt.Sprintf(`SELECT EXTRACT(EPOCH FROM reminder_execution_time - CURRENT_TIMESTAMP)::int, reminder_period, reminder_ttl, reminder_data
+	q := fmt.Sprintf(`SELECT EXTRACT(EPOCH FROM reminder_execution_time - now())::int, reminder_period, reminder_ttl, reminder_data
 		FROM %s WHERE actor_type = $1 AND actor_id = $2 AND reminder_name = $3`, p.metadata.TableName(pgTableReminders))
 	var delay int
 	err = p.db.
@@ -46,7 +46,7 @@ func (p *PostgreSQL) GetReminder(ctx context.Context, req actorstore.ReminderRef
 	}
 
 	// The query doesn't return an exact time, but rather the number of seconds from present, to make sure we always use the clock of the DB server and avoid clock skews
-	res.ExecutionTime = time.Now().Add(time.Duration(delay) * time.Second)
+	res.ExecutionTime = p.clock.Now().Add(time.Duration(delay) * time.Second)
 
 	return res, nil
 }
@@ -59,7 +59,7 @@ func (p *PostgreSQL) CreateReminder(ctx context.Context, req actorstore.CreateRe
 	// Do not store the exact time, but rather the delay from now, to use the DB server's clock
 	var executionTime time.Duration
 	if !req.ExecutionTime.IsZero() {
-		executionTime = time.Until(req.ExecutionTime)
+		executionTime = req.ExecutionTime.Sub(p.clock.Now())
 	} else {
 		// Note that delay could be zero
 		executionTime = req.Delay
@@ -69,7 +69,7 @@ func (p *PostgreSQL) CreateReminder(ctx context.Context, req actorstore.CreateRe
 	defer queryCancel()
 	q := fmt.Sprintf(`INSERT INTO %s
 			(actor_type, actor_id, reminder_name, reminder_execution_time, reminder_period, reminder_ttl, reminder_data)
-		VALUES ($1, $2, $3, CURRENT_TIMESTAMP + $4::interval, $5, $6, $7)
+		VALUES ($1, $2, $3, now() + $4::interval, $5, $6, $7)
 		ON CONFLICT (actor_type, actor_id, reminder_name) DO UPDATE SET
 			reminder_execution_time = EXCLUDED.reminder_execution_time,
 			reminder_period = EXCLUDED.reminder_period,
@@ -92,7 +92,7 @@ func (p *PostgreSQL) CreateLeasedReminder(ctx context.Context, req actorstore.Cr
 	// Do not store the exact time, but rather the delay from now, to use the DB server's clock
 	var executionTime time.Duration
 	if !req.Reminder.ExecutionTime.IsZero() {
-		executionTime = time.Until(req.Reminder.ExecutionTime)
+		executionTime = req.Reminder.ExecutionTime.Sub(p.clock.Now())
 	} else {
 		// Note that delay could be zero
 		executionTime = req.Reminder.Delay
@@ -106,7 +106,7 @@ func (p *PostgreSQL) CreateLeasedReminder(ctx context.Context, req actorstore.Cr
 		req.Reminder.Period, req.Reminder.TTL, req.Reminder.Data, p.metadata.PID,
 		req.ActorTypes, req.Hosts,
 	)
-	res, err := p.scanFetchedReminderRow(row, time.Now())
+	res, err := p.scanFetchedReminderRow(row, p.clock.Now())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create reminder: %w", err)
 	}
@@ -161,7 +161,7 @@ func (p *PostgreSQL) FetchNextReminders(ctx context.Context, req actorstore.Fetc
 	)
 	defer rows.Close()
 
-	now := time.Now()
+	now := p.clock.Now()
 	for rows.Next() {
 		r, err := p.scanFetchedReminderRow(rows, now)
 		if err != nil {
@@ -193,7 +193,7 @@ func (p *PostgreSQL) GetReminderWithLease(ctx context.Context, fr *actorstore.Fe
 
 	q := fmt.Sprintf(`SELECT
 			actor_type, actor_id, reminder_name,
-			EXTRACT(EPOCH FROM reminder_execution_time - CURRENT_TIMESTAMP)::int,
+			EXTRACT(EPOCH FROM reminder_execution_time - now())::int,
 			reminder_period, reminder_ttl, reminder_data
 		FROM %s
 		WHERE
@@ -217,7 +217,7 @@ func (p *PostgreSQL) GetReminderWithLease(ctx context.Context, fr *actorstore.Fe
 	}
 
 	// The query doesn't return an exact time, but rather the number of seconds from present, to make sure we always use the clock of the DB server and avoid clock skews
-	res.ExecutionTime = time.Now().Add(time.Duration(delay) * time.Second)
+	res.ExecutionTime = p.clock.Now().Add(time.Duration(delay) * time.Second)
 
 	return res, nil
 }
@@ -237,7 +237,7 @@ func (p *PostgreSQL) UpdateReminderWithLease(ctx context.Context, fr *actorstore
 		leaseQuery = "reminder_lease_id = NULL, reminder_lease_time = NULL, reminder_lease_pid = NULL,"
 	} else {
 		// Refresh the lease without releasing it
-		leaseQuery = "reminder_lease_time = CURRENT_TIMESTAMP,"
+		leaseQuery = "reminder_lease_time = now(),"
 	}
 
 	res, err := p.db.Exec(queryCtx,
@@ -296,7 +296,7 @@ func (p *PostgreSQL) RenewReminderLeases(ctx context.Context, req actorstore.Ren
 
 	res, err := p.db.Exec(queryCtx,
 		fmt.Sprintf(`UPDATE %[1]s
-			SET reminder_lease_time = CURRENT_TIMESTAMP
+			SET reminder_lease_time = now()
 			WHERE reminder_id IN (
 				SELECT reminder_id
 				FROM %[1]s
@@ -305,7 +305,7 @@ func (p *PostgreSQL) RenewReminderLeases(ctx context.Context, req actorstore.Ren
 				WHERE 
 					%[1]s.reminder_lease_pid = $1
 					AND %[1]s.reminder_lease_time IS NOT NULL
-					AND %[1]s.reminder_lease_time >= CURRENT_TIMESTAMP - $2::interval
+					AND %[1]s.reminder_lease_time >= now() - $2::interval
 					AND %[1]s.reminder_lease_id IS NOT NULL
 					AND (
 						(

@@ -40,6 +40,15 @@ type StoreConfTests interface {
 
 	// LoadReminderTestData loads all reminder test data in the database.
 	LoadReminderTestData(testData TestData) error
+
+	// GetTime returns the current time.
+	// Implementations that do not support mocking of time should return time.Now().
+	GetTime() time.Time
+
+	// AdvanceTime makes the time advance by the specified duration.
+	// Implementations that support mocking of time can use this to advance the internal clock.
+	// Other implementations, who can't rely on time mocking, should implement this with a `time.Sleep(d)`.
+	AdvanceTime(d time.Duration) error
 }
 
 type TestData struct {
@@ -48,15 +57,16 @@ type TestData struct {
 }
 
 type TestDataHost struct {
-	Address         string
-	AppID           string
-	APILevel        int
-	LastHealthCheck time.Time
-	ActorTypes      map[string]TestDataActorType
+	Address              string
+	AppID                string
+	APILevel             int
+	LastHealthCheck      time.Time
+	LastHealthCheckStore time.Duration
+	ActorTypes           map[string]TestDataActorType
 }
 
-func (t TestDataHost) IsActive(hostHealthCheckInterval time.Duration) bool {
-	return time.Since(t.LastHealthCheck) < hostHealthCheckInterval
+func (t TestDataHost) IsActive(now time.Time, hostHealthCheckInterval time.Duration) bool {
+	return now.Sub(t.LastHealthCheck) < hostHealthCheckInterval
 }
 
 type TestDataActorType struct {
@@ -69,17 +79,17 @@ type TestDataReminder struct {
 	ActorType     string
 	ActorID       string
 	Name          string
-	ExecutionTime time.Duration
+	ExecutionTime time.Duration // Interval from current time
 	LeaseID       *string
 	LeaseTime     *time.Time
 	LeasePID      *string
 }
 
-func (t TestData) HostsByActorType(hostHealthCheckInterval time.Duration) map[string][]string {
+func (t TestData) HostsByActorType(now time.Time, hostHealthCheckInterval time.Duration) map[string][]string {
 	res := make(map[string][]string)
 	for hostID, host := range t.Hosts {
 		for at := range host.ActorTypes {
-			if !host.IsActive(hostHealthCheckInterval) {
+			if !host.IsActive(now, hostHealthCheckInterval) {
 				continue
 			}
 
@@ -93,10 +103,10 @@ func (t TestData) HostsByActorType(hostHealthCheckInterval time.Duration) map[st
 	return res
 }
 
-func (t TestData) HostsForActorType(actorType string, hostHealthCheckInterval time.Duration) []string {
+func (t TestData) HostsForActorType(now time.Time, actorType string, hostHealthCheckInterval time.Duration) []string {
 	res := make([]string, 0)
 	for hostID, host := range t.Hosts {
-		if !host.IsActive(hostHealthCheckInterval) {
+		if !host.IsActive(now, hostHealthCheckInterval) {
 			continue
 		}
 

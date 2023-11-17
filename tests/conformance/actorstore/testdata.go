@@ -32,8 +32,6 @@ const (
 )
 
 func init() {
-	now := time.Now()
-
 	actorsConfiguration = actorstore.ActorsConfiguration{
 		HostHealthCheckInterval:      configHostHealthCheckInterval,
 		RemindersFetchAheadInterval:  2 * time.Second,
@@ -44,9 +42,8 @@ func init() {
 	testData = actorstore.TestData{
 		Hosts: map[string]actorstore.TestDataHost{
 			"7de434ce-e285-444f-9857-4d30cade3111": {
-				Address:         "1.1.1.1",
-				AppID:           "myapp1",
-				LastHealthCheck: now,
+				Address: "1.1.1.1",
+				AppID:   "myapp1",
 				ActorTypes: map[string]actorstore.TestDataActorType{
 					"type-A": {
 						IdleTimeout: 10 * time.Minute,
@@ -66,9 +63,9 @@ func init() {
 				},
 			},
 			"50d7623f-b165-4f9e-9f05-3b7a1280b222": {
-				Address:         "1.1.1.2",
-				AppID:           "myapp1",
-				LastHealthCheck: now.Add(-2 * time.Minute),
+				Address:              "1.1.1.2",
+				AppID:                "myapp1",
+				LastHealthCheckStore: -2 * time.Minute,
 				ActorTypes: map[string]actorstore.TestDataActorType{
 					"type-A": {
 						IdleTimeout: 10 * time.Minute,
@@ -86,9 +83,8 @@ func init() {
 				},
 			},
 			"ded1e507-ed4a-4322-a3a4-b5e8719a9333": {
-				Address:         "1.2.1.1",
-				AppID:           "myapp2",
-				LastHealthCheck: now,
+				Address: "1.2.1.1",
+				AppID:   "myapp2",
 				ActorTypes: map[string]actorstore.TestDataActorType{
 					"type-B": {
 						IdleTimeout: time.Hour,
@@ -107,9 +103,8 @@ func init() {
 				},
 			},
 			"f4c7d514-3468-48dd-9103-297bf7fe91fd": {
-				Address:         "1.2.1.2",
-				AppID:           "myapp2",
-				LastHealthCheck: now,
+				Address: "1.2.1.2",
+				AppID:   "myapp2",
 				ActorTypes: map[string]actorstore.TestDataActorType{
 					"type-B": {
 						IdleTimeout: time.Hour,

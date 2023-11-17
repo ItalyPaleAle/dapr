@@ -25,6 +25,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"k8s.io/utils/clock"
 
 	sqlinternal "github.com/dapr/components-contrib/common/component/sql"
 	pgmigrations "github.com/dapr/components-contrib/common/component/sql/migrations/postgres"
@@ -39,6 +40,7 @@ var modifyConfigFn func(p *PostgreSQL, config *pgxpool.Config)
 func NewPostgreSQLActorStore(logger logger.Logger) actorstore.Store {
 	return &PostgreSQL{
 		logger: logger,
+		clock:  clock.RealClock{},
 	}
 }
 
@@ -47,6 +49,7 @@ type PostgreSQL struct {
 	metadata pgMetadata
 	db       *pgxpool.Pool
 	running  atomic.Bool
+	clock    clock.Clock
 }
 
 func (p *PostgreSQL) Init(ctx context.Context, md actorstore.Metadata) error {

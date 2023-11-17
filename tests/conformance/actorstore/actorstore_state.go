@@ -51,7 +51,7 @@ func actorStateTests(store actorstore.Store) func(t *testing.T) {
 					ActorTypes: []actorstore.ActorHostType{
 						{ActorType: "newtype1", IdleTimeout: 20},
 					},
-					APILevel: 10,
+					APILevel: 0,
 				})
 				require.NoError(t, err)
 				require.NotEmpty(t, addedHostID)
@@ -91,7 +91,7 @@ func actorStateTests(store actorstore.Store) func(t *testing.T) {
 					ActorTypes: []actorstore.ActorHostType{
 						{ActorType: "newtype2", IdleTimeout: 10},
 					},
-					APILevel: 10,
+					APILevel: 0,
 				})
 				require.Error(t, err)
 				require.ErrorIs(t, err, actorstore.ErrActorHostConflict)
@@ -104,6 +104,9 @@ func actorStateTests(store actorstore.Store) func(t *testing.T) {
 		})
 
 		t.Run("Update existing host", func(t *testing.T) {
+			// Ensure clock advances
+			require.NoError(t, store.AdvanceTime(500*time.Millisecond))
+
 			t.Run("Update actor types", func(t *testing.T) {
 				before, err := store.GetAllHosts()
 				require.NoError(t, err)
@@ -236,7 +239,7 @@ func actorStateTests(store actorstore.Store) func(t *testing.T) {
 
 				t.Run("Inactive actor", func(t *testing.T) {
 					const iterationsPerActorType = 50
-					for at, atHosts := range testData.HostsByActorType(configHostHealthCheckInterval) {
+					for at, atHosts := range testData.HostsByActorType(store.GetTime(), configHostHealthCheckInterval) {
 						t.Run(at, func(t *testing.T) {
 							counts := map[string]int{}
 							for _, host := range atHosts {
@@ -338,7 +341,7 @@ func actorStateTests(store actorstore.Store) func(t *testing.T) {
 
 				t.Run("Inactive actor", func(t *testing.T) {
 					const iterationsPerActorType = 50
-					for at, atHosts := range testData.HostsByActorType(configHostHealthCheckInterval) {
+					for at, atHosts := range testData.HostsByActorType(store.GetTime(), configHostHealthCheckInterval) {
 						t.Run(at, func(t *testing.T) {
 							counts := map[string]int{}
 							for _, host := range atHosts {
@@ -401,7 +404,7 @@ func actorStateTests(store actorstore.Store) func(t *testing.T) {
 					return func(t *testing.T) {
 						// This is a stress test that invokes LookupActor multiple times, in parallel, also repeating some actor IDs
 						const iterationsPerActorType = 150
-						hostsByActorTypes := testData.HostsByActorType(configHostHealthCheckInterval)
+						hostsByActorTypes := testData.HostsByActorType(store.GetTime(), configHostHealthCheckInterval)
 						tt := make([]string, 0, (len(hostsByActorTypes)*iterationsPerActorType)+26)
 						for at := range hostsByActorTypes {
 							for j := 0; j < iterationsPerActorType; j++ {

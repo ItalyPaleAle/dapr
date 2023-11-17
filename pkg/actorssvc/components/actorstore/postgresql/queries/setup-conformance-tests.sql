@@ -58,8 +58,8 @@ BEGIN
       WHERE key = 'enabled';
     SELECT
       INTO tick
-      VALUE FROM override.freeze_time_keys
-      WHERE param = 'tick';
+      VALUE FROM override.freeze_time
+      WHERE key = 'tick';
 
     IF enabled THEN
         SELECT
