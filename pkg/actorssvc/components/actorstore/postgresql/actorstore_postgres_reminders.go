@@ -161,6 +161,13 @@ func (p *PostgreSQL) FetchNextReminders(ctx context.Context, req actorstore.Fetc
 	)
 	defer rows.Close()
 
+	fmt.Println(cfg.RemindersFetchAheadInterval)
+	fmt.Println(cfg.RemindersLeaseDuration)
+	fmt.Println(req.Hosts)
+	fmt.Println(req.ActorTypes)
+	fmt.Println(p.metadata.Config.FailedInterval())
+	fmt.Println(cfg.RemindersFetchAheadBatchSize)
+
 	now := p.clock.Now()
 	for rows.Next() {
 		r, err := p.scanFetchedReminderRow(rows, now)

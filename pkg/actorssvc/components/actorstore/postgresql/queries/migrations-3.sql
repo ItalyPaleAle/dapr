@@ -59,9 +59,13 @@ BEGIN
       ) AS count,
       hat.actor_concurrent_reminders AS max
     FROM %[4]s AS hat
-    WHERE 
+    LEFT JOIN %[3]s
+      ON hat.host_id = %[3]s.host_id
+    WHERE
       hat.host_id = ANY(actor_hosts)
+      AND %[3]s.host_last_healthcheck >= now() - health_check_interval
   LOOP
+    -- RAISE NOTICE 'capacity record: %%', r;
     IF (r.max <= 0 OR r.count < r.max) THEN
       INSERT INTO temp_capacities VALUES (
         r.host_id,
@@ -106,7 +110,7 @@ BEGIN
     ORDER BY reminder_delay ASC
     LIMIT max_reminders
   LOOP
-    -- RAISE NOTICE 'record: %', r;
+    -- RAISE NOTICE 'record: %%', r;
     -- For the reminders that have an active actor, filter based on the capacity
     IF (
       r.host_id IS NOT NULL
@@ -116,7 +120,7 @@ BEGIN
       UPDATE temp_capacities
         SET capacity = capacity -1 
         WHERE temp_capacities.host_id = r.host_id AND temp_capacities.actor_type = r.actor_type;
-      -- RAISE NOTICE 'NOT NULL host_id: %', r;
+      -- RAISE NOTICE 'NOT NULL host_id: %%', r;
 
       -- Return the row
       RETURN NEXT (r.reminder_id);
@@ -128,7 +132,7 @@ BEGIN
         VALUES
           (r.reminder_id, r.actor_type, r.actor_id, r.reminder_delay);
 
-      -- RAISE NOTICE 'NULL host_id: %', r;
+      -- RAISE NOTICE 'NULL host_id: %%', r;
     END IF;
   END LOOP;
 
@@ -138,7 +142,7 @@ BEGIN
     SELECT DISTINCT t.actor_type, t.actor_id, t.reminder_delay
     FROM temp_allocate_actors AS t
   LOOP
-    -- RAISE NOTICE 'Need allocation: %', r;
+    -- RAISE NOTICE 'Need allocation: %%', r;
 
     -- First, we pick a host that has capacity to execute this reminder
     BEGIN

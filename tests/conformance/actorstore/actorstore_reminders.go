@@ -17,7 +17,6 @@ package actorstore
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
@@ -333,8 +332,6 @@ func remindersTest(store actorstore.Store) func(t *testing.T) {
 
 				// No point in continuing if the tests failed
 				require.False(t, t.Failed(), "Cannot continue if previous test failed")
-
-				fmt.Println(store.GetAllReminders())
 
 				t.Run("Fetch reminders for another host", func(t *testing.T) {
 					// There are 3 reminders that match this request, all overdue
