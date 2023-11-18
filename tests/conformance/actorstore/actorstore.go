@@ -21,6 +21,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/exp/slices"
 
 	"github.com/dapr/components-contrib/metadata"
 	"github.com/dapr/dapr/pkg/actorssvc/components/actorstore"
@@ -98,4 +99,23 @@ func loadActorStateTestData(store actorstore.Store) func(t *testing.T) {
 		t.Helper()
 		require.NoError(t, store.LoadActorStateTestData(GetTestData()), "Failed to load actor state test data")
 	}
+}
+
+func getHostForActor(t *testing.T, store actorstore.Store, actorType, actorID string) string {
+	t.Helper()
+
+	hosts, err := store.GetAllHosts()
+	require.NoError(t, err)
+
+	for k, host := range hosts {
+		at, ok := host.ActorTypes[actorType]
+		if !ok {
+			continue
+		}
+		if slices.Contains(at.ActorIDs, actorID) {
+			return k
+		}
+	}
+
+	return ""
 }

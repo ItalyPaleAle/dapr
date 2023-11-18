@@ -271,6 +271,7 @@ func remindersTest(store actorstore.Store) func(t *testing.T) {
 
 			t.Run("Fetching reminders", func(t *testing.T) {
 				req := actorstore.FetchNextRemindersRequest{
+					// Note that "50d7623f-b165-4f9e-9f05-3b7a1280b222" is unhealthy
 					Hosts:      []string{"7de434ce-e285-444f-9857-4d30cade3111", "50d7623f-b165-4f9e-9f05-3b7a1280b222"},
 					ActorTypes: []string{"type-A", "type-B"},
 				}
@@ -294,6 +295,9 @@ func remindersTest(store actorstore.Store) func(t *testing.T) {
 					require.NotNil(t, res)
 
 					assertRemindersInResponse(t, res, []string{"type-A||type-A.11||type-A.11.2", "type-A||type-A.11||type-A.11.1"})
+
+					host := getHostForActor(t, store, "type-A", "type-A.11")
+					assert.Equal(t, "7de434ce-e285-444f-9857-4d30cade3111", host)
 				})
 
 				// No point in continuing if the tests failed
@@ -305,6 +309,10 @@ func remindersTest(store actorstore.Store) func(t *testing.T) {
 					require.NotNil(t, res)
 
 					assertRemindersInResponse(t, res, []string{"type-A||type-A.inactivereminder||type-A.inactivereminder.1"})
+
+					// Can only be on "7de434ce-e285-444f-9857-4d30cade3111" because "50d7623f-b165-4f9e-9f05-3b7a1280b222" is unhealthy
+					host := getHostForActor(t, store, "type-A", "type-A.inactivereminder")
+					assert.Equal(t, "7de434ce-e285-444f-9857-4d30cade3111", host)
 				})
 
 				// No point in continuing if the tests failed
@@ -328,6 +336,10 @@ func remindersTest(store actorstore.Store) func(t *testing.T) {
 					require.NotNil(t, res)
 
 					assertRemindersInResponse(t, res, []string{"type-A||type-A.inactivereminder||type-A.inactivereminder.2", "type-A||type-A.inactivereminder||type-A.inactivereminder.3"})
+
+					// Can only be on "7de434ce-e285-444f-9857-4d30cade3111" because "50d7623f-b165-4f9e-9f05-3b7a1280b222" is unhealthy
+					host := getHostForActor(t, store, "type-A", "type-A.inactivereminder")
+					assert.Equal(t, "7de434ce-e285-444f-9857-4d30cade3111", host)
 				})
 
 				// No point in continuing if the tests failed
@@ -355,6 +367,11 @@ func remindersTest(store actorstore.Store) func(t *testing.T) {
 					res, err = store.FetchNextReminders(context.Background(), req)
 					require.NoError(t, err)
 					require.Empty(t, res)
+
+					host := getHostForActor(t, store, "type-C", "type-C.inactivereminder")
+					assert.Equal(t, "f4c7d514-3468-48dd-9103-297bf7fe91fd", host)
+					host = getHostForActor(t, store, "type-B", "type-B.221")
+					assert.Equal(t, "f4c7d514-3468-48dd-9103-297bf7fe91fd", host)
 				})
 			})
 		})
