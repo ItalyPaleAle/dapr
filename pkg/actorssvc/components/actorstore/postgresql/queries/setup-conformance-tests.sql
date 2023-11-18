@@ -6,24 +6,23 @@
 -- - https://dba.stackexchange.com/questions/69988/how-can-i-fake-inet-client-addr-for-unit-tests-in-postgresql/70009#70009
 
 -- This allows overriding the "now()" function to be able to mock time
-CREATE SCHEMA IF NOT EXISTS override;
 
-CREATE TABLE IF NOT EXISTS override.freeze_time (
+CREATE TABLE IF NOT EXISTS conftests.freeze_time (
     key text NOT NULL PRIMARY KEY,
     value jsonb
 );
 
-INSERT INTO override.freeze_time VALUES
+INSERT INTO conftests.freeze_time VALUES
     ('enabled', 'false'),
     ('timestamp', 'null'),
     ('tick', 'false')
 ON CONFLICT (key) DO NOTHING;
 
-CREATE OR REPLACE FUNCTION override.freeze_time(freeze_time timestamp with time zone, tick bool DEFAULT false)
+CREATE OR REPLACE FUNCTION conftests.freeze_time(freeze_time timestamp with time zone, tick bool DEFAULT false)
     RETURNS void AS
 $func$
 BEGIN
-  INSERT INTO override.freeze_time
+  INSERT INTO conftests.freeze_time
   VALUES
     ('enabled', 'true'),
     ('timestamp',  EXTRACT(EPOCH from freeze_time)::text::jsonb),
@@ -33,18 +32,18 @@ BEGIN
 END
 $func$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE function override.unfreeze_time()
+CREATE OR REPLACE function conftests.unfreeze_time()
     RETURNS void AS
 $func$
 BEGIN
-  INSERT INTO override.freeze_time
+  INSERT INTO conftests.freeze_time
   VALUES ('enabled', 'false')
   ON CONFLICT (key) DO UPDATE SET
     value = excluded.value;
 END
 $func$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION override.now()
+CREATE OR REPLACE FUNCTION conftests.now()
   RETURNS timestamptz AS
 $func$
 DECLARE
@@ -54,22 +53,22 @@ DECLARE
 BEGIN
     SELECT
       INTO enabled
-      VALUE FROM override.freeze_time
+      VALUE FROM conftests.freeze_time
       WHERE key = 'enabled';
     SELECT
       INTO tick
-      VALUE FROM override.freeze_time
+      VALUE FROM conftests.freeze_time
       WHERE key = 'tick';
 
     IF enabled THEN
         SELECT
           INTO timestamp to_timestamp(value::text::decimal)
-          FROM override.freeze_time
+          FROM conftests.freeze_time
           WHERE key = 'timestamp';
 
         IF tick THEN
             timestamp = timestamp + '1 second'::interval;
-            UPDATE override.freeze_time
+            UPDATE conftests.freeze_time
               SET value = extract(epoch from timestamp)::text::jsonb
               WHERE key = 'timestamp';
         END IF;
