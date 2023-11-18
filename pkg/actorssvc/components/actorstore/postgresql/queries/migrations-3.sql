@@ -25,22 +25,22 @@ DECLARE
 BEGIN
   -- Create a temporary table for storing capacity information
   -- We will need to reference this data in more than one place, and also update it
-  CREATE TEMPORARY TABLE temp_capacities (
+  CREATE TEMPORARY TABLE IF NOT EXISTS temp_capacities (
     host_id UUID NOT NULL,
     actor_type TEXT NOT NULL,
     capacity INTEGER NOT NULL
-  ) ON COMMIT DROP;
-  CREATE INDEX ON temp_capacities (host_id);
-  CREATE INDEX ON temp_capacities (actor_type);
+  ) ON COMMIT DELETE ROWS;
+  CREATE INDEX IF NOT EXISTS temp_capacities_host_id ON temp_capacities (host_id);
+  CREATE INDEX IF NOT EXISTS temp_capacities_actor_type ON temp_capacities (actor_type);
 
   -- Create another temporary table for the hosts that need to be created
-  CREATE TEMPORARY TABLE temp_allocate_actors (
+  CREATE TEMPORARY TABLE IF NOT EXISTS temp_allocate_actors (
     reminder_id uuid NOT NULL,
     actor_type TEXT NOT NULL,
     actor_id TEXT NOT NULL,
     reminder_delay integer NOT NULL,
     host_id uuid
-  ) ON COMMIT DROP;
+  ) ON COMMIT DELETE ROWS;
 
   -- Start by loading the initial capacity based on how many reminders are currently being executed
   FOR r IN
