@@ -46,8 +46,8 @@ func init() {
 		config.AfterConnect = func(ctx context.Context, c *pgx.Conn) error {
 			p.logger.Debugf("Override search_path in new connection")
 			_, err := c.Exec(context.Background(), `
-SET SESSION search_path = override, pg_catalog, public;
 CREATE SCHEMA IF NOT EXISTS conftests;
+SET SESSION search_path = override, pg_catalog, public;
 `)
 			if err != nil {
 				return fmt.Errorf("failed to set search_path: %w", err)
