@@ -44,10 +44,11 @@ func init() {
 	modifyConfigFn = func(p *PostgreSQL, config *pgxpool.Config) {
 		// After each connection, we need to set the search order to allow overriding the now() method
 		config.AfterConnect = func(ctx context.Context, c *pgx.Conn) error {
+			// These tests will run in the conftests schema
 			p.logger.Debugf("Override search_path in new connection")
 			_, err := c.Exec(context.Background(), `
 CREATE SCHEMA IF NOT EXISTS conftests;
-SET SESSION search_path = override, pg_catalog, public;
+SET SESSION search_path = conftests, pg_catalog, public;
 `)
 			if err != nil {
 				return fmt.Errorf("failed to set search_path: %w", err)
@@ -66,7 +67,7 @@ func (p *PostgreSQL) GetTime() time.Time {
 func (p *PostgreSQL) AdvanceTime(d time.Duration) error {
 	p.clock.Sleep(d)
 
-	_, err := p.db.Exec(context.Background(), `SELECT override.freeze_time($1, false)`, p.clock.Now())
+	_, err := p.db.Exec(context.Background(), `SELECT conftests.freeze_time($1, false)`, p.clock.Now())
 	if err != nil {
 		return fmt.Errorf("failed to freeze time: %w", err)
 	}
@@ -86,7 +87,7 @@ func (p *PostgreSQL) SetupConformanceTests() error {
 	}
 
 	// Freeze the current time in the database
-	_, err = p.db.Exec(context.Background(), `SELECT override.freeze_time($1, false)`, p.clock.Now())
+	_, err = p.db.Exec(context.Background(), `SELECT conftests.freeze_time($1, false)`, p.clock.Now())
 	if err != nil {
 		return fmt.Errorf("failed to freeze time: %w", err)
 	}
