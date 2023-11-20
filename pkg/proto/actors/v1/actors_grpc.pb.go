@@ -24,9 +24,9 @@ const _ = grpc.SupportPackageIsVersion7
 type ActorsClient interface {
 	// ServiceInfo returns information on the actors service, including the version.
 	ServiceInfo(ctx context.Context, in *ServiceInfoRequest, opts ...grpc.CallOption) (*ServiceInfoResponse, error)
-	// ConnectHost is used by the Dapr sidecar to register itself as an actor host.
+	// ConnectHost is used by the actor host to register itself as an actor host.
 	// It remains active as a long-lived bi-di stream to allow for the Actors service
-	// to communicate with the sidecar, including for health-checks.
+	// to communicate with the host, including for health-checks.
 	ConnectHost(ctx context.Context, opts ...grpc.CallOption) (Actors_ConnectHostClient, error)
 	// LookupActor returns the address of an actor.
 	// If the actor is not active yet, it returns the address of an actor host capable of hosting it.
@@ -154,9 +154,9 @@ func (c *actorsClient) DeleteReminder(ctx context.Context, in *DeleteReminderReq
 type ActorsServer interface {
 	// ServiceInfo returns information on the actors service, including the version.
 	ServiceInfo(context.Context, *ServiceInfoRequest) (*ServiceInfoResponse, error)
-	// ConnectHost is used by the Dapr sidecar to register itself as an actor host.
+	// ConnectHost is used by the actor host to register itself as an actor host.
 	// It remains active as a long-lived bi-di stream to allow for the Actors service
-	// to communicate with the sidecar, including for health-checks.
+	// to communicate with the host, including for health-checks.
 	ConnectHost(Actors_ConnectHostServer) error
 	// LookupActor returns the address of an actor.
 	// If the actor is not active yet, it returns the address of an actor host capable of hosting it.

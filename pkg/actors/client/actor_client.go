@@ -275,6 +275,9 @@ func (a *ActorClient) establishConnectHost(actorTypes []*actorsv1pb.ActorHostTyp
 	if err != nil {
 		return fmt.Errorf("handshake error: %w", err)
 	}
+	if a.onAPILevelUpdate != nil {
+		a.onAPILevelUpdate(config.GetClusterApiLevel())
+	}
 
 	a.connectHostRunning.Store(true)
 
@@ -376,6 +379,9 @@ func (a *ActorClient) establishConnectHost(actorTypes []*actorsv1pb.ActorHostTyp
 			switch msg := msgAny.(type) {
 			case *actorsv1pb.ActorHostConfiguration:
 				// Update the configuration and reset the ticker
+				if msg.ClusterApiLevel != config.ClusterApiLevel && a.onAPILevelUpdate != nil {
+					a.onAPILevelUpdate(msg.GetClusterApiLevel())
+				}
 				config = msg
 				pingTicker.Reset(config.GetPingInterval())
 

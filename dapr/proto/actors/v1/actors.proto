@@ -24,9 +24,9 @@ service Actors {
     // ServiceInfo returns information on the actors service, including the version.
     rpc ServiceInfo(ServiceInfoRequest) returns (ServiceInfoResponse) {}
 
-    // ConnectHost is used by the Dapr sidecar to register itself as an actor host.
+    // ConnectHost is used by the actor host to register itself as an actor host.
     // It remains active as a long-lived bi-di stream to allow for the Actors service
-    // to communicate with the sidecar, including for health-checks.
+    // to communicate with the host, including for health-checks.
     rpc ConnectHost(stream ConnectHostClientStream) returns (stream ConnectHostServerStream) {}
 
     // LookupActor returns the address of an actor.
@@ -62,15 +62,15 @@ message ServiceInfoResponse {
     uint32 version = 1;
 }
 
-// ConnectHostClientStream is sent by the Dapr sidecar to the Actors service.
+// ConnectHostClientStream is sent by actor hosts to the Actors service.
 // The first message in the stream must contain the required fields; subsequent messages could be empty, but including fields is allowed to provide updates.
 message ConnectHostClientStream {
     // Message to include.
     // This is optional, and no message indicates a simple ping (for health checks).
     // However, the first message sent must include a RegisterActorHost.
     oneof message {
-        // The first message sent in ConnectHost by the sidecar must contain RegisterActorHost.
-        // The sidecar can re-send this message at any time to update its registration.
+        // The first message sent in ConnectHost by the host must contain RegisterActorHost.
+        // The host can re-send this message at any time to update its registration.
         RegisterActorHost register_actor_host = 1;
 
         // Instructs the Actors service to temporarily pause delivering reminders.
@@ -78,8 +78,8 @@ message ConnectHostClientStream {
     }
 }
 
-// RegisterActorHost is sent by the Dapr sidecar to the Actors service.
-// It includes information on the current sidecar's actor hosting capabilities.
+// RegisterActorHost is sent by the actor hosts to the Actors service.
+// It includes information on the current host's actor hosting capabilities.
 message RegisterActorHost {
     // Address, including port
     // Required on the first message; cannot be updated
@@ -95,8 +95,8 @@ message RegisterActorHost {
     repeated ActorHostType actor_types = 4;
 }
 
-// ReminderBackOff is sent by the Dapr sidecar to the Actors service.
-// When the Dapr sidecar sends this message to the Actors service, the Actors service pauses delivering reminders to this Dapr sidecar for a period of time.
+// ReminderBackOff is sent by the actor hosts to the Actors service.
+// When the actor host sends this message to the Actors service, the Actors service pauses delivering reminders to this host for a period of time.
 message ReminderBackOff {
     // Requested pause duration.
     // This is optional and defaults to 1s if empty.
@@ -114,7 +114,7 @@ message ActorHostType {
     uint32 concurrent_reminders_limit = 3;
 }
 
-// ConnectHostServerStream is sent by the Actors service to the Dapr sidecar.
+// ConnectHostServerStream is sent by the Actors service to the actor host.
 // The message could be empty, in which case it acts as a response to a "ping" message.
 message ConnectHostServerStream {
     // Message to include.
@@ -136,6 +136,9 @@ message ConnectHostServerStream {
 message ActorHostConfiguration {
     // Maximum interval for the actor host to send pings to the actors service.
     uint32 health_check_interval = 1;
+    // Actor API level observed in the cluster.
+    // This can be updated at any time, but it always increases.
+    uint32 cluster_api_level = 2;
 }
 
 // ExecuteReminder is one of the messages that can be sent by ConnectHostServerStream.
@@ -155,7 +158,7 @@ message ActorRef {
 }
 
 // DeactivateActor is one of the messages that cna be sent by ConnectHostServerStream.
-// It is sent to tell the sidecar to deactivate an actor.
+// It is sent to tell the host to deactivate an actor.
 message DeactivateActor {
     ActorRef actor = 1;
 }
