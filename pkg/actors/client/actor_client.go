@@ -64,6 +64,7 @@ type ActorClient struct {
 	addActorTypeCh     chan struct{}
 	appHealthFn        func(ctx context.Context) <-chan bool
 	appHealthCh        <-chan bool
+	onAPILevelUpdate   func(apiLevel uint32)
 	resiliency         resiliency.Provider
 	running            atomic.Bool
 	runningCtx         context.Context
@@ -109,6 +110,10 @@ func (a *ActorClient) SetResiliencyProvider(resiliency resiliency.Provider) {
 func (a *ActorClient) SetHaltActorFns(haltFn internal.HaltActorFn, haltAllFn internal.HaltAllActorsFn) {
 	a.haltActorFn = haltFn
 	a.haltAllActorsFn = haltAllFn
+}
+
+func (a *ActorClient) SetOnAPILevelUpdate(fn func(apiLevel uint32)) {
+	a.onAPILevelUpdate = fn
 }
 
 func (a *ActorClient) Init(ctx context.Context) error {
