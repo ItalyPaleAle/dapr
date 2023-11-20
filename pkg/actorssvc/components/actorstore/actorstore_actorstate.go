@@ -70,7 +70,7 @@ type AddActorHostRequest struct {
 	Address string
 	// List of supported actor types
 	ActorTypes []ActorHostType
-	// Version of the Actor APIs supported by the Dapr runtime
+	// Version of the Actor APIs supported by the actor host
 	APILevel uint32
 }
 

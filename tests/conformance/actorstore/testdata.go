@@ -35,7 +35,7 @@ func init() {
 	actorsConfiguration = actorstore.ActorsConfiguration{
 		HostHealthCheckInterval:      configHostHealthCheckInterval,
 		RemindersFetchAheadInterval:  2 * time.Second,
-		RemindersLeaseDuration:       5 * time.Second,
+		RemindersLeaseDuration:       4 * time.Second, // Must be at least 1.5s
 		RemindersFetchAheadBatchSize: 2,
 	}
 
@@ -61,6 +61,7 @@ func init() {
 						},
 					},
 				},
+				APILevel: 10,
 			},
 			"50d7623f-b165-4f9e-9f05-3b7a1280b222": {
 				Address:              "1.1.1.2",
@@ -81,6 +82,7 @@ func init() {
 						},
 					},
 				},
+				APILevel: 10,
 			},
 			"ded1e507-ed4a-4322-a3a4-b5e8719a9333": {
 				Address: "1.2.1.1",
@@ -101,6 +103,7 @@ func init() {
 						},
 					},
 				},
+				APILevel: 10,
 			},
 			"f4c7d514-3468-48dd-9103-297bf7fe91fd": {
 				Address: "1.2.1.2",
@@ -119,6 +122,7 @@ func init() {
 						IdleTimeout: 30 * time.Second,
 					},
 				},
+				APILevel: 10,
 			},
 		},
 		Reminders: map[string]actorstore.TestDataReminder{

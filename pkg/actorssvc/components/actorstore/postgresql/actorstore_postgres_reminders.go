@@ -199,12 +199,14 @@ func (p *PostgreSQL) GetReminderWithLease(ctx context.Context, fr *actorstore.Fe
 		WHERE
 			reminder_id = $1
 			AND reminder_lease_id = $2
-			AND reminder_lease_pid = $3`,
+			AND reminder_lease_pid = $3
+			AND reminder_lease_time IS NOT NULL
+			AND reminder_lease_time >= now() - $4::interval`,
 		p.metadata.TableName(pgTableReminders),
 	)
 	var delay int
 	err = p.db.
-		QueryRow(queryCtx, q, lease.reminderID, *lease.leaseID, p.metadata.PID).
+		QueryRow(queryCtx, q, lease.reminderID, *lease.leaseID, p.metadata.PID, p.metadata.Config.RemindersLeaseDuration).
 		Scan(
 			&res.ActorType, &res.ActorID, &res.Name,
 			&delay, &res.Period, &res.TTL, &res.Data,
@@ -243,16 +245,18 @@ func (p *PostgreSQL) UpdateReminderWithLease(ctx context.Context, fr *actorstore
 	res, err := p.db.Exec(queryCtx,
 		fmt.Sprintf(`UPDATE %s SET
 				%s
-				reminder_execution_time = $4,
-				reminder_period = $5,
-				reminder_ttl = $6
+				reminder_execution_time = $5,
+				reminder_period = $6,
+				reminder_ttl = $7
 			WHERE
 				reminder_id = $1
 				AND reminder_lease_id = $2
-				AND reminder_lease_pid = $3`,
+				AND reminder_lease_pid = $3
+				AND reminder_lease_time IS NOT NULL
+				AND reminder_lease_time >= now() - $4::interval`,
 			p.metadata.TableName(pgTableReminders), leaseQuery,
 		),
-		lease.reminderID, *lease.leaseID, p.metadata.PID,
+		lease.reminderID, *lease.leaseID, p.metadata.PID, p.metadata.Config.RemindersLeaseDuration,
 		req.ExecutionTime, req.Period, req.TTL,
 	)
 	if err != nil {
@@ -273,8 +277,16 @@ func (p *PostgreSQL) DeleteReminderWithLease(ctx context.Context, fr *actorstore
 	queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
 	defer queryCancel()
 	res, err := p.db.Exec(queryCtx,
-		fmt.Sprintf(`DELETE FROM %s WHERE reminder_id = $1 AND reminder_lease_id = $2 AND reminder_lease_pid = $3`, p.metadata.TableName(pgTableReminders)),
-		lease.reminderID, *lease.leaseID, p.metadata.PID,
+		fmt.Sprintf(`DELETE FROM %s
+		WHERE
+			reminder_id = $1
+			AND reminder_lease_id = $2
+			AND reminder_lease_pid = $3
+			AND reminder_lease_time IS NOT NULL
+			AND reminder_lease_time >= now() - $4::interval`,
+			p.metadata.TableName(pgTableReminders),
+		),
+		lease.reminderID, *lease.leaseID, p.metadata.PID, p.metadata.Config.RemindersLeaseDuration,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to delete reminder: %w", err)
@@ -337,6 +349,7 @@ func (p *PostgreSQL) RelinquishReminderLease(ctx context.Context, fr *actorstore
 	queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
 	defer queryCancel()
 	_, err := p.db.Exec(queryCtx,
+		// Note that here we don't check for `reminder_lease_time` as we are relinquishing the lease anyways
 		fmt.Sprintf(`UPDATE %s
 			SET
 				reminder_lease_id = NULL,

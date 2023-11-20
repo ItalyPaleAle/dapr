@@ -51,7 +51,7 @@ func actorStateTests(store actorstore.Store) func(t *testing.T) {
 					ActorTypes: []actorstore.ActorHostType{
 						{ActorType: "newtype1", IdleTimeout: 20},
 					},
-					APILevel: 0,
+					APILevel: 10,
 				})
 				require.NoError(t, err)
 				require.NotEmpty(t, addedHostID)
@@ -91,10 +91,32 @@ func actorStateTests(store actorstore.Store) func(t *testing.T) {
 					ActorTypes: []actorstore.ActorHostType{
 						{ActorType: "newtype2", IdleTimeout: 10},
 					},
-					APILevel: 0,
+					APILevel: 10,
 				})
 				require.Error(t, err)
 				require.ErrorIs(t, err, actorstore.ErrActorHostConflict)
+
+				// Verify - nothing should have changed
+				after, err := store.GetAllHosts()
+				require.NoError(t, err)
+				require.Equal(t, before, after)
+			})
+
+			t.Run("Registering host with API level lower than the cluster's fails", func(t *testing.T) {
+				before, err := store.GetAllHosts()
+				require.NoError(t, err)
+
+				// Add a host with the same address, just different appID
+				_, err = store.AddActorHost(context.Background(), actorstore.AddActorHostRequest{
+					AppID:   "newapp-level",
+					Address: "11.11.11.11",
+					ActorTypes: []actorstore.ActorHostType{
+						{ActorType: "newtype", IdleTimeout: 10},
+					},
+					APILevel: 5,
+				})
+				require.Error(t, err)
+				require.ErrorIs(t, err, actorstore.ErrActorHostAPILevelTooLow)
 
 				// Verify - nothing should have changed
 				after, err := store.GetAllHosts()
