@@ -65,7 +65,6 @@ func (s *server) CreateReminder(ctx context.Context, req *actorsv1pb.CreateRemin
 	s.connectedHostsLock.RLock()
 	// Note we are limiting ourselves to non-paused hosts here
 	storeReq.Hosts = s.connectedHostsIDs
-	storeReq.ActorTypes = s.connectedHostsActorTypes
 	s.connectedHostsLock.RUnlock()
 
 	fetched, err := s.store.CreateLeasedReminder(ctx, storeReq)

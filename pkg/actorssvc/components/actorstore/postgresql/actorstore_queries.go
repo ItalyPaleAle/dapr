@@ -189,7 +189,7 @@ RETURNING
 // Query for creating (or replacing) a reminder and acquiring a lease at the same time.
 //
 // This query performs an upsert for the reminder.
-// If the reminder that was upserted can be served by an actor host connected to this instance of the actors service (following the same logic as `remindersFetchQuery`), then it also sets the lease on the reminder, atomically.
+// If the reminder that was upserted has a lease created on it atomically if it targets an actor that is already active on a host connected to this instance of the actors service.
 //
 // Query arguments:
 // 1. Actor type, as a `string`
@@ -200,8 +200,7 @@ RETURNING
 // 6. Reminder TTL, as a `*time.Time`
 // 7. Reminder data, as a `[]byte` (can be nil)
 // 8. Process ID, as a `string`
-// 9. Actor types that can be served by hosts connected to the current instance of the actors service, as a `string[]`
-// 10. IDs of actor hosts that have an active connection to the current instance of the actors service, as a `string[]`
+// 9. IDs of actor hosts that have an active connection to the current instance of the actors service, as a `string[]`
 //
 // fmt.Sprintf arguments:
 // 1. Name of the "reminders" table
@@ -215,13 +214,7 @@ const createReminderWithLeaseQuery = `WITH c AS (
   WHERE
       actor_type = $1
       AND actor_id = $2
-      AND (
-          (
-              host_id IS NULL
-              AND actor_type = ANY($9)
-          )
-          OR host_id = ANY($10)
-      )
+      AND host_id = ANY($9)
 ), lease AS (
   SELECT
       c.reminder_lease_id,

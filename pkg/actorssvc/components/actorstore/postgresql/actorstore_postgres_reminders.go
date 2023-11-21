@@ -104,7 +104,7 @@ func (p *PostgreSQL) CreateLeasedReminder(ctx context.Context, req actorstore.Cr
 	row := p.db.QueryRow(queryCtx, q,
 		req.Reminder.ActorType, req.Reminder.ActorID, req.Reminder.Name, executionTime,
 		req.Reminder.Period, req.Reminder.TTL, req.Reminder.Data, p.metadata.PID,
-		req.ActorTypes, req.Hosts,
+		req.Hosts,
 	)
 	res, err := p.scanFetchedReminderRow(row, p.clock.Now())
 	if err != nil {

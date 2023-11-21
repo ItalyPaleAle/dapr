@@ -617,8 +617,7 @@ func remindersTest(store actorstore.Store) func(t *testing.T) {
 							},
 							ReminderOptions: createReminderOpts,
 						},
-						Hosts:      hosts,
-						ActorTypes: actorTypes,
+						Hosts: hosts,
 					})
 					require.NoError(t, err)
 					require.NotNil(t, created)
@@ -630,6 +629,7 @@ func remindersTest(store actorstore.Store) func(t *testing.T) {
 				})
 
 				t.Run("Actor active on a non-connected host", func(t *testing.T) {
+					// No error, but also no lease acquired
 					created, err := store.CreateLeasedReminder(context.Background(), actorstore.CreateLeasedReminderRequest{
 						Reminder: actorstore.Reminder{
 							ReminderRef: actorstore.ReminderRef{
@@ -639,8 +639,24 @@ func remindersTest(store actorstore.Store) func(t *testing.T) {
 							},
 							ReminderOptions: createReminderOpts,
 						},
-						Hosts:      hosts,
-						ActorTypes: actorTypes,
+						Hosts: hosts,
+					})
+					require.NoError(t, err)
+					require.Nil(t, created)
+				})
+
+				t.Run("Actor is not active", func(t *testing.T) {
+					// No error, but also no lease acquired
+					created, err := store.CreateLeasedReminder(context.Background(), actorstore.CreateLeasedReminderRequest{
+						Reminder: actorstore.Reminder{
+							ReminderRef: actorstore.ReminderRef{
+								ActorType: "type-A",
+								ActorID:   "type-A.something-not-active",
+								Name:      "GiovanniGiorgio",
+							},
+							ReminderOptions: createReminderOpts,
+						},
+						Hosts: hosts,
 					})
 					require.NoError(t, err)
 					require.Nil(t, created)

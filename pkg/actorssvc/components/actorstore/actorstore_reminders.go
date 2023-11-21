@@ -135,8 +135,6 @@ type CreateLeasedReminderRequest struct {
 
 	// List of hosts with active connections to this actor service instance.
 	Hosts []string
-	// List of actor types supported by hosts with active connections to this instance of the actor service.
-	ActorTypes []string
 }
 
 // FetchNextRemindersRequest is the request for FetchNextReminders.
