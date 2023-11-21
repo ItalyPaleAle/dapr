@@ -393,11 +393,11 @@ func remindersTest(store actorstore.Store) func(t *testing.T) {
 			require.NoError(t, store.AdvanceTime(100*time.Millisecond))
 
 			// Note that "50d7623f-b165-4f9e-9f05-3b7a1280b222" is unhealthy
-			hosts := []string{"7de434ce-e285-444f-9857-4d30cade3111", "50d7623f-b165-4f9e-9f05-3b7a1280b222"}
+			hosts := []string{"7de434ce-e285-444f-9857-4d30cade3111", "50d7623f-b165-4f9e-9f05-3b7a1280b222", "f4c7d514-3468-48dd-9103-297bf7fe91fd"}
 			actorTypes := []string{"type-A", "type-B"}
 
 			var fetched []*actorstore.FetchedReminder
-			t.Run("Fetch next 3 reminders", func(t *testing.T) {
+			t.Run("Fetch next 4 reminders", func(t *testing.T) {
 				req := actorstore.FetchNextRemindersRequest{
 					Hosts:      hosts,
 					ActorTypes: actorTypes,
@@ -412,7 +412,7 @@ func remindersTest(store actorstore.Store) func(t *testing.T) {
 				res, err = store.FetchNextReminders(context.Background(), req)
 				require.NoError(t, err)
 				require.NotNil(t, res)
-				assertRemindersInResponse(t, res, []string{"type-A||type-A.inactivereminder||type-A.inactivereminder.1"}, time.Time{})
+				assertRemindersInResponse(t, res, []string{"type-A||type-A.inactivereminder||type-A.inactivereminder.1", "type-B||type-B.221||type-B.221.1"}, time.Time{})
 				fetched = append(fetched, res...)
 			})
 
@@ -438,38 +438,42 @@ func remindersTest(store actorstore.Store) func(t *testing.T) {
 				require.NoError(t, store.AdvanceTime(time.Second))
 
 				t.Run("Keeping lease for reminder 0", func(t *testing.T) {
+					fr := fetched[0]
 					// This also updates the lease expiration
-					err := store.UpdateReminderWithLease(context.Background(), fetched[0], actorstore.UpdateReminderWithLeaseRequest{
-						ExecutionTime: fetched[0].ScheduledTime(),
+					err := store.UpdateReminderWithLease(context.Background(), fr, actorstore.UpdateReminderWithLeaseRequest{
+						ExecutionTime: fr.ScheduledTime(),
 						Period:        ptr.Of("1m"),
 						KeepLease:     true,
 					})
 					require.NoError(t, err)
 
 					// Get the updated reminder
-					res, err := store.GetReminderWithLease(context.Background(), fetched[0])
+					res, err := store.GetReminderWithLease(context.Background(), fr)
 					require.NoError(t, err)
-					assert.Equal(t, fetched[0].Key(), fmt.Sprintf("%s||%s||%s", res.ActorType, res.ActorID, res.Name))
+					assert.Equal(t, fr.Key(), fmt.Sprintf("%s||%s||%s", res.ActorType, res.ActorID, res.Name))
 					_ = assert.NotNil(t, res.Period) &&
 						assert.Equal(t, "1m", *res.Period)
 				})
 
+				fr := fetched[1]
+				updateReq := actorstore.UpdateReminderWithLeaseRequest{
+					ExecutionTime: fr.ScheduledTime(),
+					Period:        ptr.Of("1m"),
+					KeepLease:     false,
+				}
+
 				t.Run("Relinquishing lease for reminder 1", func(t *testing.T) {
 					// This causes the lease to be relinquished
-					err := store.UpdateReminderWithLease(context.Background(), fetched[1], actorstore.UpdateReminderWithLeaseRequest{
-						ExecutionTime: fetched[1].ScheduledTime(),
-						Period:        ptr.Of("1m"),
-						KeepLease:     false,
-					})
+					err := store.UpdateReminderWithLease(context.Background(), fr, updateReq)
 					require.NoError(t, err)
 
 					// Getting with lease should fail
-					_, err = store.GetReminderWithLease(context.Background(), fetched[1])
+					_, err = store.GetReminderWithLease(context.Background(), fr)
 					require.Error(t, err)
 					require.ErrorIs(t, err, actorstore.ErrReminderNotFound)
 
 					// Get without a lease
-					parts := strings.Split(fetched[1].Key(), "||")
+					parts := strings.Split(fr.Key(), "||")
 					require.Len(t, parts, 3)
 					res, err := store.GetReminder(context.Background(), actorstore.ReminderRef{
 						ActorType: parts[0],
@@ -479,6 +483,51 @@ func remindersTest(store actorstore.Store) func(t *testing.T) {
 					require.NoError(t, err)
 					_ = assert.NotNil(t, res.Period) &&
 						assert.Equal(t, "1m", *res.Period)
+				})
+
+				// No point in continuing if the tests failed
+				require.False(t, t.Failed(), "Cannot continue if previous test failed")
+
+				t.Run("Errors when lease is invalid", func(t *testing.T) {
+					// Reminder 1's lease was relinquished
+					err := store.UpdateReminderWithLease(context.Background(), fr, updateReq)
+					require.Error(t, err)
+					require.ErrorIs(t, err, actorstore.ErrReminderNotFound)
+				})
+			})
+
+			// No point in continuing if the tests failed
+			require.False(t, t.Failed(), "Cannot continue if previous test failed")
+
+			t.Run("Deleting reminders with lease", func(t *testing.T) {
+				t.Run("Valid lease", func(t *testing.T) {
+					fr := fetched[3]
+
+					// Delete reminder 3 with a valid lease
+					err := store.DeleteReminderWithLease(context.Background(), fr)
+					require.NoError(t, err)
+
+					// Reminder doesn't exist anymore
+					_, err = store.GetReminderWithLease(context.Background(), fr)
+					require.Error(t, err)
+					require.ErrorIs(t, err, actorstore.ErrReminderNotFound)
+
+					parts := strings.Split(fr.Key(), "||")
+					require.Len(t, parts, 3)
+					_, err = store.GetReminder(context.Background(), actorstore.ReminderRef{
+						ActorType: parts[0],
+						ActorID:   parts[1],
+						Name:      parts[2],
+					})
+					require.Error(t, err)
+					require.ErrorIs(t, err, actorstore.ErrReminderNotFound)
+				})
+
+				t.Run("Errors when lease is invalid", func(t *testing.T) {
+					// Reminder 1's lease was relinquished
+					err := store.DeleteReminderWithLease(context.Background(), fetched[1])
+					require.Error(t, err)
+					require.ErrorIs(t, err, actorstore.ErrReminderNotFound)
 				})
 			})
 
@@ -493,7 +542,8 @@ func remindersTest(store actorstore.Store) func(t *testing.T) {
 				// - 0 had its lease updated after 1s, so it should still be there
 				// - The lease for 1 was already relinquished
 				// - 2 should have its lease expired
-				for i := 0; i < 3; i++ {
+				// - 3 was deleted
+				for i := 0; i < 4; i++ {
 					_, err := store.GetReminderWithLease(context.Background(), fetched[i])
 					if i == 0 {
 						require.NoErrorf(t, err, "Failed on fetched reinder: %d", i)
@@ -525,6 +575,76 @@ func remindersTest(store actorstore.Store) func(t *testing.T) {
 				// Reminder should still be there
 				_, err = store.GetReminderWithLease(context.Background(), fetched[0])
 				require.NoError(t, err)
+			})
+
+			t.Run("Relinquish lease", func(t *testing.T) {
+				t.Run("Relinquish active lease", func(t *testing.T) {
+					err := store.RelinquishReminderLease(context.Background(), fetched[0])
+					require.NoError(t, err)
+
+					_, err = store.GetReminderWithLease(context.Background(), fetched[0])
+					require.Error(t, err)
+					require.ErrorIs(t, err, actorstore.ErrReminderNotFound)
+				})
+
+				t.Run("Errors when lease is invalid", func(t *testing.T) {
+					// The lease for reminder 1 is now NULL, so this will fail with a mismatching lease ID
+					err := store.RelinquishReminderLease(context.Background(), fetched[1])
+					require.Error(t, err)
+					require.ErrorIs(t, err, actorstore.ErrReminderNotFound)
+				})
+
+				t.Run("Does not error when lease is expired", func(t *testing.T) {
+					// Unlike the previous case, here the lease ID is valid, but the lease has expired
+					// We don't error here because we sitll allow relinquishing the lease
+					err := store.RelinquishReminderLease(context.Background(), fetched[2])
+					require.NoError(t, err)
+				})
+			})
+
+			t.Run("Create leased reminder", func(t *testing.T) {
+				createReminderOpts := actorstore.ReminderOptions{
+					ExecutionTime: store.GetTime().Add(time.Minute),
+				}
+
+				t.Run("Actor active on connected host", func(t *testing.T) {
+					created, err := store.CreateLeasedReminder(context.Background(), actorstore.CreateLeasedReminderRequest{
+						Reminder: actorstore.Reminder{
+							ReminderRef: actorstore.ReminderRef{
+								ActorType: "type-A",
+								ActorID:   "type-A.11",
+								Name:      "GiovanniGiorgio",
+							},
+							ReminderOptions: createReminderOpts,
+						},
+						Hosts:      hosts,
+						ActorTypes: actorTypes,
+					})
+					require.NoError(t, err)
+					require.NotNil(t, created)
+
+					// Get the newly-stored reminder
+					res, err := store.GetReminderWithLease(context.Background(), created)
+					require.NoError(t, err)
+					assert.Equal(t, created.Key(), fmt.Sprintf("%s||%s||%s", res.ActorType, res.ActorID, res.Name))
+				})
+
+				t.Run("Actor active on a non-connected host", func(t *testing.T) {
+					created, err := store.CreateLeasedReminder(context.Background(), actorstore.CreateLeasedReminderRequest{
+						Reminder: actorstore.Reminder{
+							ReminderRef: actorstore.ReminderRef{
+								ActorType: "type-B",
+								ActorID:   "type-B.211",
+								Name:      "GiovanniGiorgio",
+							},
+							ReminderOptions: createReminderOpts,
+						},
+						Hosts:      hosts,
+						ActorTypes: actorTypes,
+					})
+					require.NoError(t, err)
+					require.Nil(t, created)
+				})
 			})
 		})
 	}

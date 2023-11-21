@@ -183,6 +183,9 @@ func (p *PostgreSQL) FetchNextReminders(ctx context.Context, req actorstore.Fetc
 }
 
 func (p *PostgreSQL) GetReminderWithLease(ctx context.Context, fr *actorstore.FetchedReminder) (res actorstore.Reminder, err error) {
+	if fr == nil {
+		return res, errors.New("reminer object is nil")
+	}
 	lease, ok := fr.Lease().(leaseData)
 	if !ok || !lease.IsValid() {
 		return res, errors.New("invalid reminder lease object")
@@ -225,6 +228,9 @@ func (p *PostgreSQL) GetReminderWithLease(ctx context.Context, fr *actorstore.Fe
 }
 
 func (p *PostgreSQL) UpdateReminderWithLease(ctx context.Context, fr *actorstore.FetchedReminder, req actorstore.UpdateReminderWithLeaseRequest) error {
+	if fr == nil {
+		return errors.New("reminer object is nil")
+	}
 	lease, ok := fr.Lease().(leaseData)
 	if !ok || !lease.IsValid() {
 		return errors.New("invalid reminder lease object")
@@ -269,6 +275,9 @@ func (p *PostgreSQL) UpdateReminderWithLease(ctx context.Context, fr *actorstore
 }
 
 func (p *PostgreSQL) DeleteReminderWithLease(ctx context.Context, fr *actorstore.FetchedReminder) error {
+	if fr == nil {
+		return errors.New("reminer object is nil")
+	}
 	lease, ok := fr.Lease().(leaseData)
 	if !ok || !lease.IsValid() {
 		return errors.New("invalid reminder lease object")
@@ -341,6 +350,9 @@ func (p *PostgreSQL) RenewReminderLeases(ctx context.Context, req actorstore.Ren
 }
 
 func (p *PostgreSQL) RelinquishReminderLease(ctx context.Context, fr *actorstore.FetchedReminder) error {
+	if fr == nil {
+		return errors.New("reminer object is nil")
+	}
 	lease, ok := fr.Lease().(leaseData)
 	if !ok || !lease.IsValid() {
 		return errors.New("invalid reminder lease object")
@@ -348,7 +360,7 @@ func (p *PostgreSQL) RelinquishReminderLease(ctx context.Context, fr *actorstore
 
 	queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
 	defer queryCancel()
-	_, err := p.db.Exec(queryCtx,
+	res, err := p.db.Exec(queryCtx,
 		// Note that here we don't check for `reminder_lease_time` as we are relinquishing the lease anyways
 		fmt.Sprintf(`UPDATE %s
 			SET
@@ -364,10 +376,10 @@ func (p *PostgreSQL) RelinquishReminderLease(ctx context.Context, fr *actorstore
 		lease.reminderID, *lease.leaseID, p.metadata.PID,
 	)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return actorstore.ErrReminderNotFound
-		}
 		return fmt.Errorf("failed to relinquish lease for reminder: %w", err)
+	}
+	if res.RowsAffected() == 0 {
+		return actorstore.ErrReminderNotFound
 	}
 	return nil
 }
