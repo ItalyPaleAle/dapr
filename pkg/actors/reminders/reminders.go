@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
@@ -46,6 +47,7 @@ type remindersMetricsCollectorFn = func(actorType string, reminders int64)
 // Implements a reminders provider.
 type reminders struct {
 	clock                clock.WithTicker
+	apiLevel             *atomic.Uint32
 	runningCh            chan struct{}
 	executeReminderFn    internal.ExecuteReminderFn
 	remindersLock        sync.RWMutex
@@ -61,10 +63,18 @@ type reminders struct {
 	metricsCollector     remindersMetricsCollectorFn
 }
 
+// NewRemindersProviderOpts contains the options for the NewRemindersProvider function.
+type NewRemindersProviderOpts struct {
+	StoreName string
+	Config    internal.Config
+	APILevel  *atomic.Uint32
+}
+
 // NewRemindersProvider returns a reminders provider.
-func NewRemindersProvider(clock clock.WithTicker, opts internal.RemindersProviderOpts) internal.RemindersProvider {
+func NewRemindersProvider(clock clock.WithTicker, opts NewRemindersProviderOpts) internal.RemindersProvider {
 	return &reminders{
 		clock:            clock,
+		apiLevel:         opts.APILevel,
 		runningCh:        make(chan struct{}),
 		reminders:        map[string][]ActorReminderReference{},
 		activeReminders:  &sync.Map{},

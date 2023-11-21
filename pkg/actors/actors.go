@@ -189,9 +189,10 @@ func newActorsWithClock(opts ActorsOpts, clock clock.WithTicker) ActorRuntime {
 	// For actors v2, we initialize the client here too
 	switch a.actorsConfig.GetActorsVersion() {
 	case internal.ActorsV1:
-		a.actorsReminders = reminders.NewRemindersProvider(a.clock, internal.RemindersProviderOpts{
+		a.actorsReminders = reminders.NewRemindersProvider(a.clock, reminders.NewRemindersProviderOpts{
 			StoreName: a.storeName,
 			Config:    a.actorsConfig.Config,
+			APILevel:  &a.apiLevel,
 		})
 
 	case internal.ActorsV2:
