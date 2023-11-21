@@ -81,11 +81,12 @@ func (o Options) GetActorsConfiguration() actorstore.ActorsConfiguration {
 	}
 }
 
-func (o Options) GetActorHostConfigurationMessage() *actorsv1pb.ConnectHostServerStream {
+func (o Options) GetActorHostConfigurationMessage(clusterAPILevel uint32) *actorsv1pb.ConnectHostServerStream {
 	return &actorsv1pb.ConnectHostServerStream{
 		Message: &actorsv1pb.ConnectHostServerStream_ActorHostConfiguration{
 			ActorHostConfiguration: &actorsv1pb.ActorHostConfiguration{
 				HealthCheckInterval: uint32(o.HostHealthCheckInterval.Seconds()),
+				ClusterApiLevel:     clusterAPILevel,
 			},
 		},
 	}

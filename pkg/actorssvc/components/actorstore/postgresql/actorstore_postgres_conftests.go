@@ -102,7 +102,7 @@ func (p *PostgreSQL) CleanupConformanceTests() error {
 	// Tables
 	for _, table := range []pgTable{pgTableReminders, pgTableActors, pgTableHostsActorTypes, pgTableHosts, "metadata"} {
 		p.logger.Infof("Removing table %s", p.metadata.TableName(table))
-		_, err := p.db.Exec(context.Background(), fmt.Sprintf("DROP TABLE IF EXISTS %s", p.metadata.TableName(table)))
+		_, err := p.db.Exec(context.Background(), fmt.Sprintf("DROP TABLE IF EXISTS %s CASCADE", p.metadata.TableName(table)))
 		if err != nil {
 			p.logger.Errorf("Failed to remove table %s: %v", table, err)
 			errs = append(errs, err)
@@ -111,6 +111,7 @@ func (p *PostgreSQL) CleanupConformanceTests() error {
 
 	// Functions
 	for _, fn := range []string{
+		p.metadata.TablePrefix + "conftests_get_min_api_level()",
 		p.metadata.FunctionName(pgFunctionFetchReminders) + "(interval,interval,uuid[],text[],interval,integer)",
 		p.metadata.TablePrefix + "enforce_min_api_level()",
 		p.metadata.TablePrefix + "update_metadata_min_api_level()",

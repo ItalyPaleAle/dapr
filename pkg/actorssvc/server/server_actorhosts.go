@@ -44,17 +44,17 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 	}
 
 	// Register the actor host
-	actorHostID, err := s.store.AddActorHost(stream.Context(), handshakeMsg.ToActorStoreRequest())
+	registeredHost, err := s.store.AddActorHost(stream.Context(), handshakeMsg.ToActorStoreRequest())
 	if err != nil {
 		log.Errorf("Failed to register actor host: %v", err)
 		return fmt.Errorf("failed to register actor host: %w", err)
 	}
 	if log.IsOutputLevelEnabled(logger.DebugLevel) {
-		log.Debugf("Registered actor host: id='%s' info=[%s]", actorHostID, handshakeMsg.LogInfo())
+		log.Debugf("Registered actor host: id='%s' api-level='%d' info=[%s]", registeredHost.HostID, registeredHost.APILevel, handshakeMsg.LogInfo())
 	}
 
 	// Send the relevant configuration to the actor host
-	err = stream.Send(s.opts.GetActorHostConfigurationMessage())
+	err = stream.Send(s.opts.GetActorHostConfigurationMessage(registeredHost.APILevel))
 	if err != nil {
 		log.Errorf("Failed to send configuration to actor host: %v", err)
 		return fmt.Errorf("failed to send configuration to actor host: %w", err)
@@ -100,21 +100,20 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 					return
 				}
 				if log.IsOutputLevelEnabled(logger.DebugLevel) {
-					log.Debugf("Received registration update from actor host: id='%s' updated-info=[%s]", actorHostID, handshakeMsg.LogInfo())
+					log.Debugf("Received registration update from actor host: id='%s' updated-info=[%s]", registeredHost.HostID, handshakeMsg.LogInfo())
 				}
 				clientMsgCh <- msg.RegisterActorHost
 
 			case *actorsv1pb.ConnectHostClientStream_ReminderBackOff:
 				// Received a request to back-off sending reminders
-				log.Debugf("Received a reminder back-off request from actor host '%s'", actorHostID)
+				log.Debugf("Received a reminder back-off request from actor host '%s'", registeredHost.HostID)
 
 				// Send it on clientMsgCh so it can be processed on the main goroutine
 				clientMsgCh <- msg.ReminderBackOff
 
 			default:
 				// Assume all other messages are a ping
-				// TODO: Remove this debug log
-				log.Debugf("Received ping from actor host id='%s'", actorHostID)
+				// log.Debugf("Received ping from actor host id='%s'", registeredHost.HostID)
 				clientMsgCh <- nil
 			}
 		}
@@ -123,12 +122,12 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 	// Store a channel in connectedHosts that can be used to send messages to this actor host
 	serverMsgCh := make(chan actorsv1pb.ServerStreamMessage)
 	actorTypes := handshakeMsg.GetActorTypeNames()
-	s.setConnectedHost(actorHostID, connectedHostInfo{
+	s.setConnectedHost(registeredHost.HostID, connectedHostInfo{
 		serverMsgCh: serverMsgCh,
 		actorTypes:  actorTypes,
 		address:     handshakeMsg.GetAddress(),
 	})
-	defer s.removeConnectedHost(actorHostID)
+	defer s.removeConnectedHost(registeredHost.HostID)
 
 	unregisterOnClose := true
 	defer func() {
@@ -137,14 +136,14 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 		}
 
 		// Use a background context here because the client may have already disconnected
-		log.Debugf("Uregistering actor host '%s'", actorHostID)
-		err = s.store.RemoveActorHost(context.Background(), actorHostID)
+		log.Debugf("Uregistering actor host '%s'", registeredHost.HostID)
+		err = s.store.RemoveActorHost(context.Background(), registeredHost.HostID)
 		if err != nil {
 			// Ignore "ErrActorHostNotFound" errors because it may be due to a race condition with removing the host
 			if errors.Is(err, actorstore.ErrActorHostNotFound) {
-				log.Debugf("Tried to un-register actor host '%s' that was already removed: %v", actorHostID, err)
+				log.Debugf("Tried to un-register actor host '%s' that was already removed: %v", registeredHost.HostID, err)
 			} else {
-				log.Errorf("Failed to un-register actor host '%s': %v", actorHostID, err)
+				log.Errorf("Failed to un-register actor host '%s': %v", registeredHost.HostID, err)
 			}
 		}
 	}()
@@ -185,13 +184,13 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 				if reqPause := msg.GetPause(); reqPause != nil && reqPause.IsValid() && reqPause.AsDuration() > 0 {
 					pause = reqPause.AsDuration()
 				}
-				log.Infof("Pausing delivery of reminders to host '%s' for %v", actorHostID, pause)
+				log.Infof("Pausing delivery of reminders to host '%s' for %v", registeredHost.HostID, pause)
 				updateHost = true
 				pausedUntil = time.Now().Add(pause)
 			}
-			err = s.store.UpdateActorHost(stream.Context(), actorHostID, req)
+			err = s.store.UpdateActorHost(stream.Context(), registeredHost.HostID, req)
 			if err != nil {
-				log.Errorf("Failed to update actor host after ping: %v", err)
+				log.Errorf("Failed to update actor host '%s' after ping: %v", registeredHost.HostID, err)
 				return fmt.Errorf("failed to update actor host after ping: %w", err)
 			}
 
@@ -199,13 +198,13 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 			// This allows us to test if the channel is up more reliably, as we'd get a failure in case of channel failures
 			err = stream.Send(emptyResponse)
 			if err != nil {
-				log.Errorf("Failed to send ping response to actor host: %v", err)
+				log.Errorf("Failed to send ping response to actor host '%s': %v", registeredHost.HostID, err)
 				return fmt.Errorf("failed to send ping response to actor host: %w", err)
 			}
 
 			// Update the connectedHosts object if needed
 			if updateHost {
-				s.setConnectedHost(actorHostID, connectedHostInfo{
+				s.setConnectedHost(registeredHost.HostID, connectedHostInfo{
 					serverMsgCh: serverMsgCh,
 					actorTypes:  actorTypes,
 					pausedUntil: pausedUntil,
@@ -230,7 +229,7 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 				Message: msg,
 			})
 			if err != nil {
-				log.Errorf("Failed to send message to actor host: %v", err)
+				log.Errorf("Failed to send message to actor host '%s': %v", registeredHost.HostID, err)
 				return fmt.Errorf("failed to send message to actor host: %w", err)
 			}
 
@@ -242,29 +241,29 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 
 		case <-healthCheckTimeout.C:
 			// Host hasn't sent a ping in the required amount of time, so we must assume it's offline
-			log.Warnf("Actor host '%s' hasn't sent a ping in %v and is assumed to be in a failed state", actorHostID, s.opts.HostHealthCheckInterval)
+			log.Warnf("Actor host '%s' hasn't sent a ping in %v and is assumed to be in a failed state", registeredHost.HostID, s.opts.HostHealthCheckInterval)
 			return status.Errorf(codes.DeadlineExceeded, "Did not receive a ping in %v", s.opts.HostHealthCheckInterval)
 
 		case <-stream.Context().Done():
 			// Normally, context cancelation indicates that the server or client are shutting down
 			// We consider this equivalent to the client disconnecting
-			log.Debugf("Actor host '%s' has disconnected: stream context done", actorHostID)
+			log.Debugf("Actor host '%s' has disconnected: stream context done", registeredHost.HostID)
 			return nil
 
 		case <-s.shutdownCh:
 			// When we get a message on shutdownCh, it indicates that the server is shutting down
 			// In this case, we do not unregister the actor host when this method returns, because the host will likely reconnect shortly after to resume
 			unregisterOnClose = false
-			log.Debugf("Disconnecting from actor host '%s' because server is shutting down", actorHostID)
+			log.Debugf("Disconnecting from actor host '%s' because server is shutting down", registeredHost.HostID)
 			return nil
 
 		case err := <-errCh:
 			// io.EOF or context canceled signifies the client has disconnected
 			if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
-				log.Debugf("Actor host '%s' has disconnected: received EOF", actorHostID)
+				log.Debugf("Actor host '%s' has disconnected: received EOF", registeredHost.HostID)
 				return nil
 			}
-			log.Warnf("Error in ConnectHost stream from actor host '%s': %v", actorHostID, err)
+			log.Warnf("Error in ConnectHost stream from actor host '%s': %v", registeredHost.HostID, err)
 			return err
 		}
 	}

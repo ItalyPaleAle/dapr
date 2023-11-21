@@ -41,8 +41,7 @@ var (
 // StoreActorState is the part of the Store interface for managing actor state.
 type StoreActorState interface {
 	// AddActorHost adds a new actor host.
-	// Returns the ID of the actor host.
-	AddActorHost(ctx context.Context, properties AddActorHostRequest) (string, error)
+	AddActorHost(ctx context.Context, properties AddActorHostRequest) (AddActorHostResponse, error)
 
 	// UpdateActorHost updates an actor host.
 	UpdateActorHost(ctx context.Context, actorHostID string, properties UpdateActorHostRequest) error
@@ -71,6 +70,14 @@ type AddActorHostRequest struct {
 	// List of supported actor types
 	ActorTypes []ActorHostType
 	// Version of the Actor APIs supported by the actor host
+	APILevel uint32
+}
+
+// AddActorHostResponse is the response object for the AddActorHost method.
+type AddActorHostResponse struct {
+	// ID of the actor host that was registered
+	HostID string
+	// API level for the actor cluster
 	APILevel uint32
 }
 

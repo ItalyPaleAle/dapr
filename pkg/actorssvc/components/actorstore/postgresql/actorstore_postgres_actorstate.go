@@ -25,13 +25,13 @@ import (
 	"github.com/dapr/dapr/pkg/actorssvc/components/actorstore"
 )
 
-func (p *PostgreSQL) AddActorHost(ctx context.Context, properties actorstore.AddActorHostRequest) (string, error) {
+func (p *PostgreSQL) AddActorHost(ctx context.Context, properties actorstore.AddActorHostRequest) (actorstore.AddActorHostResponse, error) {
 	if properties.AppID == "" || properties.Address == "" {
-		return "", actorstore.ErrInvalidRequestMissingParameters
+		return actorstore.AddActorHostResponse{}, actorstore.ErrInvalidRequestMissingParameters
 	}
 
 	// Because we need to update 2 tables, we need a transaction
-	return executeInTransaction(ctx, p.logger, p.db, p.metadata.Timeout, func(ctx context.Context, tx pgx.Tx) (hostID string, err error) {
+	return executeInTransaction(ctx, p.logger, p.db, p.metadata.Timeout, func(ctx context.Context, tx pgx.Tx) (res actorstore.AddActorHostResponse, err error) {
 		var (
 			hostsTable           = p.metadata.TableName(pgTableHosts)
 			hostsActorTypesTable = p.metadata.TableName(pgTableHostsActorTypes)
@@ -54,7 +54,7 @@ func (p *PostgreSQL) AddActorHost(ctx context.Context, properties actorstore.Add
 			properties.Address, properties.AppID, p.metadata.Config.FailedInterval(),
 		)
 		if err != nil {
-			return "", fmt.Errorf("failed to remove conflicting hosts: %w", err)
+			return res, fmt.Errorf("failed to remove conflicting hosts: %w", err)
 		}
 
 		// We're ready to add the actor host
@@ -62,36 +62,29 @@ func (p *PostgreSQL) AddActorHost(ctx context.Context, properties actorstore.Add
 		queryCtx, queryCancel = context.WithTimeout(ctx, p.metadata.Timeout)
 		defer queryCancel()
 		err = tx.QueryRow(queryCtx,
-			fmt.Sprintf(
-				`INSERT INTO %s
-					(host_address, host_app_id, host_actors_api_level, host_last_healthcheck)
-				VALUES
-					($1, $2, $3, now())
-				RETURNING host_id`,
-				hostsTable,
-			),
+			fmt.Sprintf(addActorHostQuery, hostsTable, p.metadata.TablePrefix),
 			properties.Address, properties.AppID, properties.APILevel,
-		).Scan(&hostID)
+		).Scan(&res.HostID, &res.APILevel)
 		if err != nil {
 			switch {
 			case isUniqueViolationError(err):
-				return "", actorstore.ErrActorHostConflict
+				return res, actorstore.ErrActorHostConflict
 			case isActorHostAPILevelTooLowError(err):
-				return "", actorstore.ErrActorHostAPILevelTooLow
+				return res, actorstore.ErrActorHostAPILevelTooLow
 			default:
-				return "", fmt.Errorf("failed to insert actor host in hosts table: %w", err)
+				return res, fmt.Errorf("failed to insert actor host in hosts table: %w", err)
 			}
 		}
 
 		// Register each supported actor type
 		queryCtx, queryCancel = context.WithTimeout(ctx, p.metadata.Timeout)
 		defer queryCancel()
-		err = insertHostActorTypes(queryCtx, tx, hostID, properties.ActorTypes, hostsActorTypesTable, p.metadata.Timeout)
+		err = insertHostActorTypes(queryCtx, tx, res.HostID, properties.ActorTypes, hostsActorTypesTable, p.metadata.Timeout)
 		if err != nil {
-			return "", err
+			return res, err
 		}
 
-		return hostID, nil
+		return res, nil
 	})
 }
 
@@ -184,6 +177,15 @@ func (p *PostgreSQL) UpdateActorHost(ctx context.Context, actorHostID string, pr
 		return err
 	}
 	return nil
+}
+
+func (p *PostgreSQL) ListActorHostsNeedUpdating(ctx context.Context, hosts []string) ([]string, error) {
+	panic("WIP")
+	/*queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
+	defer queryCancel()
+
+	q := fmt.Sprintf(`SELECT %[2]sget_min_api_level()`,
+	p.metadata.TableName(pgTableHosts), p.metadata.TablePrefix)*/
 }
 
 // Updates the hosts table with the given properties.

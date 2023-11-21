@@ -8,6 +8,7 @@
 -- 4. Name of the "metadata" table
 -- 5. Prefix for the tables/functions
 
+-- "hosts" table
 CREATE TABLE %[1]s (
   host_id uuid PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
   host_address text NOT NULL,
@@ -22,6 +23,7 @@ CREATE INDEX ON %[1]s (host_last_healthcheck);
 CREATE INDEX ON %[1]s (host_actors_api_level);
 CREATE INDEX ON %[1]s (host_last_reported_api_level);
 
+-- "hosts_actor_types" table
 CREATE TABLE %[2]s (
   host_id uuid NOT NULL,
   actor_type text NOT NULL,
@@ -33,6 +35,7 @@ CREATE TABLE %[2]s (
 
 CREATE INDEX ON %[2]s (actor_type);
 
+-- "actors" table
 CREATE TABLE %[3]s (
   actor_type text NOT NULL,
   actor_id text NOT NULL,
@@ -43,7 +46,18 @@ CREATE TABLE %[3]s (
   FOREIGN KEY (host_id) REFERENCES %[1]s (host_id) ON DELETE CASCADE
 );
 
--- This procedure updates the key 'actors-api-level' in the metadata table with the minimum API level from the hosts table
+-- This function returns the current API level in the cluster
+CREATE FUNCTION %[5]sget_min_api_level()
+RETURNS integer
+STABLE
+PARALLEL SAFE
+LANGUAGE sql
+RETURN
+  COALESCE((
+    SELECT COALESCE("value", '0')::integer FROM %[4]s WHERE "key" = 'actors-api-level'
+  ), 0);
+
+-- This function updates the key 'actors-api-level' in the metadata table with the minimum API level from the hosts table
 -- It only updates it if the new level is higher than the previous
 CREATE FUNCTION %[5]supdate_metadata_min_api_level()
 RETURNS trigger
@@ -78,7 +92,8 @@ AS $func$
 DECLARE
   current_version INTEGER;
 BEGIN
-  SELECT COALESCE("value", '0')::integer INTO current_version FROM %[4]s WHERE "key" = 'actors-api-level';
+  -- Note that here we select the minimum API level from the metadata table, not what's observed in the connected hosts, neither what's been distributed
+  SELECT %[5]sget_min_api_level() INTO current_version;
   IF NEW.host_actors_api_level < current_version THEN
     RAISE EXCEPTION 'Value of column host_actors_api_level is lower than the current API level in the cluster';
   END IF;

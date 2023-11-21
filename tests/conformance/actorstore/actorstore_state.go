@@ -37,7 +37,7 @@ func actorStateTests(store actorstore.Store) func(t *testing.T) {
 		require.False(t, t.Failed(), "Cannot continue if 'Load test data' test has failed")
 
 		testData := GetTestData()
-		var addedHostID string
+		var addedHost actorstore.AddActorHostResponse
 
 		t.Run("Add new host", func(t *testing.T) {
 			t.Run("Adding new hosts should purge expired ones", func(t *testing.T) {
@@ -45,7 +45,7 @@ func actorStateTests(store actorstore.Store) func(t *testing.T) {
 				require.NoError(t, err)
 
 				// Add
-				addedHostID, err = store.AddActorHost(context.Background(), actorstore.AddActorHostRequest{
+				addedHost, err = store.AddActorHost(context.Background(), actorstore.AddActorHostRequest{
 					AppID:   "newapp1",
 					Address: "10.10.10.10",
 					ActorTypes: []actorstore.ActorHostType{
@@ -54,14 +54,15 @@ func actorStateTests(store actorstore.Store) func(t *testing.T) {
 					APILevel: 10,
 				})
 				require.NoError(t, err)
-				require.NotEmpty(t, addedHostID)
+				require.NotEmpty(t, addedHost.HostID)
+				assert.Equal(t, uint32(10), addedHost.APILevel)
 
 				// Verify
 				after, err := store.GetAllHosts()
 				require.NoError(t, err)
 
-				require.Len(t, after[addedHostID].ActorTypes, 1)
-				require.Equal(t, 20*time.Second, after[addedHostID].ActorTypes["newtype1"].IdleTimeout)
+				require.Len(t, after[addedHost.HostID].ActorTypes, 1)
+				require.Equal(t, 20*time.Second, after[addedHost.HostID].ActorTypes["newtype1"].IdleTimeout)
 
 				// 50d7623f-b165-4f9e-9f05-3b7a1280b222 should have been deleted because its last healthcheck was before the interval
 				// The newly-added item should be in its place
@@ -70,7 +71,7 @@ func actorStateTests(store actorstore.Store) func(t *testing.T) {
 				expectHosts := maps.Keys(before)
 				for i, v := range expectHosts {
 					if v == "50d7623f-b165-4f9e-9f05-3b7a1280b222" {
-						expectHosts[i] = addedHostID
+						expectHosts[i] = addedHost.HostID
 					}
 				}
 
@@ -78,6 +79,20 @@ func actorStateTests(store actorstore.Store) func(t *testing.T) {
 				slices.Sort(expectHosts)
 				slices.Sort(afterHosts)
 				require.Equal(t, expectHosts, afterHosts)
+			})
+
+			t.Run("Add host with API level higher than the cluster's", func(t *testing.T) {
+				res, err := store.AddActorHost(context.Background(), actorstore.AddActorHostRequest{
+					AppID:   "newapp-level",
+					Address: "10.10.12.13",
+					ActorTypes: []actorstore.ActorHostType{
+						{ActorType: "newtype", IdleTimeout: 20},
+					},
+					APILevel: 20,
+				})
+				require.NoError(t, err)
+				require.NotEmpty(t, res.HostID)
+				assert.Equal(t, uint32(10), res.APILevel) // Response should still be 10
 			})
 
 			t.Run("Cannot register host with same address", func(t *testing.T) {
@@ -95,6 +110,7 @@ func actorStateTests(store actorstore.Store) func(t *testing.T) {
 				})
 				require.Error(t, err)
 				require.ErrorIs(t, err, actorstore.ErrActorHostConflict)
+				assert.Equal(t, uint32(10), addedHost.APILevel)
 
 				// Verify - nothing should have changed
 				after, err := store.GetAllHosts()
@@ -106,7 +122,7 @@ func actorStateTests(store actorstore.Store) func(t *testing.T) {
 				before, err := store.GetAllHosts()
 				require.NoError(t, err)
 
-				// Add a host with the same address, just different appID
+				// The cluster's API level is 10
 				_, err = store.AddActorHost(context.Background(), actorstore.AddActorHostRequest{
 					AppID:   "newapp-level",
 					Address: "11.11.11.11",
@@ -133,7 +149,7 @@ func actorStateTests(store actorstore.Store) func(t *testing.T) {
 				before, err := store.GetAllHosts()
 				require.NoError(t, err)
 
-				err = store.UpdateActorHost(context.Background(), addedHostID, actorstore.UpdateActorHostRequest{
+				err = store.UpdateActorHost(context.Background(), addedHost.HostID, actorstore.UpdateActorHostRequest{
 					// Do not update last health check
 					UpdateLastHealthCheck: false,
 					ActorTypes: []actorstore.ActorHostType{
@@ -146,7 +162,7 @@ func actorStateTests(store actorstore.Store) func(t *testing.T) {
 				after, err := store.GetAllHosts()
 				require.NoError(t, err)
 
-				expect := before[addedHostID]
+				expect := before[addedHost.HostID]
 				expect.ActorTypes = map[string]actorstore.TestDataActorType{
 					"newtype": {
 						IdleTimeout: 10 * time.Second,
@@ -154,14 +170,14 @@ func actorStateTests(store actorstore.Store) func(t *testing.T) {
 					},
 				}
 
-				require.Equal(t, expect, after[addedHostID])
+				require.Equal(t, expect, after[addedHost.HostID])
 			})
 
 			t.Run("Update host last healthcheck", func(t *testing.T) {
 				before, err := store.GetAllHosts()
 				require.NoError(t, err)
 
-				err = store.UpdateActorHost(context.Background(), addedHostID, actorstore.UpdateActorHostRequest{
+				err = store.UpdateActorHost(context.Background(), addedHost.HostID, actorstore.UpdateActorHostRequest{
 					UpdateLastHealthCheck: true,
 				})
 				require.NoError(t, err)
@@ -170,10 +186,10 @@ func actorStateTests(store actorstore.Store) func(t *testing.T) {
 				after, err := store.GetAllHosts()
 				require.NoError(t, err)
 
-				require.Equal(t, before[addedHostID].AppID, after[addedHostID].AppID)
-				require.Equal(t, before[addedHostID].Address, after[addedHostID].Address)
-				require.Equal(t, before[addedHostID].ActorTypes, after[addedHostID].ActorTypes)
-				require.True(t, before[addedHostID].LastHealthCheck.Before(after[addedHostID].LastHealthCheck))
+				require.Equal(t, before[addedHost.HostID].AppID, after[addedHost.HostID].AppID)
+				require.Equal(t, before[addedHost.HostID].Address, after[addedHost.HostID].Address)
+				require.Equal(t, before[addedHost.HostID].ActorTypes, after[addedHost.HostID].ActorTypes)
+				require.True(t, before[addedHost.HostID].LastHealthCheck.Before(after[addedHost.HostID].LastHealthCheck))
 			})
 
 			t.Run("Error when host ID is empty", func(t *testing.T) {
@@ -204,7 +220,7 @@ func actorStateTests(store actorstore.Store) func(t *testing.T) {
 				before, err := store.GetAllHosts()
 				require.NoError(t, err)
 
-				err = store.RemoveActorHost(context.Background(), addedHostID)
+				err = store.RemoveActorHost(context.Background(), addedHost.HostID)
 				require.NoError(t, err)
 
 				// Verify
@@ -212,7 +228,7 @@ func actorStateTests(store actorstore.Store) func(t *testing.T) {
 				require.NoError(t, err)
 
 				require.Len(t, after, len(before)-1)
-				require.Empty(t, after[addedHostID])
+				require.Empty(t, after[addedHost.HostID])
 			})
 
 			t.Run("Error when host ID is empty", func(t *testing.T) {

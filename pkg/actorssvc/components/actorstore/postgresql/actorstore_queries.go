@@ -27,6 +27,33 @@ var (
 	migration3Query string
 )
 
+// Query for adding a new actor host.
+//
+// Query arguments:
+// 1. Host address, as `string`
+// 2. Host app ID, as `string`
+// 3. Host actors API level, as `uint32`
+//
+// fmt.Sprintf arguments:
+// 1. Name of the "hosts" table
+// 2. Table prefix
+const addActorHostQuery = `WITH c AS (
+  SELECT $3::integer AS api_level
+  WHERE NOT EXISTS (
+    SELECT 1 FROM %[1]s LIMIT 1
+  )
+)
+INSERT INTO %[1]s
+  (host_address, host_app_id, host_actors_api_level, host_last_reported_api_level, host_last_healthcheck)
+VALUES
+  (
+    $1, $2, $3,
+    GREATEST(%[2]sget_min_api_level(), COALESCE((SELECT api_level FROM C), 0)),
+    now()
+  )
+RETURNING host_id, host_last_reported_api_level
+`
+
 // Query for looking up an actor, or creating it ex novo.
 //
 // The purpose of this query is to perform an atomic "load or set". Given an actor ID and type, it will:
