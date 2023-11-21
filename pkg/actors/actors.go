@@ -314,7 +314,7 @@ func (a *actorsRuntime) Init(ctx context.Context) (err error) {
 			for _, actorType := range a.actorsConfig.Config.HostedActorTypes.ListActorTypes() {
 				err = a.placement.AddHostedActorType(actorType, a.actorsConfig.GetIdleTimeoutForType(actorType))
 				if err != nil {
-					return fmt.Errorf("failed to register actor %s: %w", actorType, err)
+					return fmt.Errorf("failed to register actor '%s': %w", actorType, err)
 				}
 			}
 
