@@ -50,6 +50,9 @@ func main() {
 	log.Infof("Starting Dapr Actors service -- version %s -- commit %s", buildinfo.Version(), buildinfo.Commit())
 	log.Infof("Log level set to: %s", opts.Logger.OutputLevel)
 
+	// TODO @ItalyPaleAle: Remove before going live!
+	log.Warn("⚠️ TECHNOLOGY PREVIEW - DO NOT USE IN PRODUCTION. Project Emmy is a technology preview. This application is distributed for evaluation only and does not come with any warranty or support.")
+
 	loader.DefaultRegistry.Logger = logContrib
 
 	metricsExporter := metrics.NewExporterWithOptions(log, metrics.DefaultMetricNamespace, opts.Metrics)
