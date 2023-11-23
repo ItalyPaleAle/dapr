@@ -62,9 +62,9 @@ func (p *PostgreSQL) AddActorHost(ctx context.Context, properties actorstore.Add
 		queryCtx, queryCancel = context.WithTimeout(ctx, p.metadata.Timeout)
 		defer queryCancel()
 		err = tx.QueryRow(queryCtx,
-			fmt.Sprintf(addActorHostQuery, hostsTable, p.metadata.TablePrefix),
+			fmt.Sprintf(addActorHostQuery, hostsTable),
 			properties.Address, properties.AppID, properties.APILevel,
-		).Scan(&res.HostID, &res.APILevel)
+		).Scan(&res.HostID)
 		if err != nil {
 			switch {
 			case isUniqueViolationError(err):

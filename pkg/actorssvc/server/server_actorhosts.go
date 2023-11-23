@@ -50,11 +50,12 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 		return fmt.Errorf("failed to register actor host: %w", err)
 	}
 	if log.IsOutputLevelEnabled(logger.DebugLevel) {
-		log.Debugf("Registered actor host: id='%s' api-level='%d' info=[%s]", registeredHost.HostID, registeredHost.APILevel, handshakeMsg.LogInfo())
+		log.Debugf("Registered actor host: id='%s' info=[%s]", registeredHost.HostID, handshakeMsg.LogInfo())
 	}
 
 	// Send the relevant configuration to the actor host
-	err = stream.Send(s.opts.GetActorHostConfigurationMessage(registeredHost.APILevel))
+	// TODO: Set version here
+	err = stream.Send(s.opts.GetActorHostConfigurationMessage(0))
 	if err != nil {
 		log.Errorf("Failed to send configuration to actor host: %v", err)
 		return fmt.Errorf("failed to send configuration to actor host: %w", err)

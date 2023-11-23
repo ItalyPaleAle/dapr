@@ -55,7 +55,6 @@ func actorStateTests(store actorstore.Store) func(t *testing.T) {
 				})
 				require.NoError(t, err)
 				require.NotEmpty(t, addedHost.HostID)
-				assert.Equal(t, uint32(10), addedHost.APILevel)
 
 				// Verify
 				after, err := store.GetAllHosts()
@@ -92,7 +91,6 @@ func actorStateTests(store actorstore.Store) func(t *testing.T) {
 				})
 				require.NoError(t, err)
 				require.NotEmpty(t, res.HostID)
-				assert.Equal(t, uint32(10), res.APILevel) // Response should still be 10
 			})
 
 			t.Run("Cannot register host with same address", func(t *testing.T) {
@@ -110,7 +108,6 @@ func actorStateTests(store actorstore.Store) func(t *testing.T) {
 				})
 				require.Error(t, err)
 				require.ErrorIs(t, err, actorstore.ErrActorHostConflict)
-				assert.Equal(t, uint32(10), addedHost.APILevel)
 
 				// Verify - nothing should have changed
 				after, err := store.GetAllHosts()

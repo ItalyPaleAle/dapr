@@ -77,8 +77,6 @@ type AddActorHostRequest struct {
 type AddActorHostResponse struct {
 	// ID of the actor host that was registered
 	HostID string
-	// API level for the actor cluster
-	APILevel uint32
 }
 
 // UpdateActorHostRequest is the request object for the UpdateActorHost method.
