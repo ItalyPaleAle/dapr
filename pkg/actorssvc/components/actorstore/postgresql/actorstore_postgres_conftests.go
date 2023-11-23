@@ -26,6 +26,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"golang.org/x/exp/slices"
 	clocktesting "k8s.io/utils/clock/testing"
 
 	"github.com/dapr/dapr/pkg/actorssvc/components/actorstore"
@@ -254,6 +255,11 @@ func (p *PostgreSQL) LoadActorStateTestData(testData actorstore.TestData) error 
 			}
 		}
 	}
+
+	// Sort hosts putting those with the lowest API level first
+	slices.SortFunc(hosts, func(a, b []any) int {
+		return a[3].(int) - b[3].(int)
+	})
 
 	// Clean the tables first
 	// Note that the hosts actor types and actors table use foreign keys, so deleting hosts is enough to clean those too

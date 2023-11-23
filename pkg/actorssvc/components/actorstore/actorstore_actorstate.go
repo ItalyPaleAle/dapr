@@ -58,6 +58,10 @@ type StoreActorState interface {
 	// RemoveActor removes an actor from the list of active actors.
 	// If the actor doesn't exist, returns ErrActorNotFound.
 	RemoveActor(ctx context.Context, ref ActorRef) error
+
+	// SetOnActorsAPILevelUpdate sets the handler that receives notifications when the actors API level in the cluster is updated.
+	// Once upon the connection is active and the callback is set, the caller will receive the current actors API level in the cluster.
+	SetOnActorsAPILevelUpdate(fn func(apiLevel uint32))
 }
 
 // AddActorHostRequest is the request object for the AddActorHost method.

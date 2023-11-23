@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -50,12 +51,20 @@ type PostgreSQL struct {
 	db       *pgxpool.Pool
 	running  atomic.Bool
 	clock    clock.Clock
+	apiLevel atomic.Uint32
+
+	runningCtx    context.Context
+	runningCancel context.CancelFunc
+
+	onActorsAPILevelUpdate func(apiLevel uint32)
 }
 
 func (p *PostgreSQL) Init(ctx context.Context, md actorstore.Metadata) error {
 	if !p.running.CompareAndSwap(false, true) {
 		return errors.New("already running")
 	}
+
+	p.runningCtx, p.runningCancel = context.WithCancel(context.Background())
 
 	// Parse metadata
 	err := p.metadata.InitWithMetadata(md)
@@ -100,6 +109,9 @@ func (p *PostgreSQL) Init(ctx context.Context, md actorstore.Metadata) error {
 	}
 
 	p.logger.Info("Established connection to PostgreSQL")
+
+	// Start listening in background
+	go p.listen()
 
 	return nil
 }
@@ -157,6 +169,123 @@ func (p *PostgreSQL) performMigrations(ctx context.Context) error {
 	})
 }
 
+func (p *PostgreSQL) SetOnActorsAPILevelUpdate(fn func(apiLevel uint32)) {
+	p.onActorsAPILevelUpdate = fn
+	if fn != nil {
+		fn(p.apiLevel.Load())
+	}
+}
+
+// Starts listening for notifications in background.
+// This is meant to be invoked in a background goroutine.
+func (p *PostgreSQL) listen() {
+	p.logger.Info("Started listening for notifications")
+loop:
+	for {
+		select {
+		case <-p.runningCtx.Done():
+			break loop
+		default:
+			// No-op
+		}
+
+		err := p.doListen(p.runningCtx)
+		switch {
+		case errors.Is(err, context.Canceled):
+			break loop
+		case err != nil:
+			p.logger.Errorf("Error from notification listener, will reconnect: %v", err)
+		default:
+			// No-op
+		}
+
+		// Reconnect after a delay
+		select {
+		case <-p.runningCtx.Done():
+			break loop
+		case <-time.After(time.Second):
+			// No-op
+		}
+	}
+
+	p.logger.Info("Stopped listening for notifications")
+	return
+}
+
+func (p *PostgreSQL) doListen(ctx context.Context) error {
+	// Get a connection from the pool
+	conn, err := p.db.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to acquire connection from the pool: %w", err)
+	}
+	defer conn.Release()
+
+	queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
+	channelName := p.metadata.TablePrefix + "actors"
+	_, err = conn.Exec(queryCtx, "LISTEN "+channelName)
+	queryCancel()
+	if err != nil {
+		return fmt.Errorf("failed to listen for notifications on the channel '%s': %w", channelName, err)
+	}
+
+	// At this stage we have the LISTEN command executed, so Postgres is sending notifications to this connection (and buffering them)
+	// Before we wait for notifications, look up the current value for the API level
+	var apiLevel uint64
+	queryCtx, queryCancel = context.WithTimeout(ctx, p.metadata.Timeout)
+	err = conn.
+		QueryRow(queryCtx, `SELECT `+p.metadata.TablePrefix+`get_min_api_level()`).
+		Scan(&apiLevel)
+	queryCancel()
+	if err != nil {
+		return fmt.Errorf("failed to get current actor API level: %w", err)
+	}
+	p.updatedAPILevel(uint32(apiLevel))
+
+	// Loop and listen for notifications
+	for {
+		notification, err := conn.Conn().WaitForNotification(ctx)
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				return nil
+			}
+			return fmt.Errorf("failed to wait for notifications: %w", err)
+		}
+
+		// Notifications are in the format "<key>:<value>"
+		key, val, found := strings.Cut(notification.Payload, ":")
+		if !found {
+			// Ignore invalid notifications, but show a warning
+			p.logger.Warnf("Received notification with unknown payload: %s", notification.Payload)
+			continue
+		}
+
+		switch key {
+		case "api-level":
+			// Received an updated API level
+			apiLevel, err = strconv.ParseUint(val, 10, 32)
+			if err != nil {
+				p.logger.Warnf("Received notification with invalid payload for api-level: '%s'. Error: %v", notification.Payload, err)
+			} else {
+				p.updatedAPILevel(uint32(apiLevel))
+			}
+		default:
+			// Ignore invalid notifications, but show a warning
+			p.logger.Warnf("Received notification with unknown payload: %s", notification.Payload)
+		}
+	}
+}
+
+func (p *PostgreSQL) updatedAPILevel(apiLevel uint32) {
+	// If the new value is the same as the old, return
+	if p.apiLevel.Swap(apiLevel) == apiLevel {
+		return
+	}
+	if p.onActorsAPILevelUpdate != nil {
+		p.onActorsAPILevelUpdate(apiLevel)
+	}
+	p.logger.Debugf("Updated actors API level in the cluster: %d", apiLevel)
+}
+
 func (p *PostgreSQL) Ping(ctx context.Context) error {
 	if !p.running.Load() {
 		return errors.New("not running")
@@ -172,6 +301,8 @@ func (p *PostgreSQL) Close() (err error) {
 	if !p.running.Load() {
 		return nil
 	}
+
+	p.runningCancel()
 
 	p.logger.Debug("Closing connection")
 	if p.db != nil {

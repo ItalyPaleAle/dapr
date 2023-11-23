@@ -21,6 +21,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 
 	"github.com/alphadose/haxmap"
 	"google.golang.org/grpc"
@@ -56,6 +57,9 @@ type server struct {
 	// Map that contains the currently-active reminders
 	// The key is a string in the format "hostId||reminderType||reminderId||reminderName||completionKey"
 	activeReminders *haxmap.Map[string, *activeReminder]
+
+	// Current API level for actors in the cluster
+	clusterAPILevel atomic.Uint32
 
 	// Cached values of host IDs and actor types for connected hosts.
 	// We maintain a cache here to improve memory usage when we need to fetch reminders etc, and to reduce the duration we need to acquire read locks for.
@@ -131,6 +135,15 @@ func (s *server) initActorStore(ctx context.Context) (err error) {
 	if err != nil {
 		return err
 	}
+
+	s.store.SetOnActorsAPILevelUpdate(func(apiLevel uint32) {
+		if s.clusterAPILevel.Swap(apiLevel) == apiLevel {
+			// Value was unchanged
+			return
+		}
+
+		// TODO: Notify all connected hosts
+	})
 
 	return nil
 }

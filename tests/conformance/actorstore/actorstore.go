@@ -98,6 +98,9 @@ func loadActorStateTestData(store actorstore.Store) func(t *testing.T) {
 	return func(t *testing.T) {
 		t.Helper()
 		require.NoError(t, store.LoadActorStateTestData(GetTestData()), "Failed to load actor state test data")
+
+		// Host 899502fd-88c5-4aef-b0f5-ff0a9f185933 must be loaded only once
+		delete(testData.Hosts, "899502fd-88c5-4aef-b0f5-ff0a9f185933")
 	}
 }
 

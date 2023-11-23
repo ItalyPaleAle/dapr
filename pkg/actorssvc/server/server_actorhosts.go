@@ -54,8 +54,7 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 	}
 
 	// Send the relevant configuration to the actor host
-	// TODO: Set version here
-	err = stream.Send(s.opts.GetActorHostConfigurationMessage(0))
+	err = stream.Send(s.opts.GetActorHostConfigurationMessage(s.clusterAPILevel.Load()))
 	if err != nil {
 		log.Errorf("Failed to send configuration to actor host: %v", err)
 		return fmt.Errorf("failed to send configuration to actor host: %w", err)

@@ -41,6 +41,18 @@ func init() {
 
 	testData = actorstore.TestData{
 		Hosts: map[string]actorstore.TestDataHost{
+			// This host has a lower API level and will be deleted right away
+			"899502fd-88c5-4aef-b0f5-ff0a9f185933": {
+				Address:              "1.0.0.1",
+				AppID:                "myapp0",
+				LastHealthCheckStore: -2 * time.Minute,
+				ActorTypes: map[string]actorstore.TestDataActorType{
+					"type-0": {
+						IdleTimeout: 30 * time.Second,
+					},
+				},
+				APILevel: 5,
+			},
 			"7de434ce-e285-444f-9857-4d30cade3111": {
 				Address: "1.1.1.1",
 				AppID:   "myapp1",
@@ -63,6 +75,7 @@ func init() {
 				},
 				APILevel: 10,
 			},
+			// This host's health check has expired
 			"50d7623f-b165-4f9e-9f05-3b7a1280b222": {
 				Address:              "1.1.1.2",
 				AppID:                "myapp1",

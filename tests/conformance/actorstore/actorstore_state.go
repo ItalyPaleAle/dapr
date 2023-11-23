@@ -39,8 +39,39 @@ func actorStateTests(store actorstore.Store) func(t *testing.T) {
 		testData := GetTestData()
 		var addedHost actorstore.AddActorHostResponse
 
+		apiLevelUpdateCh := make(chan uint32, 1)
+		store.SetOnActorsAPILevelUpdate(func(apiLevel uint32) {
+			select {
+			case apiLevelUpdateCh <- apiLevel:
+				// Stored
+			default:
+				// Channel is full
+			}
+		})
+		defer store.SetOnActorsAPILevelUpdate(nil)
+
+		assertAPILevel := func(t *testing.T, expectAPILevel uint32) {
+			select {
+			case <-time.After(2 * time.Second):
+				t.Fatal("Did not receive API level in 2s")
+			case apiLevel := <-apiLevelUpdateCh:
+				require.Equal(t, expectAPILevel, apiLevel)
+			}
+		}
+
+		// Expect a signal right away
+		t.Run("Receive initial API level", func(t *testing.T) {
+			assertAPILevel(t, 5)
+		})
+
 		t.Run("Add new host", func(t *testing.T) {
 			t.Run("Adding new hosts should purge expired ones", func(t *testing.T) {
+				// Drain apiLevelUpdateCh just in case
+				select {
+				case <-apiLevelUpdateCh:
+				default:
+				}
+
 				before, err := store.GetAllHosts()
 				require.NoError(t, err)
 
@@ -63,21 +94,29 @@ func actorStateTests(store actorstore.Store) func(t *testing.T) {
 				require.Len(t, after[addedHost.HostID].ActorTypes, 1)
 				require.Equal(t, 20*time.Second, after[addedHost.HostID].ActorTypes["newtype1"].IdleTimeout)
 
-				// 50d7623f-b165-4f9e-9f05-3b7a1280b222 should have been deleted because its last healthcheck was before the interval
+				// 899502fd-88c5-4aef-b0f5-ff0a9f185933 and 50d7623f-b165-4f9e-9f05-3b7a1280b222 should have been deleted because their last healthcheck was before the interval
 				// The newly-added item should be in its place
-				// Also note that deleting the actor host should have removed all actors that were hosted by this host
+				// Also note that deleting the actor hosts should have removed all actors that were hosted by those host
 				// If that weren't the case, `GetAllHosts` should have returned an error
 				expectHosts := maps.Keys(before)
+				n := 0
 				for i, v := range expectHosts {
-					if v == "50d7623f-b165-4f9e-9f05-3b7a1280b222" {
-						expectHosts[i] = addedHost.HostID
+					if v == "899502fd-88c5-4aef-b0f5-ff0a9f185933" || v == "50d7623f-b165-4f9e-9f05-3b7a1280b222" {
+						continue
 					}
+					expectHosts[n] = expectHosts[i]
+					n++
 				}
+				expectHosts[n] = addedHost.HostID
+				expectHosts = expectHosts[:n+1]
 
 				afterHosts := maps.Keys(after)
 				slices.Sort(expectHosts)
 				slices.Sort(afterHosts)
 				require.Equal(t, expectHosts, afterHosts)
+
+				// Should have received an updated API level
+				assertAPILevel(t, 10)
 			})
 
 			t.Run("Add host with API level higher than the cluster's", func(t *testing.T) {
