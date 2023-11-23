@@ -62,13 +62,20 @@ RETURN
 CREATE FUNCTION %[5]supdate_metadata_min_api_level()
 RETURNS trigger
 AS $func$
+DECLARE
+  new_val integer;
 BEGIN
   INSERT INTO %[4]s ("key", "value")
     SELECT 'actors-api-level', COALESCE(MIN(host_actors_api_level), 0)
     FROM %[1]s
   ON CONFLICT ("key") DO UPDATE
     SET value = EXCLUDED.value
-    WHERE EXCLUDED.value::integer > COALESCE(%[4]s.value, '0')::integer;
+    WHERE EXCLUDED.value::integer > COALESCE(%[4]s.value, '0')::integer
+  RETURNING value INTO new_val;
+  -- RAISE NOTICE 'value: %%', new_val;
+  IF new_val IS NOT NULL THEN
+    PERFORM pg_notify('actors', 'api-level:' || new_val);
+  END IF;
   RETURN NULL;
 END;
 $func$ LANGUAGE plpgsql;
@@ -90,7 +97,7 @@ CREATE FUNCTION %[5]senforce_min_api_level()
 RETURNS trigger
 AS $func$
 DECLARE
-  current_version INTEGER;
+  current_version integer;
 BEGIN
   -- Note that here we select the minimum API level from the metadata table, not what's observed in the connected hosts, neither what's been distributed
   SELECT %[5]sget_min_api_level() INTO current_version;
