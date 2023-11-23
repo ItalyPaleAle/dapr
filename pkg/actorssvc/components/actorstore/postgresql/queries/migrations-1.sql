@@ -74,7 +74,7 @@ BEGIN
   RETURNING value INTO new_val;
   -- RAISE NOTICE 'value: %%', new_val;
   IF new_val IS NOT NULL THEN
-    PERFORM pg_notify('%[5]actors', 'api-level:' || new_val);
+    PERFORM pg_notify('%[5]sactors', 'api-level:' || new_val);
   END IF;
   RETURN NULL;
 END;
