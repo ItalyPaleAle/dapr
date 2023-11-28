@@ -179,15 +179,6 @@ func (p *PostgreSQL) UpdateActorHost(ctx context.Context, actorHostID string, pr
 	return nil
 }
 
-func (p *PostgreSQL) ListActorHostsNeedUpdating(ctx context.Context, hosts []string) ([]string, error) {
-	panic("WIP")
-	/*queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
-	defer queryCancel()
-
-	q := fmt.Sprintf(`SELECT %[2]sget_min_api_level()`,
-	p.metadata.TableName(pgTableHosts), p.metadata.TablePrefix)*/
-}
-
 // Updates the hosts table with the given properties.
 // Does not update ActorTypes which impacts a separate table.
 func updateHostsTable(ctx context.Context, db pginterfaces.DBQuerier, actorHostID string, properties actorstore.UpdateActorHostRequest, hostsTable string, failedInterval time.Duration, timeout time.Duration) error {
