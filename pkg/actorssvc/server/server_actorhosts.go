@@ -54,7 +54,9 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 	}
 
 	// Send the relevant configuration to the actor host
-	err = stream.Send(s.opts.GetActorHostConfigurationMessage(s.clusterAPILevel.Load()))
+	err = stream.Send(&actorsv1pb.ConnectHostServerStream{
+		Message: s.opts.GetActorHostConfigurationMessage(s.clusterAPILevel.Load()),
+	})
 	if err != nil {
 		log.Errorf("Failed to send configuration to actor host: %v", err)
 		return fmt.Errorf("failed to send configuration to actor host: %w", err)
@@ -120,7 +122,8 @@ func (s *server) ConnectHost(stream actorsv1pb.Actors_ConnectHostServer) error {
 	}()
 
 	// Store a channel in connectedHosts that can be used to send messages to this actor host
-	serverMsgCh := make(chan actorsv1pb.ServerStreamMessage)
+	// This has a capacity of 3 to add some buffer
+	serverMsgCh := make(chan actorsv1pb.ServerStreamMessage, 3)
 	actorTypes := handshakeMsg.GetActorTypeNames()
 	s.setConnectedHost(registeredHost.HostID, connectedHostInfo{
 		serverMsgCh: serverMsgCh,

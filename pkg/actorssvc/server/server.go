@@ -142,7 +142,7 @@ func (s *server) initActorStore(ctx context.Context) (err error) {
 			return
 		}
 
-		// TODO: Notify all connected hosts
+		s.broadcastMessage(s.opts.GetActorHostConfigurationMessage(apiLevel))
 	})
 
 	return nil

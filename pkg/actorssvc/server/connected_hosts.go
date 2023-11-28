@@ -125,3 +125,13 @@ func (s *server) isConnectedHostPaused(actorHostID string) bool { //nolint:unuse
 	s.connectedHostsLock.RUnlock()
 	return !ok || host.pausedUntil.After(time.Now())
 }
+
+// broadcastMessage sends a message to all connected hosts
+func (s *server) broadcastMessage(msg actorsv1pb.ServerStreamMessage) {
+	s.connectedHostsLock.RLock()
+	defer s.connectedHostsLock.RUnlock()
+
+	for hostID := range s.connectedHosts {
+		s.connectedHosts[hostID].serverMsgCh <- msg
+	}
+}
