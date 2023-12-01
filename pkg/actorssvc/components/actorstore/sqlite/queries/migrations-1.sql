@@ -11,10 +11,10 @@ CREATE TABLE hosts (
   host_last_healthcheck integer NOT NULL
 );
 
-CREATE UNIQUE INDEX ON hosts (host_address);
-CREATE INDEX ON hosts (host_last_healthcheck);
-CREATE INDEX ON hosts (host_actors_api_level);
-CREATE INDEX ON hosts (host_last_reported_api_level);
+CREATE UNIQUE INDEX host_address_idx ON hosts (host_address);
+CREATE INDEX host_last_healthcheck_idx ON hosts (host_last_healthcheck);
+CREATE INDEX host_actors_api_level_idx ON hosts (host_actors_api_level);
+CREATE INDEX host_last_reported_api_level_idx ON hosts (host_last_reported_api_level);
 
 -- "hosts_actor_types" table
 CREATE TABLE hosts_actor_types (
@@ -26,7 +26,7 @@ CREATE TABLE hosts_actor_types (
   FOREIGN KEY (host_id) REFERENCES hosts (host_id) ON DELETE CASCADE
 );
 
-CREATE INDEX ON hosts_actor_types (actor_type);
+CREATE INDEX actor_type_idx ON hosts_actor_types (actor_type);
 
 -- "actors" table
 CREATE TABLE actors (

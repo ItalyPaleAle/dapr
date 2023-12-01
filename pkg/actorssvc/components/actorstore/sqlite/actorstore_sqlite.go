@@ -18,15 +18,14 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
+	"math"
+	"strconv"
 	"sync/atomic"
 	"time"
 
-	// Blank import for the underlying SQLite Driver.
-	_ "modernc.org/sqlite"
+	"modernc.org/sqlite"
+	sqlitelib "modernc.org/sqlite/lib"
 
-	"github.com/jackc/pgerrcode"
-	"github.com/jackc/pgx/v5/pgconn"
 	"k8s.io/utils/clock"
 
 	sqlinternal "github.com/dapr/components-contrib/common/component/sql"
@@ -120,7 +119,7 @@ func (s *SQLite) performMigrations(ctx context.Context) error {
 		// Migration 1: create the tables for actors state
 		func(ctx context.Context) error {
 			s.logger.Info("Creating tables for actors state")
-			_, err := s.db.ExecContext(ctx, migration1Query)
+			_, err := m.GetConn().ExecContext(ctx, migration1Query)
 			if err != nil {
 				return fmt.Errorf("failed to create actors state tables: %w", err)
 			}
@@ -129,7 +128,7 @@ func (s *SQLite) performMigrations(ctx context.Context) error {
 		// Migration 2: create the tables for reminders
 		func(ctx context.Context) error {
 			s.logger.Info("Creating tables for reminders")
-			_, err := s.db.ExecContext(ctx, migration2Query)
+			_, err := m.GetConn().ExecContext(ctx, migration2Query)
 			if err != nil {
 				return fmt.Errorf("failed to create reminders table: %w", err)
 			}
@@ -182,10 +181,10 @@ loop:
 }
 
 func (s *SQLite) doListen(ctx context.Context) error {
-	panic("TODO")
+	// TODO
+	return nil
 }
 
-//nolint:unused
 func (s *SQLite) updatedAPILevel(apiLevel uint32) {
 	// If the new value is the same as the old, return
 	if s.apiLevel.Swap(apiLevel) == apiLevel {
@@ -222,24 +221,73 @@ func (s *SQLite) Close() (err error) {
 	return err
 }
 
+// Retrieves the actors API level for the cluster, from the metadata table.
+func (s *SQLite) getClusterActorsAPILevel(ctx context.Context, db querier) (uint32, error) {
+	queryCtx, queryCancel := context.WithTimeout(ctx, s.metadata.Timeout)
+	defer queryCancel()
+
+	var (
+		val   string
+		level uint64
+	)
+	err := db.QueryRowContext(queryCtx, `SELECT value FROM metadata WHERE key = 'actors-api-level'`).Scan(&val)
+	if errors.Is(err, sql.ErrNoRows) {
+		// If the row doesn't exist, then assume it's 0
+		level = 0
+	} else if err != nil {
+		return 0, fmt.Errorf("failed to retrieve actors API level from metadata: %w", err)
+	} else {
+		level, err = strconv.ParseUint(val, 10, 32)
+		if err != nil {
+			return 0, fmt.Errorf("invalid value in the metadata table for actors API level: %w", err)
+		}
+		if level > math.MaxUint32 {
+			return 0, errors.New("invalid value in the metadata table for actors API level: value larger than MaxUint32")
+		}
+	}
+
+	// Ok to truncate to 32-bit uint because we already checked the value isn't larger than limit
+	return uint32(level), nil
+}
+
+// Updates the actors API level for the cluster in the metadata table, returning the updated value.
+func (s *SQLite) updateClusterActorsAPILevel(ctx context.Context, db querier) (uint32, error) {
+	queryCtx, queryCancel := context.WithTimeout(ctx, s.metadata.Timeout)
+	defer queryCancel()
+	var val string
+	err := db.QueryRowContext(queryCtx, `
+WITH c AS (
+	SELECT min(host_actors_api_level) AS value
+	FROM hosts
+)
+REPLACE INTO metadata (key, value)
+VALUES ('actors-api-level', c.value)
+RETURNING c.value
+`).Scan(&val)
+	if err != nil {
+		return 0, fmt.Errorf("failed to update actors API level in metadata: %w", err)
+	}
+
+	level, err := strconv.ParseUint(val, 10, 32)
+	if err != nil {
+		return 0, fmt.Errorf("invalid value in the metadata table for actors API level: %w", err)
+	}
+	if level > math.MaxUint32 {
+		return 0, errors.New("invalid value in the metadata table for actors API level: value larger than MaxUint32")
+	}
+
+	// Ok to truncate to 32-bit uint because we already checked the value isn't larger than limit
+	return uint32(level), nil
+}
+
 // Returns true if the error is a unique constraint violation error, such as a duplicate unique index or primary key.
 func isUniqueViolationError(err error) bool {
 	if err == nil {
 		return false
 	}
 
-	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation
-}
-
-// Returns true if the error indicates that the actor host being added is on an actor API level lower than the current state for the cluster
-func isActorHostAPILevelTooLowError(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == pgerrcode.RaiseException && strings.Contains(pgErr.Message, "host_actors_api_level")
+	var sqliteErr *sqlite.Error
+	return errors.As(err, &sqliteErr) && (sqliteErr.Code()&sqlitelib.SQLITE_CONSTRAINT) != 0
 }
 
 func executeInTransaction[T any](ctx context.Context, log logger.Logger, db *sql.DB, timeout time.Duration, fn func(ctx context.Context, tx *sql.Tx) (T, error)) (res T, err error) {

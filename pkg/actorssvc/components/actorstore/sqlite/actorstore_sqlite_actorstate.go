@@ -34,6 +34,15 @@ func (s *SQLite) AddActorHost(ctx context.Context, properties actorstore.AddActo
 	return executeInTransaction(ctx, s.logger, s.db, s.metadata.Timeout, func(ctx context.Context, tx *sql.Tx) (res actorstore.AddActorHostResponse, err error) {
 		now := s.clock.Now().Unix()
 
+		// First, check if the api level of the host to add is high enough
+		apiLevel, err := s.getClusterActorsAPILevel(ctx, tx)
+		if err != nil {
+			return res, err
+		}
+		if properties.APILevel < apiLevel {
+			return res, actorstore.ErrActorHostAPILevelTooLow
+		}
+
 		// Generate a new host_id UUID
 		hostID, err := uuid.NewRandom()
 		if err != nil {
@@ -69,15 +78,10 @@ VALUES
   (?, ?, ?, ?, ?)`,
 			res.HostID, properties.Address, properties.AppID, properties.APILevel, now,
 		)
-		if err != nil {
-			switch {
-			case isUniqueViolationError(err):
-				return res, actorstore.ErrActorHostConflict
-			case isActorHostAPILevelTooLowError(err):
-				return res, actorstore.ErrActorHostAPILevelTooLow
-			default:
-				return res, fmt.Errorf("failed to insert actor host in hosts table: %w", err)
-			}
+		if isUniqueViolationError(err) {
+			return res, actorstore.ErrActorHostConflict
+		} else if err != nil {
+			return res, fmt.Errorf("failed to insert actor host in hosts table: %w", err)
 		}
 
 		// Register each supported actor type
@@ -87,6 +91,15 @@ VALUES
 		if err != nil {
 			return res, err
 		}
+
+		// Update the actors API level
+		newLevel, err := s.updateClusterActorsAPILevel(ctx, tx)
+		if err != nil {
+			return res, err
+		}
+
+		// Calling s.updatedAPILevel with the same level as before is a nop
+		s.updatedAPILevel(newLevel)
 
 		return res, nil
 	})
@@ -148,12 +161,12 @@ func (s *SQLite) UpdateActorHost(ctx context.Context, actorHostID string, proper
 	// Let's avoid creating a transaction if we are not updating actor types (which involve updating 2 tables)
 	// This saves at least 2 round-trips to the database and improves locking
 	if properties.ActorTypes == nil {
-		err = updateHostsTable(ctx, s.db, actorHostID, properties, s.metadata.Config.FailedInterval(), s.metadata.Timeout)
+		err = updateHostsTable(ctx, s.db, s.clock.Now(), actorHostID, properties, s.metadata.Config.FailedInterval(), s.metadata.Timeout)
 	} else {
 		// Because we need to update 2 tables, we need a transaction
 		_, err = executeInTransaction(ctx, s.logger, s.db, s.metadata.Timeout, func(ctx context.Context, tx *sql.Tx) (z struct{}, zErr error) {
 			// Update all hosts properties, besides the list of supported actor types
-			zErr = updateHostsTable(ctx, tx, actorHostID, properties, s.metadata.Config.FailedInterval(), s.metadata.Timeout)
+			zErr = updateHostsTable(ctx, tx, s.clock.Now(), actorHostID, properties, s.metadata.Config.FailedInterval(), s.metadata.Timeout)
 			if zErr != nil {
 				return z, zErr
 			}
@@ -163,7 +176,7 @@ func (s *SQLite) UpdateActorHost(ctx context.Context, actorHostID string, proper
 			queryCtx, queryCancel := context.WithTimeout(ctx, s.metadata.Timeout)
 			defer queryCancel()
 			_, zErr = s.db.ExecContext(queryCtx,
-				"DELETE FROM hosts_actor_types WHERE host_id = $1",
+				"DELETE FROM hosts_actor_types WHERE host_id = ?",
 				actorHostID,
 			)
 			if zErr != nil {
@@ -188,7 +201,7 @@ func (s *SQLite) UpdateActorHost(ctx context.Context, actorHostID string, proper
 
 // Updates the hosts table with the given properties.
 // Does not update ActorTypes which impacts a separate table.
-func updateHostsTable(ctx context.Context, db querier, actorHostID string, properties actorstore.UpdateActorHostRequest, failedInterval time.Duration, timeout time.Duration) error {
+func updateHostsTable(ctx context.Context, db querier, now time.Time, actorHostID string, properties actorstore.UpdateActorHostRequest, failedInterval time.Duration, timeout time.Duration) error {
 	// For now, host_last_healthcheck is the only property that can be updated in the hosts table
 	if !properties.UpdateLastHealthCheck {
 		return nil
@@ -199,12 +212,11 @@ func updateHostsTable(ctx context.Context, db querier, actorHostID string, prope
 	res, err := db.ExecContext(queryCtx, `
 	UPDATE hosts
 	SET
-		host_last_healthcheck = now()
+		host_last_healthcheck = ?
 	WHERE
 		host_id = ? AND
-		host_last_healthcheck >= now() - ?::interval
-	`,
-		actorHostID, failedInterval,
+		host_last_healthcheck >= ?`,
+		now.Unix(), actorHostID, now.Add(-1*failedInterval).Unix(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update actor host: %w", err)

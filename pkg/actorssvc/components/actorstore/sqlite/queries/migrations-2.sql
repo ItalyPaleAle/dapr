@@ -14,6 +14,6 @@ CREATE TABLE reminders (
   reminder_lease_pid text
 );
 
-CREATE UNIQUE INDEX ON reminders (actor_type, actor_id, reminder_name);
-CREATE INDEX ON reminders (reminder_execution_time);
-CREATE INDEX ON reminders (reminder_lease_pid);
+CREATE UNIQUE INDEX reminder_ref_idx ON reminders (actor_type, actor_id, reminder_name);
+CREATE INDEX reminder_execution_time_idx ON reminders (reminder_execution_time);
+CREATE INDEX reminder_lease_pid_idx ON reminders (reminder_lease_pid);
