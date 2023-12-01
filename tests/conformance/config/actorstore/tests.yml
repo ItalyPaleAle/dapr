@@ -3,3 +3,5 @@ componentType: actorstore
 components:
   - component: postgresql
     operations: []
+  - component: sqlite
+    operations: []

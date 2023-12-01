@@ -24,16 +24,16 @@ import (
 	"github.com/dapr/dapr/pkg/actorssvc/components/actorstore"
 )
 
-func (p *SQLite) GetReminder(ctx context.Context, req actorstore.ReminderRef) (res actorstore.GetReminderResponse, err error) {
+func (s *SQLite) GetReminder(ctx context.Context, req actorstore.ReminderRef) (res actorstore.GetReminderResponse, err error) {
 	if !req.IsValid() {
 		return res, actorstore.ErrInvalidRequestMissingParameters
 	}
 
-	queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
+	queryCtx, queryCancel := context.WithTimeout(ctx, s.metadata.Timeout)
 	defer queryCancel()
 
 	var delay int
-	err = p.db.
+	err = s.db.
 		QueryRowContext(queryCtx, `
 SELECT
 	reminder_execution_time,
@@ -55,12 +55,12 @@ WHERE
 	}
 
 	// The query doesn't return an exact time, but rather the number of seconds from present, to make sure we always use the clock of the DB server and avoid clock skews
-	res.ExecutionTime = p.clock.Now().Add(time.Duration(delay) * time.Second)
+	res.ExecutionTime = s.clock.Now().Add(time.Duration(delay) * time.Second)
 
 	return res, nil
 }
 
-func (p *SQLite) CreateReminder(ctx context.Context, req actorstore.CreateReminderRequest) error {
+func (s *SQLite) CreateReminder(ctx context.Context, req actorstore.CreateReminderRequest) error {
 	if !req.IsValid() {
 		return actorstore.ErrInvalidRequestMissingParameters
 	}
@@ -68,13 +68,13 @@ func (p *SQLite) CreateReminder(ctx context.Context, req actorstore.CreateRemind
 	// Do not store the exact time, but rather the delay from now, to use the DB server's clock
 	var executionTime time.Duration
 	if !req.ExecutionTime.IsZero() {
-		executionTime = req.ExecutionTime.Sub(p.clock.Now())
+		executionTime = req.ExecutionTime.Sub(s.clock.Now())
 	} else {
 		// Note that delay could be zero
 		executionTime = req.Delay
 	}
 
-	queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
+	queryCtx, queryCancel := context.WithTimeout(ctx, s.metadata.Timeout)
 	defer queryCancel()
 	q := `
 INSERT INTO reminders
@@ -87,14 +87,14 @@ ON CONFLICT (actor_type, actor_id, reminder_name) DO UPDATE SET
 	reminder_data = EXCLUDED.reminder_data,
 	reminder_lease_time = NULL,
 	reminder_lease_pid = NULL`
-	_, err := p.db.ExecContext(queryCtx, q, req.ActorType, req.ActorID, req.Name, executionTime, req.Period, req.TTL, req.Data)
+	_, err := s.db.ExecContext(queryCtx, q, req.ActorType, req.ActorID, req.Name, executionTime, req.Period, req.TTL, req.Data)
 	if err != nil {
 		return fmt.Errorf("failed to create reminder: %w", err)
 	}
 	return nil
 }
 
-func (p *SQLite) CreateLeasedReminder(ctx context.Context, req actorstore.CreateLeasedReminderRequest) (*actorstore.FetchedReminder, error) {
+func (s *SQLite) CreateLeasedReminder(ctx context.Context, req actorstore.CreateLeasedReminderRequest) (*actorstore.FetchedReminder, error) {
 	if !req.Reminder.IsValid() {
 		return nil, actorstore.ErrInvalidRequestMissingParameters
 	}
@@ -102,14 +102,14 @@ func (p *SQLite) CreateLeasedReminder(ctx context.Context, req actorstore.Create
 	panic("TODO")
 }
 
-func (p *SQLite) DeleteReminder(ctx context.Context, req actorstore.ReminderRef) error {
+func (s *SQLite) DeleteReminder(ctx context.Context, req actorstore.ReminderRef) error {
 	if !req.IsValid() {
 		return actorstore.ErrInvalidRequestMissingParameters
 	}
 
-	queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
+	queryCtx, queryCancel := context.WithTimeout(ctx, s.metadata.Timeout)
 	defer queryCancel()
-	res, err := p.db.ExecContext(queryCtx,
+	res, err := s.db.ExecContext(queryCtx,
 		`DELETE FROM reminders WHERE actor_type = ? AND actor_id = ? AND reminder_name = ?`,
 		req.ActorType, req.ActorID, req.Name,
 	)
@@ -126,7 +126,7 @@ func (p *SQLite) DeleteReminder(ctx context.Context, req actorstore.ReminderRef)
 	return nil
 }
 
-func (p *SQLite) FetchNextReminders(ctx context.Context, req actorstore.FetchNextRemindersRequest) ([]*actorstore.FetchedReminder, error) {
+func (s *SQLite) FetchNextReminders(ctx context.Context, req actorstore.FetchNextRemindersRequest) ([]*actorstore.FetchedReminder, error) {
 	// If there's no host or supported actor types, that means there's nothing to return
 	if len(req.Hosts) == 0 && len(req.ActorTypes) == 0 {
 		return nil, nil
@@ -135,7 +135,7 @@ func (p *SQLite) FetchNextReminders(ctx context.Context, req actorstore.FetchNex
 	panic("TODO")
 }
 
-func (p *SQLite) GetReminderWithLease(ctx context.Context, fr *actorstore.FetchedReminder) (res actorstore.Reminder, err error) {
+func (s *SQLite) GetReminderWithLease(ctx context.Context, fr *actorstore.FetchedReminder) (res actorstore.Reminder, err error) {
 	if fr == nil {
 		return res, errors.New("reminer object is nil")
 	}
@@ -144,7 +144,7 @@ func (p *SQLite) GetReminderWithLease(ctx context.Context, fr *actorstore.Fetche
 		return res, errors.New("invalid reminder lease object")
 	}
 
-	queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
+	queryCtx, queryCancel := context.WithTimeout(ctx, s.metadata.Timeout)
 	defer queryCancel()
 
 	q := `SELECT
@@ -159,8 +159,8 @@ WHERE
 	AND reminder_lease_time IS NOT NULL
 	AND reminder_lease_time >= now() - ?`
 	var delay int
-	err = p.db.
-		QueryRowContext(queryCtx, q, lease.reminderID, *lease.leaseID, p.metadata.PID, p.metadata.Config.RemindersLeaseDuration).
+	err = s.db.
+		QueryRowContext(queryCtx, q, lease.reminderID, *lease.leaseID, s.metadata.PID, s.metadata.Config.RemindersLeaseDuration).
 		Scan(
 			&res.ActorType, &res.ActorID, &res.Name,
 			&delay, &res.Period, &res.TTL, &res.Data,
@@ -173,12 +173,12 @@ WHERE
 	}
 
 	// The query doesn't return an exact time, but rather the number of seconds from present, to make sure we always use the clock of the DB server and avoid clock skews
-	res.ExecutionTime = p.clock.Now().Add(time.Duration(delay) * time.Second)
+	res.ExecutionTime = s.clock.Now().Add(time.Duration(delay) * time.Second)
 
 	return res, nil
 }
 
-func (p *SQLite) UpdateReminderWithLease(ctx context.Context, fr *actorstore.FetchedReminder, req actorstore.UpdateReminderWithLeaseRequest) error {
+func (s *SQLite) UpdateReminderWithLease(ctx context.Context, fr *actorstore.FetchedReminder, req actorstore.UpdateReminderWithLeaseRequest) error {
 	if fr == nil {
 		return errors.New("reminer object is nil")
 	}
@@ -187,7 +187,7 @@ func (p *SQLite) UpdateReminderWithLease(ctx context.Context, fr *actorstore.Fet
 		return errors.New("invalid reminder lease object")
 	}
 
-	queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
+	queryCtx, queryCancel := context.WithTimeout(ctx, s.metadata.Timeout)
 	defer queryCancel()
 
 	// Unless KeepLease is true, we also release the lease on the reminder
@@ -199,7 +199,8 @@ func (p *SQLite) UpdateReminderWithLease(ctx context.Context, fr *actorstore.Fet
 		leaseQuery = "reminder_lease_time = now(),"
 	}
 
-	res, err := p.db.ExecContext(queryCtx, `
+	//nolint:gosec
+	res, err := s.db.ExecContext(queryCtx, `
 UPDATE reminders SET
 	`+leaseQuery+`
 	reminder_execution_time = ?,
@@ -212,7 +213,7 @@ WHERE
 	AND reminder_lease_time IS NOT NULL
 	AND reminder_lease_time >= now() - ?::interval`,
 		req.ExecutionTime, req.Period, req.TTL,
-		lease.reminderID, *lease.leaseID, p.metadata.PID, p.metadata.Config.RemindersLeaseDuration,
+		lease.reminderID, *lease.leaseID, s.metadata.PID, s.metadata.Config.RemindersLeaseDuration,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update reminder: %w", err)
@@ -227,7 +228,7 @@ WHERE
 	return nil
 }
 
-func (p *SQLite) DeleteReminderWithLease(ctx context.Context, fr *actorstore.FetchedReminder) error {
+func (s *SQLite) DeleteReminderWithLease(ctx context.Context, fr *actorstore.FetchedReminder) error {
 	if fr == nil {
 		return errors.New("reminer object is nil")
 	}
@@ -236,9 +237,9 @@ func (p *SQLite) DeleteReminderWithLease(ctx context.Context, fr *actorstore.Fet
 		return errors.New("invalid reminder lease object")
 	}
 
-	queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
+	queryCtx, queryCancel := context.WithTimeout(ctx, s.metadata.Timeout)
 	defer queryCancel()
-	res, err := p.db.ExecContext(queryCtx, `
+	res, err := s.db.ExecContext(queryCtx, `
 DELETE FROM reminders
 WHERE
 	reminder_id = ?
@@ -246,7 +247,7 @@ WHERE
 	AND reminder_lease_pid = ?
 	AND reminder_lease_time IS NOT NULL
 	AND reminder_lease_time >= now() - ?::interval`,
-		lease.reminderID, *lease.leaseID, p.metadata.PID, p.metadata.Config.RemindersLeaseDuration,
+		lease.reminderID, *lease.leaseID, s.metadata.PID, s.metadata.Config.RemindersLeaseDuration,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to delete reminder: %w", err)
@@ -261,16 +262,16 @@ WHERE
 	return nil
 }
 
-func (p *SQLite) RenewReminderLeases(ctx context.Context, req actorstore.RenewReminderLeasesRequest) (int64, error) {
+func (s *SQLite) RenewReminderLeases(ctx context.Context, req actorstore.RenewReminderLeasesRequest) (int64, error) {
 	// If there's no connected host or no supported actor type, do not renew any lease
 	if len(req.Hosts) == 0 && len(req.ActorTypes) == 0 {
 		return 0, nil
 	}
 
-	queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
+	queryCtx, queryCancel := context.WithTimeout(ctx, s.metadata.Timeout)
 	defer queryCancel()
 
-	res, err := p.db.ExecContext(queryCtx, `
+	res, err := s.db.ExecContext(queryCtx, `
 UPDATE reminders
 SET reminder_lease_time = now()
 WHERE reminder_id IN (
@@ -291,7 +292,7 @@ WHERE reminder_id IN (
 			OR actors.host_id = ANY(?)
 		)
 )`,
-		p.metadata.PID, p.metadata.Config.RemindersLeaseDuration,
+		s.metadata.PID, s.metadata.Config.RemindersLeaseDuration,
 		req.ActorTypes, req.Hosts,
 	)
 	if err != nil {
@@ -305,7 +306,7 @@ WHERE reminder_id IN (
 	return affected, nil
 }
 
-func (p *SQLite) RelinquishReminderLease(ctx context.Context, fr *actorstore.FetchedReminder) error {
+func (s *SQLite) RelinquishReminderLease(ctx context.Context, fr *actorstore.FetchedReminder) error {
 	if fr == nil {
 		return errors.New("reminer object is nil")
 	}
@@ -314,9 +315,9 @@ func (p *SQLite) RelinquishReminderLease(ctx context.Context, fr *actorstore.Fet
 		return errors.New("invalid reminder lease object")
 	}
 
-	queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
+	queryCtx, queryCancel := context.WithTimeout(ctx, s.metadata.Timeout)
 	defer queryCancel()
-	res, err := p.db.ExecContext(queryCtx,
+	res, err := s.db.ExecContext(queryCtx,
 		// Note that here we don't check for `reminder_lease_time` as we are relinquishing the lease anyways
 		`UPDATE reminders
 			SET
@@ -327,7 +328,7 @@ func (p *SQLite) RelinquishReminderLease(ctx context.Context, fr *actorstore.Fet
 				reminder_id = ?
 				AND reminder_lease_id = ?
 				AND reminder_lease_pid = ?`,
-		lease.reminderID, *lease.leaseID, p.metadata.PID,
+		lease.reminderID, *lease.leaseID, s.metadata.PID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to relinquish lease for reminder: %w", err)
@@ -342,7 +343,8 @@ func (p *SQLite) RelinquishReminderLease(ctx context.Context, fr *actorstore.Fet
 	return nil
 }
 
-func (p *SQLite) scanFetchedReminderRow(row pgx.Row, now time.Time) (*actorstore.FetchedReminder, error) {
+//nolint:unused
+func (s *SQLite) scanFetchedReminderRow(row pgx.Row, now time.Time) (*actorstore.FetchedReminder, error) {
 	var (
 		actorType, actorID, name string
 		delay                    int

@@ -33,34 +33,34 @@ It is compiled only when the "conftests" tag is enabled
 */
 
 // GetTime returns the current time.
-func (p *SQLite) GetTime() time.Time {
-	return p.clock.Now()
+func (s *SQLite) GetTime() time.Time {
+	return s.clock.Now()
 }
 
 // AdvanceTime makes the time advance by the specified duration.
-func (p *SQLite) AdvanceTime(d time.Duration) error {
-	p.clock.Sleep(d)
+func (s *SQLite) AdvanceTime(d time.Duration) error {
+	s.clock.Sleep(d)
 	return nil
 }
 
 // SetupConformanceTests performs the setup of test resources.
-func (p *SQLite) SetupConformanceTests() error {
+func (s *SQLite) SetupConformanceTests() error {
 	// Switch the clock to a mocked one
 	// (This date just feels right :) https://en.wikipedia.org/wiki/2006_FIFA_World_Cup_final )
-	p.clock = clocktesting.NewFakeClock(time.Date(2006, 7, 9, 20, 0, 0, 0, time.UTC))
+	s.clock = clocktesting.NewFakeClock(time.Date(2006, 7, 9, 20, 0, 0, 0, time.UTC))
 	return nil
 }
 
 // CleanupConformanceTests performs the cleanup of test resources.
-func (p *SQLite) CleanupConformanceTests() error {
+func (s *SQLite) CleanupConformanceTests() error {
 	// Nothing to do here since the SQLite database is disposed
 	return nil
 }
 
 // GetAllHosts returns the entire list of hosts in the database.
-func (p *SQLite) GetAllHosts() (actorstore.TestDataHosts, error) {
+func (s *SQLite) GetAllHosts() (actorstore.TestDataHosts, error) {
 	// Use a transaction for consistency
-	return executeInTransaction(context.Background(), p.logger, p.db, time.Minute, func(ctx context.Context, tx *sql.Tx) (map[string]actorstore.TestDataHost, error) {
+	return executeInTransaction(context.Background(), s.logger, s.db, time.Minute, func(ctx context.Context, tx *sql.Tx) (map[string]actorstore.TestDataHost, error) {
 		res := actorstore.TestDataHosts{}
 
 		// First, load all hosts
@@ -145,11 +145,11 @@ func (p *SQLite) GetAllHosts() (actorstore.TestDataHosts, error) {
 }
 
 // GetAllReminders returns the entire list of reminders in the database.
-func (p *SQLite) GetAllReminders() (actorstore.TestDataReminders, error) {
+func (s *SQLite) GetAllReminders() (actorstore.TestDataReminders, error) {
 	res := actorstore.TestDataReminders{}
 
 	// First, load all hosts
-	rows, err := p.db.QueryContext(context.Background(), "SELECT reminder_id, actor_type, actor_id, reminder_name, reminder_execution_time - now(), reminder_lease_id, reminder_lease_time, reminder_lease_pid FROM reminders")
+	rows, err := s.db.QueryContext(context.Background(), "SELECT reminder_id, actor_type, actor_id, reminder_name, reminder_execution_time - now(), reminder_lease_id, reminder_lease_time, reminder_lease_pid FROM reminders")
 	if err != nil {
 		return nil, fmt.Errorf("failed to load data from the reminders table: %w", err)
 	}
@@ -168,7 +168,7 @@ func (p *SQLite) GetAllReminders() (actorstore.TestDataReminders, error) {
 }
 
 // LoadActorStateTestData loads all actor state test data in the database.
-func (p *SQLite) LoadActorStateTestData(testData actorstore.TestData) error {
+func (s *SQLite) LoadActorStateTestData(testData actorstore.TestData) error {
 	ctx := context.Background()
 
 	hosts := [][]any{}
@@ -176,7 +176,7 @@ func (p *SQLite) LoadActorStateTestData(testData actorstore.TestData) error {
 	actors := [][]any{}
 
 	for hostID, host := range testData.Hosts {
-		hosts = append(hosts, []any{hostID, host.Address, host.AppID, host.APILevel, p.clock.Now().Add(host.LastHealthCheckStore).Unix()})
+		hosts = append(hosts, []any{hostID, host.Address, host.AppID, host.APILevel, s.clock.Now().Add(host.LastHealthCheckStore).Unix()})
 		for actorType, at := range host.ActorTypes {
 			hostsActorTypes = append(hostsActorTypes, []any{hostID, actorType, int(at.IdleTimeout.Seconds()), at.ConcurrentRemindersLimit})
 
@@ -192,7 +192,7 @@ func (p *SQLite) LoadActorStateTestData(testData actorstore.TestData) error {
 	})
 
 	// Start transaction
-	tx, err := p.db.Begin()
+	tx, err := s.db.Begin()
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
@@ -235,12 +235,12 @@ func (p *SQLite) LoadActorStateTestData(testData actorstore.TestData) error {
 }
 
 // LoadReminderTestData loads all reminder test data in the database.
-func (p *SQLite) LoadReminderTestData(testData actorstore.TestData) error {
+func (s *SQLite) LoadReminderTestData(testData actorstore.TestData) error {
 	ctx := context.Background()
-	now := p.clock.Now()
+	now := s.clock.Now()
 
 	// Start transaction
-	tx, err := p.db.Begin()
+	tx, err := s.db.Begin()
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}

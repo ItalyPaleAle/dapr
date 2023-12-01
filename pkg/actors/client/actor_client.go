@@ -121,6 +121,17 @@ func (a *ActorClient) Init(ctx context.Context) error {
 	return nil
 }
 
+func (a *ActorClient) PlacementHealthy() bool {
+	return a.connectHostRunning.Load()
+}
+
+func (a *ActorClient) StatusMessage() string {
+	if a.connectHostRunning.Load() {
+		return "actors client: connected"
+	}
+	return "actors client: disconnected"
+}
+
 // Start the service.
 // If there's any hosted actor type, establishes the ConnectHost stream with the actors service.
 func (a *ActorClient) Start(ctx context.Context) error {

@@ -108,10 +108,10 @@ func (s *SQLite) Init(ctx context.Context, md actorstore.Metadata) error {
 	return nil
 }
 
-func (p *SQLite) performMigrations(ctx context.Context) error {
+func (s *SQLite) performMigrations(ctx context.Context) error {
 	m := sqlitemigrations.Migrations{
-		Pool:              p.db,
-		Logger:            p.logger,
+		Pool:              s.db,
+		Logger:            s.logger,
 		MetadataTableName: "metadata",
 		MetadataKey:       "migrations",
 	}
@@ -119,8 +119,8 @@ func (p *SQLite) performMigrations(ctx context.Context) error {
 	return m.Perform(ctx, []sqlinternal.MigrationFn{
 		// Migration 1: create the tables for actors state
 		func(ctx context.Context) error {
-			p.logger.Info("Creating tables for actors state")
-			_, err := p.db.ExecContext(ctx, migration1Query)
+			s.logger.Info("Creating tables for actors state")
+			_, err := s.db.ExecContext(ctx, migration1Query)
 			if err != nil {
 				return fmt.Errorf("failed to create actors state tables: %w", err)
 			}
@@ -128,8 +128,8 @@ func (p *SQLite) performMigrations(ctx context.Context) error {
 		},
 		// Migration 2: create the tables for reminders
 		func(ctx context.Context) error {
-			p.logger.Info("Creating tables for reminders")
-			_, err := p.db.ExecContext(ctx, migration2Query)
+			s.logger.Info("Creating tables for reminders")
+			_, err := s.db.ExecContext(ctx, migration2Query)
 			if err != nil {
 				return fmt.Errorf("failed to create reminders table: %w", err)
 			}
@@ -185,6 +185,7 @@ func (s *SQLite) doListen(ctx context.Context) error {
 	panic("TODO")
 }
 
+//nolint:unused
 func (s *SQLite) updatedAPILevel(apiLevel uint32) {
 	// If the new value is the same as the old, return
 	if s.apiLevel.Swap(apiLevel) == apiLevel {
