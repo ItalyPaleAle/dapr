@@ -23,6 +23,7 @@ import (
 
 	"github.com/dapr/dapr/pkg/actorssvc/components/actorstore"
 	as_postgresql "github.com/dapr/dapr/pkg/actorssvc/components/actorstore/postgresql"
+	as_sqlite "github.com/dapr/dapr/pkg/actorssvc/components/actorstore/sqlite"
 	conf_actorstore "github.com/dapr/dapr/tests/conformance/actorstore"
 )
 
@@ -57,6 +58,8 @@ func loadActorStore(name string) actorstore.Store {
 	switch name {
 	case "postgresql":
 		return as_postgresql.NewPostgreSQLActorStore(testLogger)
+	case "sqlite":
+		return as_sqlite.NewSQLiteActorStore(testLogger)
 	default:
 		return nil
 	}
