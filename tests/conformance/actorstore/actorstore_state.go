@@ -209,6 +209,9 @@ func actorStateTests(store actorstore.Store) func(t *testing.T) {
 				require.Equal(t, expect, after[addedHost.HostID])
 			})
 
+			// Advance the time by 500ms
+			require.NoError(t, store.AdvanceTime(500*time.Millisecond))
+
 			t.Run("Update host last healthcheck", func(t *testing.T) {
 				before, err := store.GetAllHosts()
 				require.NoError(t, err)

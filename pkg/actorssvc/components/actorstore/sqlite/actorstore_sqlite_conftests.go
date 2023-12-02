@@ -197,7 +197,7 @@ func (s *SQLite) LoadActorStateTestData(testData actorstore.TestData) (err error
 		if err != nil {
 			return fmt.Errorf("invalid ID for host %s: not a UUID: %w", hostID, err)
 		}
-		hosts = append(hosts, []any{hostUUID[:], host.Address, host.AppID, host.APILevel, s.clock.Now().Add(host.LastHealthCheckStore).Unix()})
+		hosts = append(hosts, []any{hostUUID[:], host.Address, host.AppID, host.APILevel, s.clock.Now().Add(host.LastHealthCheckStore).UnixMilli()})
 		for actorType, at := range host.ActorTypes {
 			hostsActorTypes = append(hostsActorTypes, []any{hostUUID[:], actorType, int(at.IdleTimeout.Seconds()), at.ConcurrentRemindersLimit})
 
@@ -290,7 +290,7 @@ func (s *SQLite) LoadReminderTestData(testData actorstore.TestData) error {
 				(reminder_id, actor_type, actor_id, reminder_name, reminder_execution_time, reminder_lease_id, reminder_lease_time, reminder_lease_pid)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 			reminderUUID[:], reminder.ActorType, reminder.ActorID, reminder.Name,
-			now.Add(reminder.ExecutionTime).Unix(),
+			now.Add(reminder.ExecutionTime).UnixMilli(),
 			reminder.LeaseID, reminder.LeaseTime, reminder.LeasePID,
 		)
 		if err != nil {

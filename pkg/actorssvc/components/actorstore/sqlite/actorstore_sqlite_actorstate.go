@@ -32,7 +32,7 @@ func (s *SQLite) AddActorHost(ctx context.Context, properties actorstore.AddActo
 
 	// Because we need to update 2 tables, we need a transaction
 	return executeInTransaction(ctx, s.logger, s.db, s.metadata.Timeout, func(ctx context.Context, tx *sql.Tx) (res actorstore.AddActorHostResponse, err error) {
-		now := s.clock.Now().Unix()
+		now := s.clock.Now().UnixMilli()
 
 		// First, check if the api level of the host to add is high enough
 		apiLevel, err := s.getClusterActorsAPILevel(ctx, tx)
@@ -61,7 +61,7 @@ func (s *SQLite) AddActorHost(ctx context.Context, properties actorstore.AddActo
 DELETE FROM hosts WHERE
 	(host_address = ? AND host_app_id = ?)
 	OR host_last_healthcheck < ?`,
-			properties.Address, properties.AppID, now-int64(s.metadata.Config.FailedInterval().Seconds()),
+			properties.Address, properties.AppID, now-int64(s.metadata.Config.FailedInterval().Milliseconds()),
 		)
 		if err != nil {
 			return res, fmt.Errorf("failed to remove conflicting hosts: %w", err)
@@ -220,7 +220,7 @@ func updateHostsTable(ctx context.Context, db querier, now time.Time, actorHostI
 	WHERE
 		host_id = ? AND
 		host_last_healthcheck >= ?`,
-		now.Unix(), actorHostID[:], now.Add(-1*failedInterval).Unix(),
+		now.UnixMilli(), actorHostID[:], now.Add(-1*failedInterval).UnixMilli(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update actor host: %w", err)
