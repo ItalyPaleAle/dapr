@@ -151,11 +151,11 @@ func (p *PostgreSQL) UpdateActorHost(ctx context.Context, actorHostID string, pr
 				return z, zErr
 			}
 
-			// Next, delete all existing actor
+			// Next, delete all existing host actor types
 			// This query could affect 0 rows, and that's fine
 			queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
 			defer queryCancel()
-			_, zErr = p.db.Exec(queryCtx,
+			_, zErr = tx.Exec(queryCtx,
 				fmt.Sprintf("DELETE FROM %s WHERE host_id = $1", hostsActorTypesTable),
 				actorHostID,
 			)

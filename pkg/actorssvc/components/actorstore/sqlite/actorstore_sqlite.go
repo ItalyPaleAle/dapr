@@ -82,6 +82,9 @@ func (s *SQLite) Init(ctx context.Context, md actorstore.Metadata) error {
 		return err
 	}
 
+	// TODO: REMOVE WHEN https://github.com/dapr/components-contrib/pull/3253 IS MERGED
+	connString += "&_pragma=foreign_keys(1)"
+
 	s.db, err = sql.Open("sqlite", connString)
 	if err != nil {
 		return fmt.Errorf("failed to create connection: %w", err)
@@ -101,7 +104,7 @@ func (s *SQLite) Init(ctx context.Context, md actorstore.Metadata) error {
 
 	s.logger.Info("Established connection to SQLite")
 
-	// Start watching for notifications in background
+	// Start watching for updates in background
 	go s.watch()
 
 	return nil
@@ -144,48 +147,42 @@ func (s *SQLite) SetOnActorsAPILevelUpdate(fn func(apiLevel uint32)) {
 	}
 }
 
-// Starts watching for notifications in background, by periodically polling the metadata table.
+// Starts watching for updates in background, by periodically polling the metadata table.
 // This is meant to be invoked in a background goroutine.
 func (s *SQLite) watch() {
-	s.logger.Info("Started watching for notifications")
-loop:
+	s.logger.Info("Started watching for updates")
+	defer s.logger.Info("Stopped watching for updates")
+
+	// Poll every second
+	t := time.NewTicker(time.Second)
+	defer t.Stop()
 	for {
 		select {
 		case <-s.runningCtx.Done():
-			break loop
-		default:
-			// No-op
-		}
-
-		err := s.doListen(s.runningCtx)
-		switch {
-		case errors.Is(err, context.Canceled):
-			break loop
-		case err != nil:
-			s.logger.Errorf("Error from notification listener, will reconnect: %v", err)
-		default:
-			// No-op
-		}
-
-		// Reconnect after a delay
-		select {
-		case <-s.runningCtx.Done():
-			break loop
-		case <-time.After(time.Second):
-			// No-op
+			return
+		case <-t.C:
+			err := s.doWatchUpdates(s.runningCtx)
+			if err != nil {
+				s.logger.Errorf("Error watching for updates: %v", err)
+			}
 		}
 	}
-
-	s.logger.Info("Stopped listening for notifications")
-	return
 }
 
-func (s *SQLite) doListen(ctx context.Context) error {
-	// TODO
+func (s *SQLite) doWatchUpdates(ctx context.Context) error {
+	// Select the latest API level
+	apiLevel, err := s.getClusterActorsAPILevel(ctx, s.db)
+	if err != nil {
+		return err
+	}
+
+	// Update the API level in the object
+	s.updateAPILevel(apiLevel)
+
 	return nil
 }
 
-func (s *SQLite) updatedAPILevel(apiLevel uint32) {
+func (s *SQLite) updateAPILevel(apiLevel uint32) {
 	// If the new value is the same as the old, return
 	if s.apiLevel.Swap(apiLevel) == apiLevel {
 		return
@@ -261,8 +258,8 @@ WITH c AS (
 	FROM hosts
 )
 REPLACE INTO metadata (key, value)
-VALUES ('actors-api-level', c.value)
-RETURNING c.value
+SELECT 'actors-api-level', value FROM c
+RETURNING value
 `).Scan(&val)
 	if err != nil {
 		return 0, fmt.Errorf("failed to update actors API level in metadata: %w", err)

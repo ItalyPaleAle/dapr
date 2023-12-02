@@ -34,7 +34,7 @@ CREATE TABLE actors (
   actor_id text NOT NULL,
   host_id blob NOT NULL,
   actor_idle_timeout integer NOT NULL,
-  actor_activation integer NOT NULL,
+  actor_activation integer NOT NULL DEFAULT 0,
   PRIMARY KEY (actor_type, actor_id),
   FOREIGN KEY (host_id) REFERENCES hosts (host_id) ON DELETE CASCADE
 );

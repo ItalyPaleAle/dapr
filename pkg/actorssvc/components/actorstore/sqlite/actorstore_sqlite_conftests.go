@@ -25,6 +25,7 @@ import (
 	clocktesting "k8s.io/utils/clock/testing"
 
 	"github.com/dapr/dapr/pkg/actorssvc/components/actorstore"
+	"github.com/google/uuid"
 )
 
 /*
@@ -70,15 +71,23 @@ func (s *SQLite) GetAllHosts() (actorstore.TestDataHosts, error) {
 		}
 
 		for rows.Next() {
-			var hostID string
+			var (
+				hostID          []byte
+				lastHealthCheck int64
+			)
 			r := actorstore.TestDataHost{
 				ActorTypes: map[string]actorstore.TestDataActorType{},
 			}
-			err = rows.Scan(&hostID, &r.Address, &r.AppID, &r.APILevel, &r.LastHealthCheck)
+			err = rows.Scan(&hostID, &r.Address, &r.AppID, &r.APILevel, &lastHealthCheck)
 			if err != nil {
 				return nil, fmt.Errorf("failed to load data from the hosts table: %w", err)
 			}
-			res[hostID] = r
+			hostUUID, err := uuid.FromBytes(hostID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load data from the hosts table: invalid UUID: %w", err)
+			}
+			r.LastHealthCheck = time.Unix(lastHealthCheck, 0)
+			res[hostUUID.String()] = r
 		}
 
 		// Load all actor types
@@ -89,7 +98,7 @@ func (s *SQLite) GetAllHosts() (actorstore.TestDataHosts, error) {
 
 		for rows.Next() {
 			var (
-				hostID      string
+				hostID      []byte
 				actorType   string
 				idleTimeout int
 			)
@@ -97,11 +106,15 @@ func (s *SQLite) GetAllHosts() (actorstore.TestDataHosts, error) {
 			if err != nil {
 				return nil, fmt.Errorf("failed to load data from the hosts actor types table: %w", err)
 			}
+			hostUUID, err := uuid.FromBytes(hostID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load data from the hosts actor types table: invalid UUID: %w", err)
+			}
 
-			host, ok := res[hostID]
+			host, ok := res[hostUUID.String()]
 			if !ok {
 				// Should never happen, given that host_id has a foreign key reference to the hosts table…
-				return nil, fmt.Errorf("hosts actor types table contains data for non-existing host ID: %s", hostID)
+				return nil, fmt.Errorf("hosts actor types table contains data for non-existing host ID: %s", hostUUID.String())
 			}
 			host.ActorTypes[actorType] = actorstore.TestDataActorType{
 				IdleTimeout: time.Duration(idleTimeout) * time.Second,
@@ -119,14 +132,18 @@ func (s *SQLite) GetAllHosts() (actorstore.TestDataHosts, error) {
 			var (
 				actorType string
 				actorID   string
-				hostID    string
+				hostID    []byte
 			)
 			err = rows.Scan(&actorType, &actorID, &hostID)
 			if err != nil {
 				return nil, fmt.Errorf("failed to load data from the actors table: %w", err)
 			}
+			hostUUID, err := uuid.FromBytes(hostID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load data from the actors table: invalid UUID: %w", err)
+			}
 
-			host, ok := res[hostID]
+			host, ok := res[hostUUID.String()]
 			if !ok {
 				// Should never happen, given that host_id has a foreign key reference to the hosts table…
 				return nil, fmt.Errorf("actors table contains data for non-existing host ID: %s", hostID)
@@ -168,7 +185,7 @@ func (s *SQLite) GetAllReminders() (actorstore.TestDataReminders, error) {
 }
 
 // LoadActorStateTestData loads all actor state test data in the database.
-func (s *SQLite) LoadActorStateTestData(testData actorstore.TestData) error {
+func (s *SQLite) LoadActorStateTestData(testData actorstore.TestData) (err error) {
 	ctx := context.Background()
 
 	hosts := [][]any{}
@@ -176,12 +193,16 @@ func (s *SQLite) LoadActorStateTestData(testData actorstore.TestData) error {
 	actors := [][]any{}
 
 	for hostID, host := range testData.Hosts {
-		hosts = append(hosts, []any{hostID, host.Address, host.AppID, host.APILevel, s.clock.Now().Add(host.LastHealthCheckStore).Unix()})
+		hostUUID, err := uuid.Parse(hostID)
+		if err != nil {
+			return fmt.Errorf("invalid ID for host %s: not a UUID: %w", hostID, err)
+		}
+		hosts = append(hosts, []any{hostUUID[:], host.Address, host.AppID, host.APILevel, s.clock.Now().Add(host.LastHealthCheckStore).Unix()})
 		for actorType, at := range host.ActorTypes {
-			hostsActorTypes = append(hostsActorTypes, []any{hostID, actorType, int(at.IdleTimeout.Seconds()), at.ConcurrentRemindersLimit})
+			hostsActorTypes = append(hostsActorTypes, []any{hostUUID[:], actorType, int(at.IdleTimeout.Seconds()), at.ConcurrentRemindersLimit})
 
 			for _, actorID := range at.ActorIDs {
-				actors = append(actors, []any{actorType, actorID, hostID, int(at.IdleTimeout.Seconds())})
+				actors = append(actors, []any{actorType, actorID, hostUUID[:], int(at.IdleTimeout.Seconds())})
 			}
 		}
 	}
@@ -213,17 +234,24 @@ func (s *SQLite) LoadActorStateTestData(testData actorstore.TestData) error {
 		}
 	}
 	for _, r := range hostsActorTypes {
-		_, err = tx.ExecContext(ctx, `INSERT INTO hosts (host_id, actor_type, actor_idle_timeout, actor_concurrent_reminders) VALUES (?, ?, ?, ?)`, r...)
+		_, err = tx.ExecContext(ctx, `INSERT INTO hosts_actor_types (host_id, actor_type, actor_idle_timeout, actor_concurrent_reminders) VALUES (?, ?, ?, ?)`, r...)
 		if err != nil {
 			return fmt.Errorf("failed to insert into hosts actor types table: %w", err)
 		}
 	}
 	for _, r := range actors {
-		_, err = tx.ExecContext(ctx, `INSERT INTO hosts (actor_type, actor_id, host_id, actor_idle_timeout) VALUES (?, ?, ?, ?)`, r...)
+		_, err = tx.ExecContext(ctx, `INSERT INTO actors (actor_type, actor_id, host_id, actor_idle_timeout, actor_activation) VALUES (?, ?, ?, ?, 0)`, r...)
 		if err != nil {
 			return fmt.Errorf("failed to insert into actors table: %w", err)
 		}
 	}
+
+	// Update host API level
+	apiLevel, err := s.updateClusterActorsAPILevel(ctx, tx)
+	if err != nil {
+		return fmt.Errorf("failed to update cluster API level: %w", err)
+	}
+	s.apiLevel.Store(apiLevel)
 
 	// Commit
 	err = tx.Commit()
@@ -252,18 +280,16 @@ func (s *SQLite) LoadReminderTestData(testData actorstore.TestData) error {
 		return fmt.Errorf("failed to clean the reminders table: %w", err)
 	}
 
-	reminders := [][]any{}
 	for reminderID, reminder := range testData.Reminders {
-		reminders = append(reminders, []any{
-			reminderID, reminder.ActorType, reminder.ActorID, reminder.Name,
-			now.Add(reminder.ExecutionTime).Unix(),
-			reminder.LeaseID, reminder.LeaseTime, reminder.LeasePID,
-		})
+		reminderUUID, err := uuid.Parse(reminderID)
+		if err != nil {
+			return fmt.Errorf("invalid ID for reminder %s: not a UUID: %w", reminderID, err)
+		}
 		_, err = tx.ExecContext(ctx,
 			`INSERT INTO reminders
 				(reminder_id, actor_type, actor_id, reminder_name, reminder_execution_time, reminder_lease_id, reminder_lease_time, reminder_lease_pid)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			reminderID, reminder.ActorType, reminder.ActorID, reminder.Name,
+			reminderUUID[:], reminder.ActorType, reminder.ActorID, reminder.Name,
 			now.Add(reminder.ExecutionTime).Unix(),
 			reminder.LeaseID, reminder.LeaseTime, reminder.LeasePID,
 		)

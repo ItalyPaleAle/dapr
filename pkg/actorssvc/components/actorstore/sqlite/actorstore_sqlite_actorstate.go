@@ -76,7 +76,7 @@ INSERT INTO hosts
   (host_id, host_address, host_app_id, host_actors_api_level, host_last_healthcheck)
 VALUES
   (?, ?, ?, ?, ?)`,
-			res.HostID, properties.Address, properties.AppID, properties.APILevel, now,
+			hostID[:], properties.Address, properties.AppID, properties.APILevel, now,
 		)
 		if isUniqueViolationError(err) {
 			return res, actorstore.ErrActorHostConflict
@@ -87,7 +87,7 @@ VALUES
 		// Register each supported actor type
 		queryCtx, queryCancel = context.WithTimeout(ctx, s.metadata.Timeout)
 		defer queryCancel()
-		err = insertHostActorTypes(queryCtx, tx, res.HostID, properties.ActorTypes, s.metadata.Timeout)
+		err = insertHostActorTypes(queryCtx, tx, hostID, properties.ActorTypes, s.metadata.Timeout)
 		if err != nil {
 			return res, err
 		}
@@ -99,7 +99,7 @@ VALUES
 		}
 
 		// Calling s.updatedAPILevel with the same level as before is a nop
-		s.updatedAPILevel(newLevel)
+		s.updateAPILevel(newLevel)
 
 		return res, nil
 	})
@@ -107,7 +107,7 @@ VALUES
 
 // Inserts the list of supported actor types for a host.
 // Note that the context must have a timeout already applied if needed.
-func insertHostActorTypes(ctx context.Context, tx *sql.Tx, actorHostID string, actorTypes []actorstore.ActorHostType, timeout time.Duration) error {
+func insertHostActorTypes(ctx context.Context, tx *sql.Tx, actorHostID uuid.UUID, actorTypes []actorstore.ActorHostType, timeout time.Duration) error {
 	if len(actorTypes) == 0 {
 		// Nothing to do here
 		return nil
@@ -115,12 +115,12 @@ func insertHostActorTypes(ctx context.Context, tx *sql.Tx, actorHostID string, a
 
 	// Build the query
 	q := strings.Builder{}
-	q.WriteString("INSERT INTO hosts_actor_types VALUES ")
+	q.WriteString("INSERT INTO hosts_actor_types (host_id, actor_type, actor_idle_timeout) VALUES ")
 
 	args := make([]any, 0, len(actorTypes)*3)
 	for i, t := range actorTypes {
 		args = append(args,
-			actorHostID,
+			actorHostID[:],
 			t.ActorType,
 			t.IdleTimeout,
 		)
@@ -157,34 +157,38 @@ func (s *SQLite) UpdateActorHost(ctx context.Context, actorHostID string, proper
 	if actorHostID == "" || (!properties.UpdateLastHealthCheck && properties.ActorTypes == nil) {
 		return actorstore.ErrInvalidRequestMissingParameters
 	}
+	actorHostUUID, err := uuid.Parse(actorHostID)
+	if err != nil {
+		return actorstore.ErrInvalidRequestMissingParameters
+	}
 
 	// Let's avoid creating a transaction if we are not updating actor types (which involve updating 2 tables)
 	// This saves at least 2 round-trips to the database and improves locking
 	if properties.ActorTypes == nil {
-		err = updateHostsTable(ctx, s.db, s.clock.Now(), actorHostID, properties, s.metadata.Config.FailedInterval(), s.metadata.Timeout)
+		err = updateHostsTable(ctx, s.db, s.clock.Now(), actorHostUUID, properties, s.metadata.Config.FailedInterval(), s.metadata.Timeout)
 	} else {
 		// Because we need to update 2 tables, we need a transaction
 		_, err = executeInTransaction(ctx, s.logger, s.db, s.metadata.Timeout, func(ctx context.Context, tx *sql.Tx) (z struct{}, zErr error) {
 			// Update all hosts properties, besides the list of supported actor types
-			zErr = updateHostsTable(ctx, tx, s.clock.Now(), actorHostID, properties, s.metadata.Config.FailedInterval(), s.metadata.Timeout)
+			zErr = updateHostsTable(ctx, tx, s.clock.Now(), actorHostUUID, properties, s.metadata.Config.FailedInterval(), s.metadata.Timeout)
 			if zErr != nil {
 				return z, zErr
 			}
 
-			// Next, delete all existing actor
+			// Next, delete all existing host actor types
 			// This query could affect 0 rows, and that's fine
 			queryCtx, queryCancel := context.WithTimeout(ctx, s.metadata.Timeout)
 			defer queryCancel()
-			_, zErr = s.db.ExecContext(queryCtx,
+			_, zErr = tx.ExecContext(queryCtx,
 				"DELETE FROM hosts_actor_types WHERE host_id = ?",
-				actorHostID,
+				actorHostUUID[:],
 			)
 			if zErr != nil {
 				return z, fmt.Errorf("failed to delete old host actor types: %w", zErr)
 			}
 
 			// Register the new supported actor types (if any)
-			zErr = insertHostActorTypes(ctx, tx, actorHostID, properties.ActorTypes, s.metadata.Timeout)
+			zErr = insertHostActorTypes(ctx, tx, actorHostUUID, properties.ActorTypes, s.metadata.Timeout)
 			if zErr != nil {
 				return z, zErr
 			}
@@ -201,7 +205,7 @@ func (s *SQLite) UpdateActorHost(ctx context.Context, actorHostID string, proper
 
 // Updates the hosts table with the given properties.
 // Does not update ActorTypes which impacts a separate table.
-func updateHostsTable(ctx context.Context, db querier, now time.Time, actorHostID string, properties actorstore.UpdateActorHostRequest, failedInterval time.Duration, timeout time.Duration) error {
+func updateHostsTable(ctx context.Context, db querier, now time.Time, actorHostID uuid.UUID, properties actorstore.UpdateActorHostRequest, failedInterval time.Duration, timeout time.Duration) error {
 	// For now, host_last_healthcheck is the only property that can be updated in the hosts table
 	if !properties.UpdateLastHealthCheck {
 		return nil
@@ -216,7 +220,7 @@ func updateHostsTable(ctx context.Context, db querier, now time.Time, actorHostI
 	WHERE
 		host_id = ? AND
 		host_last_healthcheck >= ?`,
-		now.Unix(), actorHostID, now.Add(-1*failedInterval).Unix(),
+		now.Unix(), actorHostID[:], now.Add(-1*failedInterval).Unix(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update actor host: %w", err)
@@ -235,12 +239,16 @@ func (s *SQLite) RemoveActorHost(ctx context.Context, actorHostID string) error 
 	if actorHostID == "" {
 		return actorstore.ErrInvalidRequestMissingParameters
 	}
+	actorHostUUID, err := uuid.Parse(actorHostID)
+	if err != nil {
+		return actorstore.ErrInvalidRequestMissingParameters
+	}
 
 	// We need to delete from the hosts table only
 	// Other table references rows from the hosts table through foreign keys, so records are deleted from there automatically (and atomically)
 	queryCtx, queryCancel := context.WithTimeout(ctx, s.metadata.Timeout)
 	defer queryCancel()
-	res, err := s.db.ExecContext(queryCtx, "DELETE FROM hosts WHERE host_id = ?", actorHostID)
+	res, err := s.db.ExecContext(queryCtx, "DELETE FROM hosts WHERE host_id = ?", actorHostUUID[:])
 	if err != nil {
 		return fmt.Errorf("failed to remove actor host: %w", err)
 	}
@@ -258,6 +266,15 @@ func (s *SQLite) RemoveActorHost(ctx context.Context, actorHostID string) error 
 func (s *SQLite) LookupActor(ctx context.Context, ref actorstore.ActorRef, opts actorstore.LookupActorOpts) (res actorstore.LookupActorResponse, err error) {
 	if ref.ActorType == "" || ref.ActorID == "" {
 		return res, actorstore.ErrInvalidRequestMissingParameters
+	}
+
+	// Parse all opts.Hosts as UUIDs
+	hostUUIDs := make([]uuid.UUID, len(opts.Hosts))
+	for i := 0; i < len(opts.Hosts); i++ {
+		hostUUIDs[i], err = uuid.Parse(opts.Hosts[i])
+		if err != nil {
+			return res, actorstore.ErrInvalidRequestMissingParameters
+		}
 	}
 
 	panic("TODO")
