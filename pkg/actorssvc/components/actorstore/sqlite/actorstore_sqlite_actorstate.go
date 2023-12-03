@@ -14,8 +14,10 @@ limitations under the License.
 package sqlite
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -268,16 +270,146 @@ func (s *SQLite) LookupActor(ctx context.Context, ref actorstore.ActorRef, opts 
 		return res, actorstore.ErrInvalidRequestMissingParameters
 	}
 
-	// Parse all opts.Hosts as UUIDs
-	hostUUIDs := make([]uuid.UUID, len(opts.Hosts))
+	// Parse all opts.Hosts as []byte
+	hostUUIDs := make([][]byte, len(opts.Hosts))
 	for i := 0; i < len(opts.Hosts); i++ {
-		hostUUIDs[i], err = uuid.Parse(opts.Hosts[i])
+		var u uuid.UUID
+		u, err = uuid.Parse(opts.Hosts[i])
 		if err != nil {
 			return res, actorstore.ErrInvalidRequestMissingParameters
 		}
+		hostUUIDs[i] = u[:]
 	}
 
-	panic("TODO")
+	// We need a transaction here to ensure consistency
+	return executeInTransaction(ctx, s.logger, s.db, s.metadata.Timeout, func(ctx context.Context, tx *sql.Tx) (res actorstore.LookupActorResponse, err error) {
+		now := s.clock.Now().UnixMilli()
+		minLastHealthCheck := now - int64(s.metadata.Config.FailedInterval().Milliseconds())
+
+		var hostID []byte
+
+		// First, check if the actor is already active
+		queryCtx, queryCancel := context.WithTimeout(ctx, s.metadata.Timeout)
+		defer queryCancel()
+		err = tx.QueryRowContext(queryCtx, `
+SELECT
+	hosts.host_id, hosts.host_app_id, hosts.host_address, actors.actor_idle_timeout
+FROM actors, hosts
+WHERE
+  actors.actor_type = ?
+  AND actors.actor_id = ?
+  AND actors.host_id = hosts.host_id
+  AND hosts.host_last_healthcheck >= ?`,
+			ref.ActorType, ref.ActorID, minLastHealthCheck,
+		).Scan(
+			&hostID, &res.AppID, &res.Address, &res.IdleTimeout,
+		)
+
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			// If we get ErrNoRows, it means that the actor isn't active, so we don't do anything here
+			// Logic continues after the switch statement
+		case err != nil:
+			// If we have an error and it's not an ErrNoRows, return
+			return res, fmt.Errorf("query error: failed to lookup existing actor: %w", err)
+		default:
+			// No error, the actor already exists…
+			// …but if we have host restrictions, we must make sure it's active on one of those hosts
+
+			// Parse the UUID
+			var hostUUID uuid.UUID
+			hostUUID, err = uuid.FromBytes(hostID)
+			if err != nil {
+				return res, fmt.Errorf("invalid host ID, not a UUID: %w", err)
+			}
+			res.HostID = hostUUID.String()
+
+			// No host restriction
+			if len(hostUUIDs) == 0 {
+				return res, nil
+			}
+
+			// We have host restrictions
+			for i := range hostUUIDs {
+				if bytes.Equal(hostUUIDs[i], hostID) {
+					// Found a match! We can return
+					return res, nil
+				}
+			}
+
+			// If we are here, it means the actor is active on a host that is not in the list of allowed ones, so return ErrNoActorHost
+			return res, actorstore.ErrNoActorHost
+		}
+
+		// If we are here, we need to activate the actor
+		// First, select a random host that is capable of hosting actors of this type
+		queryParams := make([]any, len(hostUUIDs)+2)
+		queryParams[0] = ref.ActorType
+		queryParams[1] = minLastHealthCheck
+		var hostRestrictionFragment string
+		if len(hostUUIDs) > 0 {
+			b := strings.Builder{}
+			b.WriteString("AND (")
+			for i := range hostUUIDs {
+				if i != 0 {
+					b.WriteString(" OR ")
+				}
+				b.WriteString("hosts.host_id = ?")
+				queryParams[i+2] = hostUUIDs[i]
+			}
+			b.WriteRune(')')
+			hostRestrictionFragment = b.String()
+		}
+		queryCtx, queryCancel = context.WithTimeout(ctx, s.metadata.Timeout)
+		defer queryCancel()
+		err = tx.QueryRowContext(queryCtx, `
+SELECT
+  hosts.host_id, hosts.host_app_id, hosts.host_address, hosts_actor_types.actor_idle_timeout
+FROM hosts_actor_types, hosts
+WHERE
+  hosts_actor_types.actor_type = ?
+  AND hosts.host_id = hosts_actor_types.host_id
+  AND hosts.host_last_healthcheck >= ?
+  `+hostRestrictionFragment+`
+ORDER BY random() LIMIT 1
+`,
+			queryParams...,
+		).Scan(
+			&hostID, &res.AppID, &res.Address, &res.IdleTimeout,
+		)
+
+		// If the query returned ErrNoRows, it means that there's no host capable of hosting actors of this kind (or at least none in the list of allowed hosts)
+		if errors.Is(err, sql.ErrNoRows) {
+			return res, actorstore.ErrNoActorHost
+		} else if err != nil {
+			return res, fmt.Errorf("query error: failed to retrieve actor host: %w", err)
+		}
+
+		// Parse the UUID
+		var hostUUID uuid.UUID
+		hostUUID, err = uuid.FromBytes(hostID)
+		if err != nil {
+			return res, fmt.Errorf("invalid host ID, not a UUID: %w", err)
+		}
+		res.HostID = hostUUID.String()
+
+		// Last step: activate the actor on the host we selected
+		// We use a REPLACE here because there could already be a row, which would indicate the actor is active on a un-healthy host, so it's ok to replace the row
+		queryCtx, queryCancel = context.WithTimeout(ctx, s.metadata.Timeout)
+		defer queryCancel()
+		_, err = tx.ExecContext(queryCtx, `
+REPLACE INTO actors (actor_type, actor_id, host_id, actor_idle_timeout, actor_activation)
+VALUES (?, ?, ?, ?, ?)
+`,
+			ref.ActorType, ref.ActorID, hostID, res.IdleTimeout, now,
+		)
+		if err != nil {
+			return res, fmt.Errorf("query error: failed to activate actor: %w", err)
+		}
+
+		// All set!
+		return res, nil
+	})
 }
 
 func (s *SQLite) RemoveActor(ctx context.Context, ref actorstore.ActorRef) error {
