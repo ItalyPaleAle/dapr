@@ -470,7 +470,18 @@ func actorStateTests(store actorstore.Store) func(t *testing.T) {
 					_, err := store.LookupActor(context.Background(), actorstore.ActorRef{
 						ActorType: "not-supported",
 						ActorID:   "1",
-					}, actorstore.LookupActorOpts{})
+					}, lookupOpts)
+					require.Error(t, err)
+					assert.ErrorIs(t, err, actorstore.ErrNoActorHost)
+				})
+
+				t.Run("Actor is active on different host", func(t *testing.T) {
+					// In this case, the actor is already active on host 7de434ce-e285-444f-9857-4d30cade3111
+					// But we have host restrictions here
+					_, err := store.LookupActor(context.Background(), actorstore.ActorRef{
+						ActorType: "type-B",
+						ActorID:   "type-B.111",
+					}, lookupOpts)
 					require.Error(t, err)
 					assert.ErrorIs(t, err, actorstore.ErrNoActorHost)
 				})
