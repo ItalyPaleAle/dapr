@@ -15,13 +15,16 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/dapr/dapr/pkg/actorssvc/components/actorstore"
+	"github.com/dapr/kit/ptr"
 )
 
 func (s *SQLite) GetReminder(ctx context.Context, req actorstore.ReminderRef) (res actorstore.GetReminderResponse, err error) {
@@ -32,7 +35,10 @@ func (s *SQLite) GetReminder(ctx context.Context, req actorstore.ReminderRef) (r
 	queryCtx, queryCancel := context.WithTimeout(ctx, s.metadata.Timeout)
 	defer queryCancel()
 
-	var delay int
+	var (
+		executionTime int64
+		ttl           *int64
+	)
 	err = s.db.
 		QueryRowContext(queryCtx, `
 SELECT
@@ -45,17 +51,20 @@ WHERE
 	actor_type = ?
 	AND actor_id = ?
 	AND reminder_name = ?`,
-			req.ActorType, req.ActorID, req.Name).
-		Scan(&delay, &res.Period, &res.TTL, &res.Data)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return res, actorstore.ErrReminderNotFound
-		}
+			req.ActorType, req.ActorID, req.Name,
+		).
+		Scan(&executionTime, &res.Period, &ttl, &res.Data)
+	if errors.Is(err, sql.ErrNoRows) {
+		return res, actorstore.ErrReminderNotFound
+	} else if err != nil {
 		return res, fmt.Errorf("failed to retrieve reminder: %w", err)
 	}
 
-	// The query doesn't return an exact time, but rather the number of seconds from present, to make sure we always use the clock of the DB server and avoid clock skews
-	res.ExecutionTime = s.clock.Now().Add(time.Duration(delay) * time.Second)
+	// The query returns the execution time and TTL as UNIX timestamps with milliseconds
+	res.ExecutionTime = time.UnixMilli(executionTime)
+	if ttl != nil && *ttl > 0 {
+		res.TTL = ptr.Of(time.UnixMilli(*ttl))
+	}
 
 	return res, nil
 }
@@ -65,29 +74,34 @@ func (s *SQLite) CreateReminder(ctx context.Context, req actorstore.CreateRemind
 		return actorstore.ErrInvalidRequestMissingParameters
 	}
 
-	// Do not store the exact time, but rather the delay from now, to use the DB server's clock
-	var executionTime time.Duration
+	var executionTime time.Time
 	if !req.ExecutionTime.IsZero() {
-		executionTime = req.ExecutionTime.Sub(s.clock.Now())
+		executionTime = req.ExecutionTime
 	} else {
 		// Note that delay could be zero
-		executionTime = req.Delay
+		executionTime = s.clock.Now().Add(req.Delay)
+	}
+
+	var ttl int64
+	if req.TTL != nil {
+		ttl = req.TTL.UnixMilli()
+	}
+
+	reminderID, err := uuid.NewRandom()
+	if err != nil {
+		return fmt.Errorf("failed to generate reminder ID: %w", err)
 	}
 
 	queryCtx, queryCancel := context.WithTimeout(ctx, s.metadata.Timeout)
 	defer queryCancel()
 	q := `
-INSERT INTO reminders
-	(actor_type, actor_id, reminder_name, reminder_execution_time, reminder_period, reminder_ttl, reminder_data)
-VALUES ($1, $2, $3, now() + $4::interval, $5, $6, $7)
-ON CONFLICT (actor_type, actor_id, reminder_name) DO UPDATE SET
-	reminder_execution_time = EXCLUDED.reminder_execution_time,
-	reminder_period = EXCLUDED.reminder_period,
-	reminder_ttl = EXCLUDED.reminder_ttl,
-	reminder_data = EXCLUDED.reminder_data,
-	reminder_lease_time = NULL,
-	reminder_lease_pid = NULL`
-	_, err := s.db.ExecContext(queryCtx, q, req.ActorType, req.ActorID, req.Name, executionTime, req.Period, req.TTL, req.Data)
+REPLACE INTO reminders
+    (reminder_id, actor_type, actor_id, reminder_name, reminder_execution_time, reminder_period, reminder_ttl, reminder_data, reminder_lease_time, reminder_lease_pid)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)`
+	_, err = s.db.ExecContext(queryCtx, q,
+		reminderID[:],
+		req.ActorType, req.ActorID, req.Name,
+		executionTime.UnixMilli(), req.Period, ttl, req.Data)
 	if err != nil {
 		return fmt.Errorf("failed to create reminder: %w", err)
 	}
@@ -147,38 +161,46 @@ func (s *SQLite) GetReminderWithLease(ctx context.Context, fr *actorstore.Fetche
 	queryCtx, queryCancel := context.WithTimeout(ctx, s.metadata.Timeout)
 	defer queryCancel()
 
-	q := `SELECT
+	var (
+		executionTime int64
+		ttl           *int64
+	)
+	err = s.db.
+		QueryRowContext(queryCtx, `
+SELECT
 	actor_type, actor_id, reminder_name,
-	EXTRACT(EPOCH FROM reminder_execution_time - now())::int,
-	reminder_period, reminder_ttl, reminder_data
+	reminder_execution_time, reminder_period, reminder_ttl, reminder_data
 FROM reminders
 WHERE
 	reminder_id = ?
 	AND reminder_lease_id = ?
 	AND reminder_lease_pid = ?
 	AND reminder_lease_time IS NOT NULL
-	AND reminder_lease_time >= now() - ?`
-	var delay int
-	err = s.db.
-		QueryRowContext(queryCtx, q, lease.reminderID, *lease.leaseID, s.metadata.PID, s.metadata.Config.RemindersLeaseDuration).
+	AND reminder_lease_time >= ?
+`,
+			lease.reminderID, *lease.leaseID, s.metadata.PID,
+			s.clock.Now().Add(-1*s.metadata.Config.RemindersLeaseDuration).UnixMilli(),
+		).
 		Scan(
 			&res.ActorType, &res.ActorID, &res.Name,
-			&delay, &res.Period, &res.TTL, &res.Data,
+			&executionTime, &res.Period, &ttl, &res.Data,
 		)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return res, actorstore.ErrReminderNotFound
-		}
+	if errors.Is(err, sql.ErrNoRows) {
+		return res, actorstore.ErrReminderNotFound
+	} else if err != nil {
 		return res, fmt.Errorf("failed to retrieve reminder: %w", err)
 	}
 
-	// The query doesn't return an exact time, but rather the number of seconds from present, to make sure we always use the clock of the DB server and avoid clock skews
-	res.ExecutionTime = s.clock.Now().Add(time.Duration(delay) * time.Second)
+	// The query returns the execution time and TTL as UNIX timestamps with milliseconds
+	res.ExecutionTime = time.UnixMilli(executionTime)
+	if ttl != nil && *ttl > 0 {
+		res.TTL = ptr.Of(time.UnixMilli(*ttl))
+	}
 
 	return res, nil
 }
 
-func (s *SQLite) UpdateReminderWithLease(ctx context.Context, fr *actorstore.FetchedReminder, req actorstore.UpdateReminderWithLeaseRequest) error {
+func (s *SQLite) UpdateReminderWithLease(ctx context.Context, fr *actorstore.FetchedReminder, req actorstore.UpdateReminderWithLeaseRequest) (err error) {
 	if fr == nil {
 		return errors.New("reminer object is nil")
 	}
@@ -190,19 +212,21 @@ func (s *SQLite) UpdateReminderWithLease(ctx context.Context, fr *actorstore.Fet
 	queryCtx, queryCancel := context.WithTimeout(ctx, s.metadata.Timeout)
 	defer queryCancel()
 
-	// Unless KeepLease is true, we also release the lease on the reminder
-	var leaseQuery string
-	if !req.KeepLease {
-		leaseQuery = "reminder_lease_id = NULL, reminder_lease_time = NULL, reminder_lease_pid = NULL,"
-	} else {
-		// Refresh the lease without releasing it
-		leaseQuery = "reminder_lease_time = now(),"
+	now := s.clock.Now()
+
+	var ttl int64
+	if req.TTL != nil {
+		ttl = req.TTL.UnixMilli()
 	}
 
-	//nolint:gosec
-	res, err := s.db.ExecContext(queryCtx, `
+	// Unless KeepLease is true, we also release the lease on the reminder
+	var res sql.Result
+	if !req.KeepLease {
+		res, err = s.db.ExecContext(queryCtx, `
 UPDATE reminders SET
-	`+leaseQuery+`
+	reminder_lease_id = NULL,
+	reminder_lease_time = NULL,
+	reminder_lease_pid = NULL,
 	reminder_execution_time = ?,
 	reminder_period = ?,
 	reminder_ttl = ?
@@ -211,10 +235,31 @@ WHERE
 	AND reminder_lease_id = ?
 	AND reminder_lease_pid = ?
 	AND reminder_lease_time IS NOT NULL
-	AND reminder_lease_time >= now() - ?::interval`,
-		req.ExecutionTime, req.Period, req.TTL,
-		lease.reminderID, *lease.leaseID, s.metadata.PID, s.metadata.Config.RemindersLeaseDuration,
-	)
+	AND reminder_lease_time >= ?`,
+			req.ExecutionTime, req.Period, ttl,
+			lease.reminderID, *lease.leaseID, s.metadata.PID,
+			now.Add(-1*s.metadata.Config.RemindersLeaseDuration).UnixMilli(),
+		)
+	} else {
+		// Refresh the lease without releasing it
+		res, err = s.db.ExecContext(queryCtx, `
+UPDATE reminders SET
+	reminder_lease_time = ?,
+	reminder_execution_time = ?,
+	reminder_period = ?,
+	reminder_ttl = ?
+WHERE
+	reminder_id = ?
+	AND reminder_lease_id = ?
+	AND reminder_lease_pid = ?
+	AND reminder_lease_time IS NOT NULL
+	AND reminder_lease_time >= ?`,
+			now.UnixMilli(),
+			req.ExecutionTime, req.Period, ttl,
+			lease.reminderID, *lease.leaseID, s.metadata.PID,
+			now.Add(-1*s.metadata.Config.RemindersLeaseDuration).UnixMilli(),
+		)
+	}
 	if err != nil {
 		return fmt.Errorf("failed to update reminder: %w", err)
 	}
@@ -246,8 +291,9 @@ WHERE
 	AND reminder_lease_id = ?
 	AND reminder_lease_pid = ?
 	AND reminder_lease_time IS NOT NULL
-	AND reminder_lease_time >= now() - ?::interval`,
-		lease.reminderID, *lease.leaseID, s.metadata.PID, s.metadata.Config.RemindersLeaseDuration,
+	AND reminder_lease_time >= ?`,
+		lease.reminderID, *lease.leaseID, s.metadata.PID,
+		s.clock.Now().Add(-1*s.metadata.Config.RemindersLeaseDuration).UnixMilli(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to delete reminder: %w", err)
@@ -267,6 +313,8 @@ func (s *SQLite) RenewReminderLeases(ctx context.Context, req actorstore.RenewRe
 	if len(req.Hosts) == 0 && len(req.ActorTypes) == 0 {
 		return 0, nil
 	}
+
+	panic("TODO")
 
 	queryCtx, queryCancel := context.WithTimeout(ctx, s.metadata.Timeout)
 	defer queryCancel()
@@ -370,10 +418,10 @@ func (s *SQLite) scanFetchedReminderRow(row pgx.Row, now time.Time) (*actorstore
 }
 
 type leaseData struct {
-	reminderID string
+	reminderID []byte
 	leaseID    *string
 }
 
 func (ld leaseData) IsValid() bool {
-	return ld.reminderID != "" && ld.leaseID != nil && *ld.leaseID != ""
+	return len(ld.reminderID) > 0 && ld.leaseID != nil && *ld.leaseID != ""
 }
