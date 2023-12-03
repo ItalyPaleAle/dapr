@@ -18,6 +18,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -146,7 +148,100 @@ func (s *SQLite) FetchNextReminders(ctx context.Context, req actorstore.FetchNex
 		return nil, nil
 	}
 
-	panic("TODO")
+	// Parse all req.Hosts as uuid.UUID
+	hosts := make([]uuid.UUID, len(req.Hosts))
+	for i := 0; i < len(req.Hosts); i++ {
+		var err error
+		hosts[i], err = uuid.Parse(req.Hosts[i])
+		if err != nil {
+			return nil, actorstore.ErrInvalidRequestMissingParameters
+		}
+	}
+
+	// We need to do this in a transaction for consistency
+	return executeInTransaction(ctx, s.logger, s.db, s.metadata.Timeout, func(ctx context.Context, tx *sql.Tx) ([]*actorstore.FetchedReminder, error) {
+		now := s.clock.Now().UnixMilli()
+		minLastHealthCheck := now - s.metadata.Config.FailedInterval().Milliseconds()
+		minReminderLease := now - s.metadata.Config.RemindersLeaseDuration.Milliseconds()
+
+		// To start, load the initial capacity of each host, based on how many reminders are already active on that host
+		type hostCapacity struct {
+			current int
+			max     int
+		}
+		hostCapacities := make(map[string]map[uuid.UUID]hostCapacity, len(req.ActorTypes)) // actorType -> host ID -> capacity
+		var b strings.Builder
+		queryParams := make([]any, len(hosts)+2)
+		queryParams[0] = minReminderLease
+		queryParams[1] = minLastHealthCheck
+		for i := range hosts {
+			if i != 0 {
+				b.WriteString(" OR hat.host_id = ?")
+			} else {
+				b.WriteString("hat.host_id = ?")
+			}
+			queryParams[i+2] = hosts[i][:]
+		}
+
+		queryCtx, queryCancel := context.WithTimeout(ctx, s.metadata.Timeout)
+		defer queryCancel()
+		//nolint:gosec
+		rows, err := tx.QueryContext(queryCtx, `
+SELECT
+  hat.host_id,
+  hat.actor_type,
+  (
+    SELECT COUNT(reminders.rowid)
+    FROM reminders
+    LEFT JOIN actors
+      USING (actor_id, actor_type)
+    WHERE
+      actors.host_id = hat.host_id
+      AND reminders.actor_type = hat.actor_type
+      AND reminders.reminder_lease_time >= ?
+  ),
+  hat.actor_concurrent_reminders
+FROM hosts_actor_types AS hat
+LEFT JOIN hosts
+  ON hat.host_id = hosts.host_id
+WHERE
+  hosts.host_last_healthcheck >= ?
+  AND (`+b.String()+`)`,
+			queryParams...,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load initial capacities of hosts: %w", err)
+		}
+		for rows.Next() {
+			var (
+				hostIDB   []byte
+				hostID    uuid.UUID
+				actorType string
+				cap       hostCapacity
+			)
+			err = rows.Scan(&hostIDB, &actorType, &cap.current, &cap.max)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load initial capacities of hosts: %w", err)
+			}
+			hostID, err = uuid.FromBytes(hostIDB)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load initial capacities of hosts: invalid host ID: %w", err)
+			}
+			if cap.max == 0 {
+				cap.max = math.MaxInt32
+			}
+
+			if hostCapacities[actorType] == nil {
+				hostCapacities[actorType] = make(map[uuid.UUID]hostCapacity, len(hosts))
+			}
+			hostCapacities[actorType][hostID] = cap
+		}
+
+		//nolint:forbidigo
+		fmt.Println("CAP HERE", hostCapacities)
+
+		panic("TODO")
+	})
 }
 
 func (s *SQLite) GetReminderWithLease(ctx context.Context, fr *actorstore.FetchedReminder) (res actorstore.Reminder, err error) {
@@ -316,42 +411,44 @@ func (s *SQLite) RenewReminderLeases(ctx context.Context, req actorstore.RenewRe
 
 	panic("TODO")
 
-	queryCtx, queryCancel := context.WithTimeout(ctx, s.metadata.Timeout)
-	defer queryCancel()
+	/*
+			queryCtx, queryCancel := context.WithTimeout(ctx, s.metadata.Timeout)
+			defer queryCancel()
 
-	res, err := s.db.ExecContext(queryCtx, `
-UPDATE reminders
-SET reminder_lease_time = now()
-WHERE reminder_id IN (
-	SELECT reminder_id
-	FROM reminders
-	LEFT JOIN actors
-		ON actors.actor_type = reminders.actor_type AND actors.actor_id = reminders.actor_id
-	WHERE 
-		reminders.reminder_lease_pid = ?
-		AND reminders.reminder_lease_time IS NOT NULL
-		AND reminders.reminder_lease_time >= now() - ?::interval
-		AND reminders.reminder_lease_id IS NOT NULL
-		AND (
-			(
-				actors.host_id IS NULL
-				AND reminders.actor_type = ANY(?)
+			res, err := s.db.ExecContext(queryCtx, `
+		UPDATE reminders
+		SET reminder_lease_time = now()
+		WHERE reminder_id IN (
+			SELECT reminder_id
+			FROM reminders
+			LEFT JOIN actors
+				ON actors.actor_type = reminders.actor_type AND actors.actor_id = reminders.actor_id
+			WHERE
+				reminders.reminder_lease_pid = ?
+				AND reminders.reminder_lease_time IS NOT NULL
+				AND reminders.reminder_lease_time >= now() - ?::interval
+				AND reminders.reminder_lease_id IS NOT NULL
+				AND (
+					(
+						actors.host_id IS NULL
+						AND reminders.actor_type = ANY(?)
+					)
+					OR actors.host_id = ANY(?)
+				)
+		)`,
+				s.metadata.PID, s.metadata.Config.RemindersLeaseDuration,
+				req.ActorTypes, req.Hosts,
 			)
-			OR actors.host_id = ANY(?)
-		)
-)`,
-		s.metadata.PID, s.metadata.Config.RemindersLeaseDuration,
-		req.ActorTypes, req.Hosts,
-	)
-	if err != nil {
-		return 0, fmt.Errorf("database error: %w", err)
-	}
-	affected, err := res.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("failed to count affected rows: %w", err)
-	}
+			if err != nil {
+				return 0, fmt.Errorf("database error: %w", err)
+			}
+			affected, err := res.RowsAffected()
+			if err != nil {
+				return 0, fmt.Errorf("failed to count affected rows: %w", err)
+			}
 
-	return affected, nil
+			return affected, nil
+	*/
 }
 
 func (s *SQLite) RelinquishReminderLease(ctx context.Context, fr *actorstore.FetchedReminder) error {

@@ -63,7 +63,7 @@ func (s *SQLite) AddActorHost(ctx context.Context, properties actorstore.AddActo
 DELETE FROM hosts WHERE
 	(host_address = ? AND host_app_id = ?)
 	OR host_last_healthcheck < ?`,
-			properties.Address, properties.AppID, now-int64(s.metadata.Config.FailedInterval().Milliseconds()),
+			properties.Address, properties.AppID, now-s.metadata.Config.FailedInterval().Milliseconds(),
 		)
 		if err != nil {
 			return res, fmt.Errorf("failed to remove conflicting hosts: %w", err)
@@ -284,7 +284,7 @@ func (s *SQLite) LookupActor(ctx context.Context, ref actorstore.ActorRef, opts 
 	// We need a transaction here to ensure consistency
 	return executeInTransaction(ctx, s.logger, s.db, s.metadata.Timeout, func(ctx context.Context, tx *sql.Tx) (res actorstore.LookupActorResponse, err error) {
 		now := s.clock.Now().UnixMilli()
-		minLastHealthCheck := now - int64(s.metadata.Config.FailedInterval().Milliseconds())
+		minLastHealthCheck := now - s.metadata.Config.FailedInterval().Milliseconds()
 
 		var hostID []byte
 
