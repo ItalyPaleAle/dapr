@@ -165,11 +165,7 @@ func (s *SQLite) FetchNextReminders(ctx context.Context, req actorstore.FetchNex
 		minReminderLease := now - s.metadata.Config.RemindersLeaseDuration.Milliseconds()
 
 		// To start, load the initial capacity of each host, based on how many reminders are already active on that host
-		type hostCapacity struct {
-			current int
-			max     int
-		}
-		hostCapacities := make(map[string]map[uuid.UUID]hostCapacity, len(req.ActorTypes)) // actorType -> host ID -> capacity
+		hostCapacities := make(map[string]map[uuid.UUID]int32, len(req.ActorTypes)) // actorType -> host ID -> capacity
 		var b strings.Builder
 		queryParams := make([]any, len(hosts)+2)
 		queryParams[0] = minReminderLease
@@ -217,9 +213,9 @@ WHERE
 				hostIDB   []byte
 				hostID    uuid.UUID
 				actorType string
-				cap       hostCapacity
+				used, max int32
 			)
-			err = rows.Scan(&hostIDB, &actorType, &cap.current, &cap.max)
+			err = rows.Scan(&hostIDB, &actorType, &used, &max)
 			if err != nil {
 				return nil, fmt.Errorf("failed to load initial capacities of hosts: %w", err)
 			}
@@ -227,14 +223,17 @@ WHERE
 			if err != nil {
 				return nil, fmt.Errorf("failed to load initial capacities of hosts: invalid host ID: %w", err)
 			}
-			if cap.max == 0 {
-				cap.max = math.MaxInt32
+			if max <= 0 {
+				max = math.MaxInt32
 			}
 
-			if hostCapacities[actorType] == nil {
-				hostCapacities[actorType] = make(map[uuid.UUID]hostCapacity, len(hosts))
+			// Only add hosts that have capacity
+			if used < max {
+				if hostCapacities[actorType] == nil {
+					hostCapacities[actorType] = make(map[uuid.UUID]int32, len(hosts))
+				}
+				hostCapacities[actorType][hostID] = max - used
 			}
-			hostCapacities[actorType][hostID] = cap
 		}
 
 		//nolint:forbidigo
