@@ -59,7 +59,7 @@ func TestConfig(t *testing.T) {
 	assert.Equal(t, 3500, c.Port)
 	assert.Equal(t, "2s", c.ActorIdleTimeout.String())
 	assert.Equal(t, "3s", c.DrainOngoingCallTimeout.String())
-	assert.Equal(t, true, c.DrainRebalancedActors)
+	assert.True(t, c.DrainRebalancedActors)
 	assert.Equal(t, "default", c.Namespace)
 	assert.Equal(t, TestPodName, c.PodName)
 }
@@ -148,7 +148,7 @@ func TestDefaultConfigValuesSet(t *testing.T) {
 
 	assert.Equal(t, HostAddress, config.HostAddress)
 	assert.Equal(t, AppID, config.AppID)
-	assert.Equal(t, config.ActorsServiceAddress, ActorsAddress)
+	assert.Equal(t, ActorsAddress, config.ActorsServiceAddress)
 	assert.Contains(t, config.PlacementAddresses, PlacementAddress)
 	assert.Equal(t, Port, config.Port)
 	assert.Equal(t, Namespace, config.Namespace)
@@ -226,7 +226,7 @@ func TestPerActorTypeConfigurationValues(t *testing.T) {
 	// Check the base level items.
 	assert.Equal(t, HostAddress, config.HostAddress)
 	assert.Equal(t, AppID, config.AppID)
-	assert.Equal(t, config.ActorsServiceAddress, ActorsAddress)
+	assert.Equal(t, ActorsAddress, config.ActorsServiceAddress)
 	assert.Contains(t, config.PlacementAddresses, PlacementAddress)
 	assert.Equal(t, Port, config.Port)
 	assert.Equal(t, Namespace, config.Namespace)

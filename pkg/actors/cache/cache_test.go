@@ -45,7 +45,7 @@ func TestCache(t *testing.T) {
 		v, ok := cache.Get("key1")
 		if i < 2 {
 			require.True(t, ok)
-			require.Equal(t, v, "val1")
+			require.Equal(t, "val1", v)
 		} else {
 			require.False(t, ok)
 		}
@@ -53,7 +53,7 @@ func TestCache(t *testing.T) {
 		v, ok = cache.Get("key2")
 		if i < 5 {
 			require.True(t, ok)
-			require.Equal(t, v, "val2")
+			require.Equal(t, "val2", v)
 		} else {
 			require.False(t, ok)
 		}
@@ -61,7 +61,7 @@ func TestCache(t *testing.T) {
 		v, ok = cache.Get("key3")
 		if i < 15 {
 			require.True(t, ok)
-			require.Equal(t, v, "val3")
+			require.Equal(t, "val3", v)
 		} else {
 			require.False(t, ok)
 		}
