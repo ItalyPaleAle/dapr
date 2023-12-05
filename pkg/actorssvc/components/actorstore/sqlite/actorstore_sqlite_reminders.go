@@ -326,7 +326,7 @@ LIMIT ?
 				}
 				queryCtx, queryCancel = context.WithTimeout(ctx, s.metadata.Timeout)
 				defer queryCancel()
-				_, err = tx.QueryContext(queryCtx, `
+				_, err = tx.ExecContext(queryCtx, `
 	REPLACE INTO actors
 	  (actor_type, actor_id, host_id, actor_activation, actor_idle_timeout)
 	SELECT 
@@ -592,6 +592,7 @@ func (s *SQLite) RenewReminderLeases(ctx context.Context, req actorstore.RenewRe
 	queryCtx, queryCancel := context.WithTimeout(ctx, s.metadata.Timeout)
 	defer queryCancel()
 
+	//nolint:gosec
 	res, err := s.db.ExecContext(queryCtx, `
 UPDATE reminders
 SET reminder_lease_time = ?
@@ -624,7 +625,6 @@ WHERE reminder_id IN (
 	}
 
 	return affected, nil
-
 }
 
 func (s *SQLite) RelinquishReminderLease(ctx context.Context, fr *actorstore.FetchedReminder) error {
@@ -795,6 +795,7 @@ func (m hostCapacitiesMap) SelectHostForActor(actorType string) (host uuid.UUID,
 	default:
 		// Pick a random one
 		// We use math/rand here which is not "secure" as we don't need a CSPRNG
+		//nolint:gosec
 		host = hosts[mrand.Int()%len(hosts)]
 	}
 
