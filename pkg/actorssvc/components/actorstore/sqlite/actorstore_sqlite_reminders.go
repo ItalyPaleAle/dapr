@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	mrand "math/rand"
 	"strings"
 	"time"
 
@@ -234,11 +235,6 @@ WHERE
 		hosts.updatFromSet(hostSet)
 
 		// Allocate a slice for the reminder IDs and for the actors to allocate
-		type allocateActor struct {
-			reminderID            []byte
-			actorType, actorID    string
-			reminderExecutionTime int64
-		}
 		fetchedReminderIDs := make([][]byte, 0, s.metadata.Config.RemindersFetchAheadBatchSize)
 		allocateActors := make([]allocateActor, 0, s.metadata.Config.RemindersFetchAheadBatchSize)
 
@@ -306,7 +302,7 @@ LIMIT ?
 			}
 
 			// For the reminders that have an active actor, filter based on the capacity
-			if len(hostID) > 0 && hostCapacities.decreaseCapacityWithHostIDBytes(act.actorType, hostID) {
+			if len(hostID) > 0 && hostCapacities.DecreaseCapacityWithHostIDBytes(act.actorType, hostID) {
 				fetchedReminderIDs = append(fetchedReminderIDs, act.reminderID)
 			} else if len(hostID) == 0 {
 				// This reminder does not have an active actor, so we need to record that to be activated later
@@ -319,7 +315,55 @@ LIMIT ?
 		//nolint:forbidigo
 		fmt.Println("ALLOCATE", allocateActors)
 
-		// TODO: ALLOCATE ACTORS AS NEEDED
+		// Allocate actors that were not already active
+		allocatedSet := make(map[string]struct{}, len(allocateActors))
+		for _, act := range allocateActors {
+			key := act.ActorKey()
+
+			// Check if this was already allocated
+			_, ok := allocatedSet[key]
+			if ok {
+				continue
+			}
+
+			// Pick a random host that can host this actor
+			// This also decreases the host's capacity
+			hostID, ok := hostCapacities.SelectHostForActor(act.actorType)
+			if !ok {
+				// Could not get a host with capacity
+				continue
+			}
+
+			// Create the actor now
+			// Here we can do an upsert because we know that, if the row is present, it means the actor was active on a host that is dead but not GC'd yet
+			// We set the activation to the current timestamp + the delay
+			activation := act.reminderExecutionTime
+			if now > activation {
+				activation = now
+			}
+			queryCtx, queryCancel = context.WithTimeout(ctx, s.metadata.Timeout)
+			defer queryCancel()
+			_, err = tx.QueryContext(queryCtx, `
+REPLACE INTO actors
+  (actor_type, actor_id, host_id, actor_activation, actor_idle_timeout)
+SELECT 
+  ?, ?, ?, ?,
+  (
+    SELECT hat.actor_idle_timeout
+    FROM hosts_actor_types AS hat
+    WHERE hat.actor_type = ? AND hat.host_id = ?
+  )
+`, act.actorType, act.actorID, hostID[:], activation, act.actorType, hostID[:])
+			if err != nil {
+				return nil, fmt.Errorf("failed to activate actor: %w", err)
+			}
+
+			// Mark this actor as activated so avoid re-activating it
+			allocatedSet[key] = struct{}{}
+
+			// We can now add the reminder ID to those that have been fetched
+			fetchedReminderIDs = append(fetchedReminderIDs, act.reminderID)
+		}
 
 		// Now that we have all the reminder IDs, return the fetched reminders
 		res := make([]*actorstore.FetchedReminder, len(fetchedReminderIDs))
@@ -467,7 +511,7 @@ WHERE
 	AND reminder_lease_pid = ?
 	AND reminder_lease_time IS NOT NULL
 	AND reminder_lease_time >= ?`,
-			req.ExecutionTime, req.Period, ttl,
+			req.ExecutionTime.UnixMilli(), req.Period, ttl,
 			lease.reminderID, lease.leaseID, s.metadata.PID,
 			now.Add(-1*s.metadata.Config.RemindersLeaseDuration).UnixMilli(),
 		)
@@ -486,7 +530,7 @@ WHERE
 	AND reminder_lease_time IS NOT NULL
 	AND reminder_lease_time >= ?`,
 			now.UnixMilli(),
-			req.ExecutionTime, req.Period, ttl,
+			req.ExecutionTime.UnixMilli(), req.Period, ttl,
 			lease.reminderID, lease.leaseID, s.metadata.PID,
 			now.Add(-1*s.metadata.Config.RemindersLeaseDuration).UnixMilli(),
 		)
@@ -545,46 +589,46 @@ func (s *SQLite) RenewReminderLeases(ctx context.Context, req actorstore.RenewRe
 		return 0, nil
 	}
 
-	panic("TODO")
+	now := s.clock.Now().UnixMilli()
+	minReminderLease := now - s.metadata.Config.RemindersLeaseDuration.Milliseconds()
 
-	/*
-			queryCtx, queryCancel := context.WithTimeout(ctx, s.metadata.Timeout)
-			defer queryCancel()
+	queryCtx, queryCancel := context.WithTimeout(ctx, s.metadata.Timeout)
+	defer queryCancel()
 
-			res, err := s.db.ExecContext(queryCtx, `
-		UPDATE reminders
-		SET reminder_lease_time = now()
-		WHERE reminder_id IN (
-			SELECT reminder_id
-			FROM reminders
-			LEFT JOIN actors
-				ON actors.actor_type = reminders.actor_type AND actors.actor_id = reminders.actor_id
-			WHERE
-				reminders.reminder_lease_pid = ?
-				AND reminders.reminder_lease_time IS NOT NULL
-				AND reminders.reminder_lease_time >= now() - ?::interval
-				AND reminders.reminder_lease_id IS NOT NULL
-				AND (
-					(
-						actors.host_id IS NULL
-						AND reminders.actor_type = ANY(?)
-					)
-					OR actors.host_id = ANY(?)
-				)
-		)`,
-				s.metadata.PID, s.metadata.Config.RemindersLeaseDuration,
-				req.ActorTypes, req.Hosts,
-			)
-			if err != nil {
-				return 0, fmt.Errorf("database error: %w", err)
-			}
-			affected, err := res.RowsAffected()
-			if err != nil {
-				return 0, fmt.Errorf("failed to count affected rows: %w", err)
-			}
+	res, err := s.db.ExecContext(queryCtx, `
+UPDATE reminders
+SET reminder_lease_time = ?
+WHERE reminder_id IN (
+  SELECT reminder_id
+  FROM reminders
+  LEFT JOIN actors
+    ON actors.actor_type = reminders.actor_type AND actors.actor_id = reminders.actor_id
+  WHERE
+    reminders.reminder_lease_pid = ?
+    AND reminders.reminder_lease_time IS NOT NULL
+    AND reminders.reminder_lease_time >= ?
+    AND reminders.reminder_lease_id IS NOT NULL
+    AND (
+      (
+        actors.host_id IS NULL
+        AND reminders.actor_type = ANY(?)
+      )
+      OR actors.host_id = ANY(?)
+    )
+)`,
+		now, s.metadata.PID, minReminderLease,
+		req.ActorTypes, req.Hosts,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("database error: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to count affected rows: %w", err)
+	}
 
-			return affected, nil
-	*/
+	return affected, nil
+
 }
 
 func (s *SQLite) RelinquishReminderLease(ctx context.Context, fr *actorstore.FetchedReminder) error {
@@ -679,25 +723,23 @@ func (m hostCapacitiesMap) addHost(actorType string, hostID uuid.UUID, capacity 
 	m[actorType][hostID] = capacity
 }
 
-//nolint:unused
-func (m hostCapacitiesMap) getCapacity(actorType string, hostID uuid.UUID) int32 {
+func (m hostCapacitiesMap) GetCapacity(actorType string, hostID uuid.UUID) int32 {
 	if m[actorType] == nil {
 		return 0
 	}
 	return m[actorType][hostID]
 }
 
-//nolint:unused
-func (m hostCapacitiesMap) getCapacityWithHostIDBytes(actorType string, hostID []byte) int32 {
+func (m hostCapacitiesMap) GetCapacityWithHostIDBytes(actorType string, hostID []byte) int32 {
 	hostIDUUID, err := uuid.FromBytes(hostID)
 	if err != nil {
 		return 0
 	}
 
-	return m.getCapacity(actorType, hostIDUUID)
+	return m.GetCapacity(actorType, hostIDUUID)
 }
 
-func (m hostCapacitiesMap) decreaseCapacity(actorType string, hostID uuid.UUID) bool {
+func (m hostCapacitiesMap) DecreaseCapacity(actorType string, hostID uuid.UUID) bool {
 	if m[actorType] == nil || m[actorType][hostID] <= 0 {
 		return false
 	}
@@ -705,10 +747,57 @@ func (m hostCapacitiesMap) decreaseCapacity(actorType string, hostID uuid.UUID) 
 	return true
 }
 
-func (m hostCapacitiesMap) decreaseCapacityWithHostIDBytes(actorType string, hostID []byte) bool {
+func (m hostCapacitiesMap) DecreaseCapacityWithHostIDBytes(actorType string, hostID []byte) bool {
 	hostIDUUID, err := uuid.FromBytes(hostID)
 	if err != nil {
 		return false
 	}
-	return m.decreaseCapacity(actorType, hostIDUUID)
+	return m.DecreaseCapacity(actorType, hostIDUUID)
+}
+
+// SelectHostForActor selects a host for the given actor type that has capacity to host an actor
+// It decreases the host's capacity automatically
+func (m hostCapacitiesMap) SelectHostForActor(actorType string) (host uuid.UUID, ok bool) {
+	at := m[actorType]
+	if len(at) == 0 {
+		return host, false
+	}
+
+	// Filter hosts with capacity
+	hosts := make([]uuid.UUID, len(at))
+	var n int
+	for k, v := range at {
+		if v <= 0 {
+			// No capacity
+			continue
+		}
+		hosts[n] = k
+		n++
+	}
+	hosts = hosts[:n]
+
+	switch len(hosts) {
+	case 0:
+		return host, false
+	case 1:
+		host = hosts[0]
+	default:
+		// Pick a random one
+		// We use math/rand here which is not "secure" as we don't need a CSPRNG
+		host = hosts[mrand.Int()%len(hosts)]
+	}
+
+	// Decrease the capacity
+	m[actorType][host]--
+	return host, true
+}
+
+type allocateActor struct {
+	reminderID            []byte
+	actorType, actorID    string
+	reminderExecutionTime int64
+}
+
+func (a allocateActor) ActorKey() string {
+	return a.actorType + "||" + a.actorID
 }
