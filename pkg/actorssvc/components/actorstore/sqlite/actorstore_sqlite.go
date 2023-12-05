@@ -23,11 +23,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"k8s.io/utils/clock"
 	"modernc.org/sqlite"
 	sqlitelib "modernc.org/sqlite/lib"
 
-	"k8s.io/utils/clock"
-
+	authSqlite "github.com/dapr/components-contrib/common/authentication/sqlite"
 	sqlinternal "github.com/dapr/components-contrib/common/component/sql"
 	sqlitemigrations "github.com/dapr/components-contrib/common/component/sql/migrations/sqlite"
 	"github.com/dapr/dapr/pkg/actorssvc/components/actorstore"
@@ -76,14 +76,13 @@ func (s *SQLite) Init(ctx context.Context, md actorstore.Metadata) error {
 		return fmt.Errorf("failed to parse metadata: %w", err)
 	}
 
-	connString, err := s.metadata.GetConnectionString(s.logger)
+	connString, err := s.metadata.GetConnectionString(s.logger, authSqlite.GetConnectionStringOpts{
+		EnableForeignKeys: true,
+	})
 	if err != nil {
 		// Already logged
 		return err
 	}
-
-	// TODO: REMOVE WHEN https://github.com/dapr/components-contrib/pull/3253 IS MERGED
-	connString += "&_pragma=foreign_keys(1)"
 
 	s.db, err = sql.Open("sqlite", connString)
 	if err != nil {

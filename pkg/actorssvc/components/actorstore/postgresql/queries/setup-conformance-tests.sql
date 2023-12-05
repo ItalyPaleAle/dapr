@@ -61,21 +61,21 @@ BEGIN
       WHERE key = 'tick';
 
     IF enabled THEN
-        SELECT
-          INTO timestamp to_timestamp(value::text::decimal)
-          FROM conftests.freeze_time
-          WHERE key = 'timestamp';
+      SELECT
+        INTO timestamp to_timestamp(value::text::decimal)
+        FROM conftests.freeze_time
+        WHERE key = 'timestamp';
 
-        IF tick THEN
-            timestamp = timestamp + '1 second'::interval;
-            UPDATE conftests.freeze_time
-              SET value = extract(epoch from timestamp)::text::jsonb
-              WHERE key = 'timestamp';
-        END IF;
+      IF tick THEN
+          timestamp = timestamp + '1 second'::interval;
+          UPDATE conftests.freeze_time
+            SET value = extract(epoch from timestamp)::text::jsonb
+            WHERE key = 'timestamp';
+      END IF;
 
-        RETURN timestamp;
+      RETURN timestamp;
     ELSE
-        RETURN pg_catalog.now();
+      RETURN pg_catalog.now();
     END IF;
 END
 $func$ LANGUAGE plpgsql;

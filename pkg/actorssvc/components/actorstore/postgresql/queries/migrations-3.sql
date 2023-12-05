@@ -102,8 +102,8 @@ BEGIN
       )
       AND (
         (
-            %[3]s.host_id IS NULL
-            AND rr.actor_type = ANY(actor_types)
+          %[3]s.host_id IS NULL
+          AND rr.actor_type = ANY(actor_types)
         )
         OR capacity > 0
       )

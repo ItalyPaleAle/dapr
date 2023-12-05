@@ -9,7 +9,7 @@ CREATE TABLE reminders (
   reminder_period text,
   reminder_ttl integer,
   reminder_data blob,
-  reminder_lease_id text,
+  reminder_lease_id blob,
   reminder_lease_time integer,
   reminder_lease_pid text
 );
