@@ -327,15 +327,15 @@ LIMIT ?
 				queryCtx, queryCancel = context.WithTimeout(ctx, s.metadata.Timeout)
 				defer queryCancel()
 				_, err = tx.ExecContext(queryCtx, `
-	REPLACE INTO actors
-	  (actor_type, actor_id, host_id, actor_activation, actor_idle_timeout)
-	SELECT 
-	  ?, ?, ?, ?,
-	  (
-		SELECT hat.actor_idle_timeout
-		FROM hosts_actor_types AS hat
-		WHERE hat.actor_type = ? AND hat.host_id = ?
-	  )
+REPLACE INTO actors
+  (actor_type, actor_id, host_id, actor_activation, actor_idle_timeout)
+SELECT 
+  ?, ?, ?, ?,
+  (
+	SELECT hat.actor_idle_timeout
+	FROM hosts_actor_types AS hat
+	WHERE hat.actor_type = ? AND hat.host_id = ?
+  )
 	`, act.actorType, act.actorID, hostID[:], activation, act.actorType, hostID[:])
 				if err != nil {
 					return nil, fmt.Errorf("failed to activate actor: %w", err)
@@ -428,15 +428,15 @@ func (s *SQLite) GetReminderWithLease(ctx context.Context, fr *actorstore.Fetche
 	err = s.db.
 		QueryRowContext(queryCtx, `
 SELECT
-	actor_type, actor_id, reminder_name,
-	reminder_execution_time, reminder_period, reminder_ttl, reminder_data
+  actor_type, actor_id, reminder_name,
+  reminder_execution_time, reminder_period, reminder_ttl, reminder_data
 FROM reminders
 WHERE
-	reminder_id = ?
-	AND reminder_lease_id = ?
-	AND reminder_lease_pid = ?
-	AND reminder_lease_time IS NOT NULL
-	AND reminder_lease_time >= ?
+  reminder_id = ?
+  AND reminder_lease_id = ?
+  AND reminder_lease_pid = ?
+  AND reminder_lease_time IS NOT NULL
+  AND reminder_lease_time >= ?
 `,
 			lease.reminderID, lease.leaseID, s.metadata.PID,
 			s.clock.Now().Add(-1*s.metadata.Config.RemindersLeaseDuration).UnixMilli(),
@@ -484,18 +484,18 @@ func (s *SQLite) UpdateReminderWithLease(ctx context.Context, fr *actorstore.Fet
 	if !req.KeepLease {
 		res, err = s.db.ExecContext(queryCtx, `
 UPDATE reminders SET
-	reminder_lease_id = NULL,
-	reminder_lease_time = NULL,
-	reminder_lease_pid = NULL,
-	reminder_execution_time = ?,
-	reminder_period = ?,
-	reminder_ttl = ?
+  reminder_lease_id = NULL,
+  reminder_lease_time = NULL,
+  reminder_lease_pid = NULL,
+  reminder_execution_time = ?,
+  reminder_period = ?,
+  reminder_ttl = ?
 WHERE
-	reminder_id = ?
-	AND reminder_lease_id = ?
-	AND reminder_lease_pid = ?
-	AND reminder_lease_time IS NOT NULL
-	AND reminder_lease_time >= ?`,
+  reminder_id = ?
+  AND reminder_lease_id = ?
+  AND reminder_lease_pid = ?
+  AND reminder_lease_time IS NOT NULL
+  AND reminder_lease_time >= ?`,
 			req.ExecutionTime.UnixMilli(), req.Period, ttl,
 			lease.reminderID, lease.leaseID, s.metadata.PID,
 			now.Add(-1*s.metadata.Config.RemindersLeaseDuration).UnixMilli(),
@@ -504,16 +504,16 @@ WHERE
 		// Refresh the lease without releasing it
 		res, err = s.db.ExecContext(queryCtx, `
 UPDATE reminders SET
-	reminder_lease_time = ?,
-	reminder_execution_time = ?,
-	reminder_period = ?,
-	reminder_ttl = ?
+  reminder_lease_time = ?,
+  reminder_execution_time = ?,
+  reminder_period = ?,
+  reminder_ttl = ?
 WHERE
-	reminder_id = ?
-	AND reminder_lease_id = ?
-	AND reminder_lease_pid = ?
-	AND reminder_lease_time IS NOT NULL
-	AND reminder_lease_time >= ?`,
+  reminder_id = ?
+  AND reminder_lease_id = ?
+  AND reminder_lease_pid = ?
+  AND reminder_lease_time IS NOT NULL
+  AND reminder_lease_time >= ?`,
 			now.UnixMilli(),
 			req.ExecutionTime.UnixMilli(), req.Period, ttl,
 			lease.reminderID, lease.leaseID, s.metadata.PID,
@@ -547,11 +547,11 @@ func (s *SQLite) DeleteReminderWithLease(ctx context.Context, fr *actorstore.Fet
 	res, err := s.db.ExecContext(queryCtx, `
 DELETE FROM reminders
 WHERE
-	reminder_id = ?
-	AND reminder_lease_id = ?
-	AND reminder_lease_pid = ?
-	AND reminder_lease_time IS NOT NULL
-	AND reminder_lease_time >= ?`,
+  reminder_id = ?
+  AND reminder_lease_id = ?
+  AND reminder_lease_pid = ?
+  AND reminder_lease_time IS NOT NULL
+  AND reminder_lease_time >= ?`,
 		lease.reminderID, lease.leaseID, s.metadata.PID,
 		s.clock.Now().Add(-1*s.metadata.Config.RemindersLeaseDuration).UnixMilli(),
 	)
@@ -640,15 +640,16 @@ func (s *SQLite) RelinquishReminderLease(ctx context.Context, fr *actorstore.Fet
 	defer queryCancel()
 	res, err := s.db.ExecContext(queryCtx,
 		// Note that here we don't check for `reminder_lease_time` as we are relinquishing the lease anyways
-		`UPDATE reminders
-			SET
-				reminder_lease_id = NULL,
-				reminder_lease_time = NULL,
-				reminder_lease_pid = NULL
-			WHERE
-				reminder_id = ?
-				AND reminder_lease_id = ?
-				AND reminder_lease_pid = ?`,
+		`
+UPDATE reminders
+SET
+  reminder_lease_id = NULL,
+  reminder_lease_time = NULL,
+  reminder_lease_pid = NULL
+WHERE
+  reminder_id = ?
+  AND reminder_lease_id = ?
+  AND reminder_lease_pid = ?`,
 		lease.reminderID, lease.leaseID, s.metadata.PID,
 	)
 	if err != nil {
