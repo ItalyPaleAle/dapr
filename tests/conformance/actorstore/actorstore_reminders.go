@@ -403,17 +403,32 @@ func remindersTest(store actorstore.Store) func(t *testing.T) {
 					ActorTypes: actorTypes,
 				}
 
+				// type-A||type-A.11||type-A.11.1 is executed in 1s, so it is always included in the first set
+				// The other ones are executed at the same time, so whether they are included in the first or second set isn't guaranteed
 				res, err := store.FetchNextReminders(context.Background(), req)
 				require.NoError(t, err)
-				require.NotNil(t, res)
-				assertRemindersInResponse(t, res, []string{"type-A||type-A.11||type-A.11.2", "type-A||type-A.11||type-A.11.1"}, time.Time{})
+				require.NotEmpty(t, res)
 				fetched = append(fetched, res...)
+
+				var ok bool
+				for _, r := range res {
+					if r.Key() == "type-A||type-A.11||type-A.11.1" {
+						ok = true
+					}
+				}
+				assert.True(t, ok, "Reminder type-A||type-A.11||type-A.11.1 must be found in the first response")
 
 				res, err = store.FetchNextReminders(context.Background(), req)
 				require.NoError(t, err)
-				require.NotNil(t, res)
-				assertRemindersInResponse(t, res, []string{"type-A||type-A.inactivereminder||type-A.inactivereminder.1", "type-B||type-B.221||type-B.221.1"}, time.Time{})
+				require.NotEmpty(t, res)
 				fetched = append(fetched, res...)
+
+				assertRemindersInResponse(t, fetched, []string{
+					"type-A||type-A.11||type-A.11.2",
+					"type-A||type-A.11||type-A.11.1",
+					"type-A||type-A.inactivereminder||type-A.inactivereminder.1",
+					"type-B||type-B.221||type-B.221.1",
+				}, time.Time{})
 			})
 
 			// No point in continuing if the tests failed

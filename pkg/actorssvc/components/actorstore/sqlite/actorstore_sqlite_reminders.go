@@ -151,7 +151,7 @@ func (s *SQLite) FetchNextReminders(ctx context.Context, req actorstore.FetchNex
 	}
 
 	// Parse all req.Hosts as uuid.UUID
-	hosts, err := fetchNextRemindersHostsFromReq(req.Hosts)
+	hosts, err := newHostListFromReq(req.Hosts)
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +168,7 @@ func (s *SQLite) FetchNextReminders(ctx context.Context, req actorstore.FetchNex
 		queryParams := make([]any, len(hosts)+2)
 		queryParams[0] = minReminderLease
 		queryParams[1] = minLastHealthCheck
-		hostsList := hosts.getQuerySegment(queryParams, 2) // This also appends to queryParams
+		hostsList := hosts.getQuerySegment("hosts.", queryParams, 2) // This also appends to queryParams
 
 		queryCtx, queryCancel := context.WithTimeout(ctx, s.metadata.Timeout)
 		defer queryCancel()
@@ -244,18 +244,8 @@ WHERE
 		queryParams[0] = minLastHealthCheck
 		queryParams[1] = maxFetchAhead
 		queryParams[2] = minReminderLease
-
-		var actorTypesList strings.Builder
-		for i := range req.ActorTypes {
-			if i == 0 {
-				actorTypesList.WriteString("rr.actor_type = ?")
-			} else {
-				actorTypesList.WriteString(" OR rr.actor_type = ?")
-			}
-			queryParams[i+3] = req.ActorTypes[i]
-		}
-
-		hostsList = hosts.getQuerySegment(queryParams, 3+len(req.ActorTypes)) // This appends to queryParams
+		actorTypesList := stringList(req.ActorTypes).getQuerySegment("rr.actor_type", queryParams, 3) // This appends to queryParams
+		hostsList = hosts.getQuerySegment("hosts.", queryParams, 3+len(req.ActorTypes))               // This appends to queryParams
 		queryParams[3+len(hosts)+len(req.ActorTypes)] = s.metadata.Config.RemindersFetchAheadBatchSize
 
 		queryCtx, queryCancel = context.WithTimeout(ctx, s.metadata.Timeout)
@@ -281,7 +271,7 @@ WHERE
   AND (
 	(
       hosts.host_id IS NULL
-      AND (`+actorTypesList.String()+`)
+      AND (`+actorTypesList+`)
     )
 	OR `+hostsList+`
   )
@@ -310,11 +300,6 @@ LIMIT ?
 			}
 		}
 
-		//nolint:forbidigo
-		fmt.Println("FETCHED", fetchedReminderIDs)
-		//nolint:forbidigo
-		fmt.Println("ALLOCATE", allocateActors)
-
 		// Allocate actors that were not already active
 		allocatedSet := make(map[string]struct{}, len(allocateActors))
 		for _, act := range allocateActors {
@@ -322,45 +307,45 @@ LIMIT ?
 
 			// Check if this was already allocated
 			_, ok := allocatedSet[key]
-			if ok {
-				continue
-			}
-
-			// Pick a random host that can host this actor
-			// This also decreases the host's capacity
-			hostID, ok := hostCapacities.SelectHostForActor(act.actorType)
 			if !ok {
-				// Could not get a host with capacity
-				continue
+				// Actor needs to be allocated
+				// Pick a random host that can host this actor
+				// This also decreases the host's capacity
+				hostID, ok := hostCapacities.SelectHostForActor(act.actorType)
+				if !ok {
+					// Could not get a host with capacity
+					continue
+				}
+
+				// Create the actor now
+				// Here we can do an upsert because we know that, if the row is present, it means the actor was active on a host that is dead but not GC'd yet
+				// We set the activation to the current timestamp + the delay
+				activation := act.reminderExecutionTime
+				if now > activation {
+					activation = now
+				}
+				queryCtx, queryCancel = context.WithTimeout(ctx, s.metadata.Timeout)
+				defer queryCancel()
+				_, err = tx.QueryContext(queryCtx, `
+	REPLACE INTO actors
+	  (actor_type, actor_id, host_id, actor_activation, actor_idle_timeout)
+	SELECT 
+	  ?, ?, ?, ?,
+	  (
+		SELECT hat.actor_idle_timeout
+		FROM hosts_actor_types AS hat
+		WHERE hat.actor_type = ? AND hat.host_id = ?
+	  )
+	`, act.actorType, act.actorID, hostID[:], activation, act.actorType, hostID[:])
+				if err != nil {
+					return nil, fmt.Errorf("failed to activate actor: %w", err)
+				}
+
+				// Mark this actor as activated so avoid re-activating it
+				allocatedSet[key] = struct{}{}
 			}
 
-			// Create the actor now
-			// Here we can do an upsert because we know that, if the row is present, it means the actor was active on a host that is dead but not GC'd yet
-			// We set the activation to the current timestamp + the delay
-			activation := act.reminderExecutionTime
-			if now > activation {
-				activation = now
-			}
-			queryCtx, queryCancel = context.WithTimeout(ctx, s.metadata.Timeout)
-			defer queryCancel()
-			_, err = tx.QueryContext(queryCtx, `
-REPLACE INTO actors
-  (actor_type, actor_id, host_id, actor_activation, actor_idle_timeout)
-SELECT 
-  ?, ?, ?, ?,
-  (
-    SELECT hat.actor_idle_timeout
-    FROM hosts_actor_types AS hat
-    WHERE hat.actor_type = ? AND hat.host_id = ?
-  )
-`, act.actorType, act.actorID, hostID[:], activation, act.actorType, hostID[:])
-			if err != nil {
-				return nil, fmt.Errorf("failed to activate actor: %w", err)
-			}
-
-			// Mark this actor as activated so avoid re-activating it
-			allocatedSet[key] = struct{}{}
-
+			// Actor is allocated now
 			// We can now add the reminder ID to those that have been fetched
 			fetchedReminderIDs = append(fetchedReminderIDs, act.reminderID)
 		}
@@ -589,8 +574,20 @@ func (s *SQLite) RenewReminderLeases(ctx context.Context, req actorstore.RenewRe
 		return 0, nil
 	}
 
+	hosts, err := newHostListFromReq(req.Hosts)
+	if err != nil {
+		return 0, err
+	}
+
 	now := s.clock.Now().UnixMilli()
 	minReminderLease := now - s.metadata.Config.RemindersLeaseDuration.Milliseconds()
+
+	queryParams := make([]any, 3+len(hosts)+len(req.ActorTypes))
+	queryParams[0] = now
+	queryParams[1] = s.metadata.PID
+	queryParams[2] = minReminderLease
+	actorTypesList := stringList(req.ActorTypes).getQuerySegment("reminders.actor_type", queryParams, 3) // This appends to queryParams
+	hostsList := hosts.getQuerySegment("actors.", queryParams, 3+len(req.ActorTypes))                    // This appends to queryParams
 
 	queryCtx, queryCancel := context.WithTimeout(ctx, s.metadata.Timeout)
 	defer queryCancel()
@@ -611,13 +608,12 @@ WHERE reminder_id IN (
     AND (
       (
         actors.host_id IS NULL
-        AND reminders.actor_type = ANY(?)
+        AND (`+actorTypesList+`)
       )
-      OR actors.host_id = ANY(?)
+      OR `+hostsList+`
     )
 )`,
-		now, s.metadata.PID, minReminderLease,
-		req.ActorTypes, req.Hosts,
+		queryParams...,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("database error: %w", err)
@@ -677,10 +673,10 @@ func (ld leaseData) IsValid() bool {
 	return len(ld.reminderID) > 0 && len(ld.leaseID) > 0
 }
 
-type fetchNextRemindersHosts []uuid.UUID
+type hostList []uuid.UUID
 
-func fetchNextRemindersHostsFromReq(reqHosts []string) (fetchNextRemindersHosts, error) {
-	res := make(fetchNextRemindersHosts, len(reqHosts))
+func newHostListFromReq(reqHosts []string) (hostList, error) {
+	res := make(hostList, len(reqHosts))
 	for i := 0; i < len(reqHosts); i++ {
 		var err error
 		res[i], err = uuid.Parse(reqHosts[i])
@@ -691,26 +687,41 @@ func fetchNextRemindersHostsFromReq(reqHosts []string) (fetchNextRemindersHosts,
 	return res, nil
 }
 
-func (hosts fetchNextRemindersHosts) getQuerySegment(params []any, paramsOffset int) string {
+func (hosts hostList) getQuerySegment(prefix string, params []any, paramsOffset int) string {
 	var b strings.Builder
 	for i := range hosts {
 		if i != 0 {
-			b.WriteString(" OR hosts.host_id = ?")
+			b.WriteString(" OR " + prefix + "host_id = ?")
 		} else {
-			b.WriteString("hosts.host_id = ?")
+			b.WriteString(prefix + "host_id = ?")
 		}
 		params[i+paramsOffset] = hosts[i][:]
 	}
 	return b.String()
 }
 
-func (hosts *fetchNextRemindersHosts) updatFromSet(set map[uuid.UUID]struct{}) {
+func (hosts *hostList) updatFromSet(set map[uuid.UUID]struct{}) {
 	*hosts = (*hosts)[0:len(set)]
 	var i int
 	for k := range set {
 		(*hosts)[i] = k
 		i++
 	}
+}
+
+type stringList []string
+
+func (l stringList) getQuerySegment(col string, params []any, paramsOffset int) string {
+	var b strings.Builder
+	for i := range l {
+		if i != 0 {
+			b.WriteString(" OR " + col + " = ?")
+		} else {
+			b.WriteString(col + " = ?")
+		}
+		params[i+paramsOffset] = l[i]
+	}
+	return b.String()
 }
 
 // actorType -> host ID -> capacity
