@@ -117,7 +117,109 @@ func (s *SQLite) CreateLeasedReminder(ctx context.Context, req actorstore.Create
 		return nil, actorstore.ErrInvalidRequestMissingParameters
 	}
 
-	panic("TODO")
+	// Parse all req.Hosts as uuid.UUID
+	hosts, err := newHostListFromReq(req.Hosts)
+	if err != nil {
+		return nil, err
+	}
+
+	now := s.clock.Now().UnixMilli()
+
+	var executionTime time.Time
+	if !req.Reminder.ExecutionTime.IsZero() {
+		executionTime = req.Reminder.ExecutionTime
+	} else {
+		// Note that delay could be zero
+		executionTime = s.clock.Now().Add(req.Reminder.Delay)
+	}
+
+	var ttl int64
+	if req.Reminder.TTL != nil {
+		ttl = req.Reminder.TTL.UnixMilli()
+	}
+
+	// Generate a reminder ID and lease
+	reminderID, err := uuid.NewRandom()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate reminder ID: %w", err)
+	}
+
+	lease, err := newLeaseData(reminderID[:])
+	if err != nil {
+		return nil, err
+	}
+
+	// This query performs an upsert for the reminder.
+	// If the reminder that was upserted has a lease created on it atomically if it targets an actor that is already active on a host connected to this instance of the actors service.
+	queryArgs := make([]any, len(hosts)+13)
+	queryArgs[0] = lease.leaseID
+	queryArgs[1] = now
+	queryArgs[2] = s.metadata.PID
+	queryArgs[3] = req.Reminder.ActorType
+	queryArgs[4] = req.Reminder.ActorID
+	hostsList := hosts.getQuerySegment("", queryArgs, 5) // This appends to queryArgs
+	queryArgs[5+len(hosts)] = reminderID[:]
+	queryArgs[6+len(hosts)] = req.Reminder.ActorType
+	queryArgs[7+len(hosts)] = req.Reminder.ActorID
+	queryArgs[8+len(hosts)] = req.Reminder.Name
+	queryArgs[9+len(hosts)] = executionTime.UnixMilli()
+	queryArgs[10+len(hosts)] = req.Reminder.Period
+	queryArgs[11+len(hosts)] = ttl
+	queryArgs[12+len(hosts)] = req.Reminder.Data
+
+	queryCtx, queryCancel := context.WithTimeout(ctx, s.metadata.Timeout)
+	defer queryCancel()
+
+	err = s.db.QueryRowContext(queryCtx, `
+WITH c AS (
+  SELECT
+      ? AS reminder_lease_id,
+      ? AS reminder_lease_time,
+      ? AS reminder_lease_pid
+  FROM actors
+  WHERE
+      actor_type = ?
+      AND actor_id = ?
+      AND (`+hostsList+`)
+), lease AS (
+  SELECT
+      c.reminder_lease_id,
+      c.reminder_lease_time,
+      c.reminder_lease_pid
+  FROM c
+  UNION ALL
+      SELECT
+          NULL AS reminder_lease_id,
+          NULL AS reminder_lease_time,
+          NULL AS reminder_lease_pid
+      WHERE NOT EXISTS (
+          SELECT 1 from c
+      )
+)
+REPLACE INTO reminders
+    (reminder_id, actor_type, actor_id, reminder_name, reminder_execution_time, reminder_period, reminder_ttl, reminder_data, reminder_lease_id, reminder_lease_time, reminder_lease_pid)
+  SELECT
+    ?, ?, ?, ?, ?, ?, ?, ?, lease.reminder_lease_id, lease.reminder_lease_time, lease.reminder_lease_pid
+  FROM lease
+RETURNING reminder_lease_id
+`,
+		queryArgs...,
+	).Scan(&lease.leaseID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create reminder with lease: %w", err)
+	}
+
+	// If we couldn't get a lease, return nil
+	if len(lease.leaseID) == 0 {
+		return nil, nil
+	}
+
+	r := actorstore.NewFetchedReminder(
+		req.Reminder.ActorType+"||"+req.Reminder.ActorID+"||"+req.Reminder.Name,
+		executionTime,
+		lease,
+	)
+	return &r, nil
 }
 
 func (s *SQLite) DeleteReminder(ctx context.Context, req actorstore.ReminderRef) error {
@@ -364,20 +466,15 @@ SELECT
 }
 
 func (s *SQLite) fetchReminderWithID(ctx context.Context, tx *sql.Tx, reminderID []byte, now int64) (*actorstore.FetchedReminder, error) {
-	leaseID := make([]byte, 16)
-	_, err := io.ReadFull(rand.Reader, leaseID)
+	lease, err := newLeaseData(reminderID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate lease ID: %w", err)
+		return nil, err
 	}
 
 	var (
 		actorType, actorID, name string
 		executionTime            int64
 	)
-	lease := leaseData{
-		reminderID: reminderID,
-		leaseID:    leaseID,
-	}
 
 	queryCtx, queryCancel := context.WithTimeout(ctx, s.metadata.Timeout)
 	defer queryCancel()
@@ -394,7 +491,7 @@ WHERE reminder_id = ?
 RETURNING
   actor_type, actor_id, reminder_name, reminder_execution_time
 `,
-			leaseID, now, s.metadata.PID, reminderID,
+			lease.leaseID, now, s.metadata.PID, reminderID,
 		).
 		Scan(&actorType, &actorID, &name, &executionTime)
 	if err != nil {
@@ -668,6 +765,18 @@ WHERE
 type leaseData struct {
 	reminderID []byte
 	leaseID    []byte
+}
+
+func newLeaseData(reminderID []byte) (leaseData, error) {
+	res := leaseData{
+		reminderID: reminderID,
+		leaseID:    make([]byte, 14),
+	}
+	_, err := io.ReadFull(rand.Reader, res.leaseID)
+	if err != nil {
+		return res, fmt.Errorf("failed to generate lease ID: %w", err)
+	}
+	return res, nil
 }
 
 func (ld leaseData) IsValid() bool {
