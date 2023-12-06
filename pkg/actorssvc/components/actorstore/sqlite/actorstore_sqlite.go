@@ -89,6 +89,11 @@ func (s *SQLite) Init(ctx context.Context, md actorstore.Metadata) error {
 		return fmt.Errorf("failed to create connection: %w", err)
 	}
 
+	// If the database is in-memory, we can't have more than 1 open connection
+	if s.metadata.IsInMemoryDB() {
+		s.db.SetMaxOpenConns(1)
+	}
+
 	err = s.Ping(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to ping the database: %w", err)

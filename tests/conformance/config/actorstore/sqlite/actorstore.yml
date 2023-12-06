@@ -8,3 +8,5 @@ spec:
   metadata:
     - name: connectionString
       value: "file::memory:"
+      # To test using a database on disk
+      #value: "file:test.db"

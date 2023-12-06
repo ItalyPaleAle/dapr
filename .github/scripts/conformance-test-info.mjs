@@ -10,6 +10,9 @@ const components = {
         conformance: true,
         conformanceSetup: 'docker-compose.sh postgresql',
     },
+    'actorstore.sqlite': {
+        conformance: true,
+    },
 }
 
 /**
