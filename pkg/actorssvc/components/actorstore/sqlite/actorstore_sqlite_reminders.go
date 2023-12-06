@@ -170,6 +170,7 @@ func (s *SQLite) CreateLeasedReminder(ctx context.Context, req actorstore.Create
 	queryCtx, queryCancel := context.WithTimeout(ctx, s.metadata.Timeout)
 	defer queryCancel()
 
+	//nolint:execinquery
 	err = s.db.QueryRowContext(queryCtx, `
 WITH c AS (
   SELECT
