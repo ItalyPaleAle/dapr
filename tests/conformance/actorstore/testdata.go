@@ -180,7 +180,7 @@ func init() {
 				ActorType:     "type-A",
 				ActorID:       "type-A.inactivereminder",
 				Name:          "type-A.inactivereminder.1",
-				ExecutionTime: 2 * time.Second,
+				ExecutionTime: 2100 * time.Millisecond,
 			},
 			// Unallocated actor
 			// Can be hosted by 7de434ce-e285-444f-9857-4d30cade3111 and 50d7623f-b165-4f9e-9f05-3b7a1280b222
