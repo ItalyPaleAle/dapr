@@ -90,6 +90,7 @@ type Config struct {
 	DaprPublicPort               string
 	ApplicationPort              string
 	DaprGracefulShutdownSeconds  int
+	DaprBlockShutdownDuration    *time.Duration
 	PlacementServiceHostAddr     string
 	ActorsServiceAddress         string
 	DaprAPIListenAddresses       string
@@ -131,6 +132,7 @@ type internalConfig struct {
 	unixDomainSocket             string
 	readBufferSize               int
 	gracefulShutdownDuration     time.Duration
+	blockShutdownDuration        *time.Duration
 	enableAPILogging             *bool
 	disableBuiltinK8sSecretStore bool
 	config                       []string
@@ -287,8 +289,9 @@ func (c *Config) toInternal() (*internalConfig, error) {
 			HealthCheckHTTPPath: c.AppHealthCheckPath,
 			MaxConcurrency:      c.AppMaxConcurrency,
 		},
-		registry:        registry.New(c.Registry),
-		metricsExporter: metrics.NewExporterWithOptions(log, metrics.DefaultMetricNamespace, c.Metrics),
+		registry:              registry.New(c.Registry),
+		metricsExporter:       metrics.NewExporterWithOptions(log, metrics.DefaultMetricNamespace, c.Metrics),
+		blockShutdownDuration: c.DaprBlockShutdownDuration,
 	}
 
 	if len(intc.standalone.ResourcesPath) == 0 && c.ComponentsPath != "" {
