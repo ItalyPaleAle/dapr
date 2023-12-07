@@ -29,6 +29,7 @@ import (
 
 	"github.com/dapr/components-contrib/state"
 	"github.com/dapr/dapr/pkg/actors/internal"
+	diag "github.com/dapr/dapr/pkg/diagnostics"
 	"github.com/dapr/dapr/pkg/resiliency"
 	"github.com/dapr/kit/logger"
 	"github.com/dapr/kit/retry"
@@ -64,15 +65,16 @@ type reminders struct {
 // NewRemindersProvider returns a reminders provider.
 func NewRemindersProvider(clock clock.WithTicker, opts internal.ActorsProviderOpts) internal.RemindersProvider {
 	return &reminders{
-		clock:           clock,
-		apiLevel:        opts.APILevel,
-		runningCh:       make(chan struct{}),
-		reminders:       map[string][]ActorReminderReference{},
-		activeReminders: &sync.Map{},
-		evaluationChan:  make(chan struct{}, 1),
-		evaluationQueue: make(chan struct{}, 1),
-		config:          opts.Config,
-		resiliency:      opts.Resiliency,
+		clock:            clock,
+		apiLevel:         opts.APILevel,
+		runningCh:        make(chan struct{}),
+		reminders:        map[string][]ActorReminderReference{},
+		activeReminders:  &sync.Map{},
+		evaluationChan:   make(chan struct{}, 1),
+		evaluationQueue:  make(chan struct{}, 1),
+		config:           opts.Config,
+		resiliency:       opts.Resiliency,
+		metricsCollector: diag.DefaultMonitoring.ActorReminders,
 	}
 }
 
