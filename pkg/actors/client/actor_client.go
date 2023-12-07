@@ -54,7 +54,6 @@ var (
 type ActorClient struct {
 	actorsClient       actorsv1pb.ActorsClient
 	conn               *grpc.ClientConn
-	appID              string
 	security           security.Handler
 	lock               sync.Mutex
 	executeReminderFn  internal.ExecuteReminderFn
@@ -63,7 +62,7 @@ type ActorClient struct {
 	config             internal.Config
 	actorTypes         []*actorsv1pb.ActorHostType
 	addActorTypeCh     chan struct{}
-	appHealthFn        func(ctx context.Context) <-chan bool
+	appHealthFn        internal.AppHealthFn
 	appHealthCh        <-chan bool
 	onAPILevelUpdate   func(apiLevel uint32)
 	resiliency         resiliency.Provider
@@ -76,21 +75,10 @@ type ActorClient struct {
 	wg                 sync.WaitGroup
 }
 
-// ActorClientOpts contains options for NewActorClient.
-type ActorClientOpts struct {
-	AppID       string
-	Security    security.Handler
-	Resiliency  resiliency.Provider
-	AppHealthFn func(ctx context.Context) <-chan bool
-	Config      internal.Config
-	Clock       kclock.Clock
-}
-
 // NewActorClient initializes a new ActorClient object.
-func NewActorClient(opts ActorClientOpts) *ActorClient {
+func NewActorClient(opts internal.ActorsProviderOpts) *ActorClient {
 	// We do not init addActorTypeCh here
 	return &ActorClient{
-		appID:       opts.AppID,
 		security:    opts.Security,
 		resiliency:  opts.Resiliency,
 		appHealthFn: opts.AppHealthFn,
@@ -104,8 +92,8 @@ func (a *ActorClient) SetExecuteReminderFn(fn internal.ExecuteReminderFn) {
 	a.executeReminderFn = fn
 }
 
-func (a *ActorClient) SetResiliencyProvider(resiliency resiliency.Provider) {
-	a.resiliency = resiliency
+func (a *ActorClient) SetOnTableUpdateFn(fn func()) {
+	// No-op in this implementation
 }
 
 func (a *ActorClient) SetHaltActorFns(haltFn internal.HaltActorFn, haltAllFn internal.HaltAllActorsFn) {
@@ -515,7 +503,7 @@ func (a *ActorClient) connectHostHandshake(stream actorsv1pb.Actors_ConnectHostC
 		Message: &actorsv1pb.ConnectHostClientStream_RegisterActorHost{
 			RegisterActorHost: &actorsv1pb.RegisterActorHost{
 				Address:    a.config.GetRuntimeHostname(),
-				AppId:      a.appID,
+				AppId:      a.config.AppID,
 				ApiLevel:   internal.ActorAPILevel,
 				ActorTypes: actorTypes,
 			},

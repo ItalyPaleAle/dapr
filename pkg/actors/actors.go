@@ -116,6 +116,7 @@ type GRPCConnectionFn func(ctx context.Context, address string, id string, names
 type actorsRuntime struct {
 	appChannel           channel.AppChannel
 	placement            internal.PlacementService
+	placementEnabled     bool
 	grpcConnectionFn     GRPCConnectionFn
 	actorsConfig         Config
 	actorSvcClient       *client.ActorClient
@@ -185,33 +186,44 @@ func newActorsWithClock(opts ActorsOpts, clock clock.WithTicker) ActorRuntime {
 		closeCh:         make(chan struct{}),
 	}
 
-	// Init reminders
-	// For actors v2, we initialize the client here too
+	// Init reminders and placement
+	providerOpts := internal.ActorsProviderOpts{
+		Config:      a.actorsConfig.Config,
+		Security:    a.sec,
+		AppHealthFn: a.getAppHealthCheckChan,
+		Clock:       a.clock,
+		APILevel:    &a.apiLevel,
+		Resiliency:  a.resiliency,
+	}
 	switch a.actorsConfig.GetActorsVersion() {
 	case internal.ActorsV1:
-		a.actorsReminders = reminders.NewRemindersProvider(a.clock, reminders.NewRemindersProviderOpts{
-			StoreName: a.storeName,
-			Config:    a.actorsConfig.Config,
-			APILevel:  &a.apiLevel,
-		})
-
+		a.actorsReminders = reminders.NewRemindersProvider(a.clock, providerOpts)
+		if a.placement == nil {
+			// Initialize the placement client if we don't have a mocked one already
+			a.placement = placement.NewActorPlacement(providerOpts)
+		}
 	case internal.ActorsV2:
-		a.actorSvcClient = client.NewActorClient(client.ActorClientOpts{
-			Security:    a.sec,
-			AppID:       a.actorsConfig.Config.AppID,
-			AppHealthFn: a.getAppHealthCheckChan,
-			Config:      a.actorsConfig.Config,
-			Clock:       a.clock,
-		})
-
-		// The Actors service client is a provider for reminders too
+		// For actors v2, the client is a provider for reminders and placement too
+		a.actorSvcClient = client.NewActorClient(providerOpts)
 		a.actorsReminders = a.actorSvcClient
+		if a.placement == nil {
+			// Initialize the placement client if we don't have a mocked one already
+			a.placement = a.actorSvcClient
+		}
+	default:
+		// Should only happen due to a development-time issue
+		log.Fatalf("Invalid actors version: %v", a.actorsConfig.GetActorsVersion())
 	}
 
 	a.actorsReminders.SetExecuteReminderFn(a.executeReminder)
-	a.actorsReminders.SetResiliencyProvider(a.resiliency)
 	a.actorsReminders.SetStateStoreProviderFn(a.stateStore)
 	a.actorsReminders.SetLookupActorFn(a.isActorLocallyHosted)
+
+	a.placement.SetHaltActorFns(a.haltActor, a.haltAllActors)
+	a.placement.SetOnAPILevelUpdate(func(apiLevel uint32) {
+		a.apiLevel.Store(apiLevel)
+		log.Infof("Actor API level in the cluster has been updated to %d", apiLevel)
+	})
 
 	a.timers.SetExecuteTimerFn(a.executeTimer)
 
@@ -289,47 +301,12 @@ func (a *actorsRuntime) Init(ctx context.Context) (err error) {
 	a.actorsReminders.Init(ctx)
 	a.timers.Init(ctx)
 
-	// Init placement if needed
-	if a.placement == nil {
-		switch a.actorsConfig.GetActorsVersion() {
-		case internal.ActorsV1:
-			a.placement = placement.NewActorPlacement(placement.ActorPlacementOpts{
-				ServerAddrs:     a.actorsConfig.Config.PlacementAddresses,
-				Security:        a.sec,
-				AppID:           a.actorsConfig.Config.AppID,
-				RuntimeHostname: a.actorsConfig.GetRuntimeHostname(),
-				PodName:         a.actorsConfig.Config.PodName,
-				ActorTypes:      a.actorsConfig.Config.HostedActorTypes.ListActorTypes(),
-				Resiliency:      a.resiliency,
-				AppHealthFn:     a.getAppHealthCheckChan,
-				AfterTableUpdateFn: func() {
-					a.drainRebalancedActors()
-					a.actorsReminders.OnPlacementTablesUpdated(ctx)
-				},
-			})
+	a.placementEnabled = true
 
-		case internal.ActorsV2:
-			// The Actors service client provides placement services
-			a.placement = a.actorSvcClient
-
-			for _, actorType := range a.actorsConfig.Config.HostedActorTypes.ListActorTypes() {
-				err = a.placement.AddHostedActorType(actorType, a.actorsConfig.GetIdleTimeoutForType(actorType))
-				if err != nil {
-					return fmt.Errorf("failed to register actor '%s': %w", actorType, err)
-				}
-			}
-
-		default:
-			// Should only happen due to a development-time issue
-			log.Fatalf("Invalid actors version: %v", a.actorsConfig.GetActorsVersion())
-		}
-
-		a.placement.SetHaltActorFns(a.haltActor, a.haltAllActors)
-		a.placement.SetOnAPILevelUpdate(func(apiLevel uint32) {
-			a.apiLevel.Store(apiLevel)
-			log.Infof("Actor API level in the cluster has been updated to %d", apiLevel)
-		})
-	}
+	a.placement.SetOnTableUpdateFn(func() {
+		a.drainRebalancedActors()
+		a.actorsReminders.OnPlacementTablesUpdated(ctx)
+	})
 
 	a.wg.Add(1)
 	go func() {
@@ -704,7 +681,7 @@ func (a *actorsRuntime) isActorLocal(targetActorAddress, hostAddress string, grp
 }
 
 func (a *actorsRuntime) GetState(ctx context.Context, req *GetStateRequest) (*StateResponse, error) {
-	store, err := a.stateStore()
+	storeName, store, err := a.stateStore()
 	if err != nil {
 		return nil, err
 	}
@@ -716,7 +693,7 @@ func (a *actorsRuntime) GetState(ctx context.Context, req *GetStateRequest) (*St
 	key := a.constructActorStateKey(actorKey, req.Key)
 
 	policyRunner := resiliency.NewRunner[*state.GetResponse](ctx,
-		a.resiliency.ComponentOutboundPolicy(a.storeName, resiliency.Statestore),
+		a.resiliency.ComponentOutboundPolicy(storeName, resiliency.Statestore),
 	)
 	storeReq := &state.GetRequest{
 		Key:      key,
@@ -740,7 +717,7 @@ func (a *actorsRuntime) GetState(ctx context.Context, req *GetStateRequest) (*St
 }
 
 func (a *actorsRuntime) GetBulkState(ctx context.Context, req *GetBulkStateRequest) (BulkStateResponse, error) {
-	store, err := a.stateStore()
+	storeName, store, err := a.stateStore()
 	if err != nil {
 		return nil, err
 	}
@@ -758,7 +735,7 @@ func (a *actorsRuntime) GetBulkState(ctx context.Context, req *GetBulkStateReque
 	}
 
 	policyRunner := resiliency.NewRunner[[]state.BulkGetResponse](ctx,
-		a.resiliency.ComponentOutboundPolicy(a.storeName, resiliency.Statestore),
+		a.resiliency.ComponentOutboundPolicy(storeName, resiliency.Statestore),
 	)
 	res, err := policyRunner(func(ctx context.Context) ([]state.BulkGetResponse, error) {
 		return store.BulkGet(ctx, bulkReqs, state.BulkGetOpts{})
@@ -783,12 +760,7 @@ func (a *actorsRuntime) GetBulkState(ctx context.Context, req *GetBulkStateReque
 	return bulkRes, nil
 }
 
-func (a *actorsRuntime) TransactionalStateOperation(ctx context.Context, req *TransactionalRequest) error {
-	store, err := a.stateStore()
-	if err != nil {
-		return err
-	}
-
+func (a *actorsRuntime) TransactionalStateOperation(ctx context.Context, req *TransactionalRequest) (err error) {
 	operations := make([]state.TransactionalStateOperation, len(req.Operations))
 	baseKey := constructCompositeKey(a.actorsConfig.Config.AppID, req.ActorKey())
 	metadata := map[string]string{metadataPartitionKey: baseKey}
@@ -804,10 +776,15 @@ func (a *actorsRuntime) TransactionalStateOperation(ctx context.Context, req *Tr
 		}
 	}
 
-	return a.executeStateStoreTransaction(ctx, store, operations, metadata)
+	return a.executeStateStoreTransaction(ctx, operations, metadata)
 }
 
-func (a *actorsRuntime) executeStateStoreTransaction(ctx context.Context, store internal.TransactionalStateStore, operations []state.TransactionalStateOperation, metadata map[string]string) error {
+func (a *actorsRuntime) executeStateStoreTransaction(ctx context.Context, operations []state.TransactionalStateOperation, metadata map[string]string) error {
+	storeName, store, err := a.stateStore()
+	if err != nil {
+		return err
+	}
+
 	if maxMulti, ok := store.(state.TransactionalStoreMultiMaxSize); ok {
 		max := maxMulti.MultiMaxSize()
 		if max > 0 && len(operations) > max {
@@ -819,9 +796,9 @@ func (a *actorsRuntime) executeStateStoreTransaction(ctx context.Context, store 
 		Metadata:   metadata,
 	}
 	policyRunner := resiliency.NewRunner[struct{}](ctx,
-		a.resiliency.ComponentOutboundPolicy(a.storeName, resiliency.Statestore),
+		a.resiliency.ComponentOutboundPolicy(storeName, resiliency.Statestore),
 	)
-	_, err := policyRunner(func(ctx context.Context) (struct{}, error) {
+	_, err = policyRunner(func(ctx context.Context) (struct{}, error) {
 		return struct{}{}, store.Multi(ctx, stateReq)
 	})
 	return err
@@ -1055,7 +1032,7 @@ func (a *actorsRuntime) RegisterInternalActor(ctx context.Context, actorType str
 		log.Debugf("Registering internal actor type: %s", actorType)
 		actor.SetActorRuntime(a)
 		a.actorsConfig.Config.HostedActorTypes.AddActorType(actorType, actorIdleTimeout)
-		if a.placement != nil {
+		if a.placementEnabled {
 			if err := a.placement.AddHostedActorType(actorType, actorIdleTimeout); err != nil {
 				return fmt.Errorf("error updating hosted actor types: %s", err)
 			}
@@ -1070,7 +1047,7 @@ func (a *actorsRuntime) GetRuntimeStatus(ctx context.Context) *runtimev1pb.Actor
 		ActiveActors: a.getActiveActorsCount(ctx),
 	}
 
-	if a.placement != nil {
+	if a.placementEnabled {
 		res.HostReady = a.placement.PlacementHealthy() && a.haveCompatibleStorage()
 		res.Placement = a.placement.StatusMessage()
 	}
@@ -1145,16 +1122,16 @@ func ValidateHostEnvironment(mTLSEnabled bool, mode modes.DaprMode, namespace st
 	return nil
 }
 
-func (a *actorsRuntime) stateStore() (internal.TransactionalStateStore, error) {
+func (a *actorsRuntime) stateStore() (string, internal.TransactionalStateStore, error) {
 	storeS, ok := a.compStore.GetStateStore(a.storeName)
 	if !ok {
-		return nil, errors.New(errStateStoreNotFound)
+		return "", nil, errors.New(errStateStoreNotFound)
 	}
 
 	store, ok := storeS.(internal.TransactionalStateStore)
 	if !ok || !state.FeatureETag.IsPresent(store.Features()) || !state.FeatureTransactional.IsPresent(store.Features()) {
-		return nil, errors.New(errStateStoreNotConfigured)
+		return "", nil, errors.New(errStateStoreNotConfigured)
 	}
 
-	return store, nil
+	return a.storeName, store, nil
 }

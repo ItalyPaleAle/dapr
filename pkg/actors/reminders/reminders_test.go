@@ -42,6 +42,7 @@ const (
 	TestKeyName                     = "key0"
 	TestPodName                     = "testPodName"
 	TestActorMetadataPartitionCount = 3
+	storeName                       = "testStore"
 )
 
 func newTestReminders() *reminders {
@@ -53,14 +54,13 @@ func newTestReminders() *reminders {
 	clock := clocktesting.NewFakeClock(startOfTime)
 	apiLevel := &atomic.Uint32{}
 	apiLevel.Store(internal.ActorAPILevel)
-	r := NewRemindersProvider(clock, NewRemindersProviderOpts{
-		StoreName: "testStore",
-		Config:    conf,
-		APILevel:  apiLevel,
+	r := NewRemindersProvider(clock, internal.ActorsProviderOpts{
+		Config:   conf,
+		APILevel: apiLevel,
 	})
 	store := daprt.NewFakeStateStore()
-	r.SetStateStoreProviderFn(func() (internal.TransactionalStateStore, error) {
-		return store, nil
+	r.SetStateStoreProviderFn(func() (string, internal.TransactionalStateStore, error) {
+		return storeName, store, nil
 	})
 	r.SetLookupActorFn(func(context.Context, string, string) (bool, string) {
 		return true, "localhost"
@@ -80,8 +80,8 @@ func TestStoreIsNotInitialized(t *testing.T) {
 	testReminders := newTestReminders()
 	defer testReminders.Close()
 
-	testReminders.SetStateStoreProviderFn(func() (internal.TransactionalStateStore, error) {
-		return nil, errors.New("simulated")
+	testReminders.SetStateStoreProviderFn(func() (string, internal.TransactionalStateStore, error) {
+		return "", nil, errors.New("simulated")
 	})
 
 	t.Run("getReminderTrack", func(t *testing.T) {
@@ -317,8 +317,8 @@ func TestCreateReminder(t *testing.T) {
 	// This will cause race conditions to surface when running these tests with `go test -race` if the methods accessing reminders' storage are not safe for concurrent access.
 	store := daprt.NewFakeStateStore()
 	store.NoLock = true
-	testReminders.SetStateStoreProviderFn(func() (internal.TransactionalStateStore, error) {
-		return store, nil
+	testReminders.SetStateStoreProviderFn(func() (string, internal.TransactionalStateStore, error) {
+		return storeName, store, nil
 	})
 	testReminders.SetExecuteReminderFn(func(reminder *internal.Reminder) bool {
 		diag.DefaultMonitoring.ActorReminderFired(reminder.ActorType, true)
@@ -372,8 +372,8 @@ func TestCreateReminder(t *testing.T) {
 	testRemindersWithPartition := newTestRemindersWithMockAndActorMetadataPartition()
 	defer testRemindersWithPartition.Close()
 
-	testRemindersWithPartition.SetStateStoreProviderFn(func() (internal.TransactionalStateStore, error) {
-		return store, nil
+	testRemindersWithPartition.SetStateStoreProviderFn(func() (string, internal.TransactionalStateStore, error) {
+		return storeName, store, nil
 	})
 
 	for i := 1; i < numReminders; i++ {
@@ -498,10 +498,9 @@ func newTestRemindersWithMockAndActorMetadataPartition() *reminders {
 	clock := clocktesting.NewFakeClock(startOfTime)
 	apiLevel := &atomic.Uint32{}
 	apiLevel.Store(internal.ActorAPILevel)
-	r := NewRemindersProvider(clock, NewRemindersProviderOpts{
-		StoreName: "testStore",
-		Config:    conf,
-		APILevel:  apiLevel,
+	r := NewRemindersProvider(clock, internal.ActorsProviderOpts{
+		Config:   conf,
+		APILevel: apiLevel,
 	})
 	return r.(*reminders)
 }
@@ -776,8 +775,8 @@ func TestDeleteReminderWithPartitions(t *testing.T) {
 	testReminders := newTestRemindersWithMockAndActorMetadataPartition()
 	defer testReminders.Close()
 	stateStore := daprt.NewFakeStateStore()
-	testReminders.SetStateStoreProviderFn(func() (internal.TransactionalStateStore, error) {
-		return stateStore, nil
+	testReminders.SetStateStoreProviderFn(func() (string, internal.TransactionalStateStore, error) {
+		return storeName, stateStore, nil
 	})
 	testReminders.Init(context.Background())
 
@@ -830,8 +829,8 @@ func TestDeleteReminder(t *testing.T) {
 	// This will cause race conditions to surface when running these tests with `go test -race` if the methods accessing reminders' storage are not safe for concurrent access.
 	store := daprt.NewFakeStateStore()
 	store.NoLock = true
-	testReminders.SetStateStoreProviderFn(func() (internal.TransactionalStateStore, error) {
-		return store, nil
+	testReminders.SetStateStoreProviderFn(func() (string, internal.TransactionalStateStore, error) {
+		return storeName, store, nil
 	})
 	testReminders.Init(context.Background())
 
