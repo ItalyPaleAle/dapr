@@ -292,7 +292,8 @@ func (a *actorsRuntime) Init(ctx context.Context) (err error) {
 		return errors.New("actors: couldn't connect to actors service: address is empty")
 	}
 
-	if len(a.actorsConfig.Config.HostedActorTypes.ListActorTypes()) > 0 {
+	hat := a.actorsConfig.Config.HostedActorTypes.ListActorTypes()
+	if len(hat) > 0 {
 		if !a.haveCompatibleStorage() {
 			return ErrIncompatibleStateStore
 		}
@@ -307,6 +308,13 @@ func (a *actorsRuntime) Init(ctx context.Context) (err error) {
 		a.drainRebalancedActors()
 		a.actorsReminders.OnPlacementTablesUpdated(ctx)
 	})
+
+	for _, actorType := range hat {
+		err = a.placement.AddHostedActorType(actorType, a.actorsConfig.GetIdleTimeoutForType(actorType))
+		if err != nil {
+			return fmt.Errorf("failed to register actor '%s': %w", actorType, err)
+		}
+	}
 
 	a.wg.Add(1)
 	go func() {
