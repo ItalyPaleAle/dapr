@@ -11,7 +11,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package actors
+package actorsvc
 
 import (
 	"context"
@@ -29,7 +29,7 @@ import (
 	"github.com/dapr/dapr/tests/integration/framework/util"
 )
 
-type ActorsService struct {
+type ActorSvc struct {
 	exec     process.Interface
 	freeport *util.FreePort
 
@@ -38,7 +38,7 @@ type ActorsService struct {
 	healthzPort int
 }
 
-func New(t *testing.T, fopts ...Option) *ActorsService {
+func New(t *testing.T, fopts ...Option) *ActorSvc {
 	t.Helper()
 
 	fp := util.ReservePorts(t, 3)
@@ -48,6 +48,8 @@ func New(t *testing.T, fopts ...Option) *ActorsService {
 		metricsPort: fp.Port(t, 1),
 		healthzPort: fp.Port(t, 2),
 		mode:        "standalone",
+		storeName:   "sqlite",
+		storeOpts:   map[string]string{"connectionString": "file::memory:"},
 	}
 
 	for _, fopt := range fopts {
@@ -86,7 +88,7 @@ func New(t *testing.T, fopts ...Option) *ActorsService {
 		args = append(args, "--sentry-address="+opts.sentryAddress)
 	}
 
-	return &ActorsService{
+	return &ActorSvc{
 		exec: exec.New(t,
 			binary.EnvValue("actors"), args,
 			opts.execOpts...,
@@ -98,16 +100,16 @@ func New(t *testing.T, fopts ...Option) *ActorsService {
 	}
 }
 
-func (o *ActorsService) Run(t *testing.T, ctx context.Context) {
+func (o *ActorSvc) Run(t *testing.T, ctx context.Context) {
 	o.freeport.Free(t)
 	o.exec.Run(t, ctx)
 }
 
-func (o *ActorsService) Cleanup(t *testing.T) {
+func (o *ActorSvc) Cleanup(t *testing.T) {
 	o.exec.Cleanup(t)
 }
 
-func (o *ActorsService) WaitUntilRunning(t *testing.T, ctx context.Context) {
+func (o *ActorSvc) WaitUntilRunning(t *testing.T, ctx context.Context) {
 	client := util.HTTPClient(t)
 	assert.Eventually(t, func() bool {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://localhost:%d/healthz", o.healthzPort), nil)
@@ -123,18 +125,18 @@ func (o *ActorsService) WaitUntilRunning(t *testing.T, ctx context.Context) {
 	}, time.Second*5, 100*time.Millisecond)
 }
 
-func (o *ActorsService) Port() int {
+func (o *ActorSvc) Port() int {
 	return o.port
 }
 
-func (o *ActorsService) Address() string {
+func (o *ActorSvc) Address() string {
 	return "localhost:" + strconv.Itoa(o.port)
 }
 
-func (o *ActorsService) MetricsPort() int {
+func (o *ActorSvc) MetricsPort() int {
 	return o.metricsPort
 }
 
-func (o *ActorsService) HealthzPort() int {
+func (o *ActorSvc) HealthzPort() int {
 	return o.healthzPort
 }

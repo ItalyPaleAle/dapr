@@ -11,7 +11,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package actors
+package actorsvc
 
 import (
 	"time"
@@ -29,6 +29,8 @@ type options struct {
 	port                         int
 	healthzPort                  int
 	metricsPort                  int
+	storeName                    string
+	storeOpts                    map[string]string
 	hostHealthcheckInterval      time.Duration
 	noReminders                  bool
 	remindersPollInterval        time.Duration

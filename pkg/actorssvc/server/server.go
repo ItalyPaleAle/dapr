@@ -110,6 +110,8 @@ func (s *server) Init(ctx context.Context, opts Options) (err error) {
 	// If reminder processing is enabled, start polling for reminder in background
 	if s.opts.EnableReminders {
 		go s.startReminders(ctx)
+	} else {
+		log.Info("Reminders functionality is disabled")
 	}
 
 	// Init the cache for actors
