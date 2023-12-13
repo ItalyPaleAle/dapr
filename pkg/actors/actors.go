@@ -197,7 +197,7 @@ func newActorsWithClock(opts ActorsOpts, clock clock.WithTicker) ActorRuntime {
 	}
 	switch a.actorsConfig.GetActorsVersion() {
 	case internal.ActorsV1:
-		a.actorsReminders = reminders.NewRemindersProvider(a.clock, providerOpts)
+		a.actorsReminders = reminders.NewRemindersProvider(providerOpts)
 		if a.placement == nil {
 			// Initialize the placement client if we don't have a mocked one already
 			a.placement = placement.NewActorPlacement(providerOpts)
