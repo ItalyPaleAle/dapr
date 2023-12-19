@@ -76,7 +76,7 @@ type ActorClient struct {
 }
 
 // NewActorClient initializes a new ActorClient object.
-func NewActorClient(opts internal.ActorsProviderOpts) *ActorClient {
+func NewActorClient(opts internal.ActorsProviderOptions) *ActorClient {
 	// We do not init addActorTypeCh here
 	return &ActorClient{
 		security:    opts.Security,
