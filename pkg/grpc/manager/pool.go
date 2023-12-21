@@ -14,10 +14,6 @@ limitations under the License.
 package manager
 
 import (
-	"errors"
-	"math/rand"
-	"net"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -25,7 +21,6 @@ import (
 	"google.golang.org/grpc"
 	kclock "k8s.io/utils/clock"
 
-	"github.com/dapr/dapr/pkg/ttlcache"
 	"github.com/dapr/kit/ptr"
 )
 
@@ -253,109 +248,20 @@ func (pic *connectionPoolConnection) MarkIdle() {
 
 // RemoteConnectionPool is used to hold connections to remote addresses.
 type RemoteConnectionPool struct {
-	pool     sync.Map
-	dnsCache *ttlcache.Cache[[]string]
+	pool *sync.Map
 }
 
 // NewRemoteConnectionPool creates a new RemoteConnectionPool object.
 func NewRemoteConnectionPool() *RemoteConnectionPool {
 	return &RemoteConnectionPool{
-		pool: sync.Map{},
-		dnsCache: ttlcache.NewCache[[]string](ttlcache.CacheOptions{
-			InitialSize: 3,
-			MaxTTL:      30,
-		}),
+		pool: &sync.Map{},
 	}
-}
-
-// Close the pool and cache
-func (p *RemoteConnectionPool) Close() error {
-	p.dnsCache.Stop()
-	return nil
 }
 
 // Get takes a connection from the pool or, if no connection exists, creates a new one using createFn, then stores it and returns it.
 func (p *RemoteConnectionPool) Get(address string, createFn func() (grpc.ClientConnInterface, error)) (conn grpc.ClientConnInterface, err error) {
-	// If address is a DNS name, we resolve that to get each IP
-	resolved := p.resolveAddress(address)
-	l := len(resolved)
-	if l == 0 {
-		return nil, errors.New("no address found")
-	}
-
-	// Grab a random address
-	var addr string
-	if l > 1 {
-		// This uses a non-CSPRNG and it's fine in our case
-		idx := rand.Intn(l) //nolint:gosect
-		addr = resolved[idx]
-	} else {
-		addr = resolved[0]
-	}
-
-	item := p.loadOrStoreItem(addr)
+	item := p.loadOrStoreItem(address)
 	return item.Get(createFn)
-}
-
-// resolveAddress takes an address and, if it's a hostname, resolves the A/AAAA records
-func (p *RemoteConnectionPool) resolveAddress(addr string) []string {
-	// Split the port
-	// We can't use "net.SplitHostPort" because many Dapr components return IPv6 addresses without the [] around them
-	var port string
-	idx := strings.LastIndex(addr, ":")
-	if idx != -1 {
-		port = addr[idx:]
-		addr = addr[:idx]
-	}
-
-	// If the address is wrapped in "[]", it is an IPv6
-	if strings.HasPrefix(addr, "[") && strings.HasSuffix(addr, "]") {
-		// We already know this is an IPv6
-		return []string{
-			addr + port,
-		}
-	}
-
-	// Check if the address is already an IP
-	ip := net.ParseIP(addr)
-	if ip != nil {
-		// This is already an IP
-		return []string{
-			addr + port,
-		}
-	}
-
-	// If we're here, we have a DNS name
-	// We may have the address(es) in cache
-	res, ok := p.dnsCache.Get(addr)
-	if ok && len(res) > 0 {
-		return appendPort(res, port)
-	}
-
-	// We don't have the value in cache, so we need to perform a DNS resolution
-	ips, err := net.LookupIP(addr)
-	if err != nil {
-		return nil
-	}
-	res = make([]string, len(ips))
-	for i, ip := range ips {
-		res[i] = ip.String()
-	}
-
-	// Store the result in cache
-	// Note that we may have a race condition here if another goroutine was resolving the same address
-	// This is acceptable, as the waste caused by an extra DNS resolution is very small
-	p.dnsCache.Set(addr, res, 30)
-	return appendPort(res, port)
-}
-
-// Returns a copy of addrs where port is appended to each item
-func appendPort(addrs []string, port string) []string {
-	res := make([]string, len(addrs))
-	for i, a := range addrs {
-		res[i] = a + port
-	}
-	return res
 }
 
 // Register a new connection.
@@ -384,7 +290,7 @@ func (p *RemoteConnectionPool) Release(address string, conn grpc.ClientConnInter
 	item.(*ConnectionPool).Release(conn)
 }
 
-// Destroy a connection, forcibly removing it from the pool
+// Destroy a connection, forcibly removing ti from the pool
 func (p *RemoteConnectionPool) Destroy(address string, conn grpc.ClientConnInterface) {
 	item, ok := p.pool.Load(address)
 	if !ok {
