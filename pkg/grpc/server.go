@@ -106,6 +106,9 @@ func NewAPIServer(api API, config ServerConfig, tracingSpec config.TracingSpec, 
 
 // NewInternalServer returns a new gRPC server for Dapr to Dapr communications.
 func NewInternalServer(api API, config ServerConfig, tracingSpec config.TracingSpec, metricSpec config.MetricSpec, sec security.Handler, proxy messaging.Proxy) Server {
+	// This is equivalent to "infinity" time (see: https://github.com/grpc/grpc-go/blob/master/internal/transport/defaults.go)
+	const infinity = time.Duration(math.MaxInt64)
+
 	serverOpts := []grpcGo.ServerOption{
 		grpcGo.KeepaliveEnforcementPolicy(grpcGoKeepalive.EnforcementPolicy{
 			// If a client pings more than once every 8s, terminate the connection
@@ -114,14 +117,14 @@ func NewInternalServer(api API, config ServerConfig, tracingSpec config.TracingS
 			PermitWithoutStream: true,
 		}),
 		grpcGo.KeepaliveParams(grpcGoKeepalive.ServerParameters{
-			// If any connection is alive for more than 30 seconds, send a GOAWAY
-			// We set a maximum age to allow load balancing with not-yet-known nodes
-			MaxConnectionAge: 30 * time.Second,
+			// Do not set a max age
+			// The client uses a pool that recycles connections automatically
+			MaxConnectionAge: infinity,
 			// Do not forcefully close connections if there are pending RPCs
-			// This is equivalent to "infinity" time (see: https://github.com/grpc/grpc-go/blob/master/internal/transport/defaults.go)
-			MaxConnectionAgeGrace: time.Duration(math.MaxInt64),
-			// If a client is idle for 15s, send a GOAWAY
-			MaxConnectionIdle: 15 * time.Second,
+			MaxConnectionAgeGrace: infinity,
+			// If a client is idle for 3m, send a GOAWAY
+			// This is equivalent to the max idle time set in the client
+			MaxConnectionIdle: 3 * time.Minute,
 			// Ping the client if it is idle for 10s to ensure the connection is still active
 			Time: 10 * time.Second,
 			// Wait 5s for the ping ack before assuming the connection is dead

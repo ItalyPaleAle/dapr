@@ -261,6 +261,7 @@ func (g *Manager) Close() error {
 	defer g.wg.Wait()
 	if g.closed.CompareAndSwap(false, true) {
 		close(g.closeCh)
+		return g.remoteConns.Close()
 	}
 
 	return nil
