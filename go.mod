@@ -11,7 +11,7 @@ require (
 	github.com/argoproj/argo-rollouts v1.4.1
 	github.com/cenkalti/backoff/v4 v4.2.1
 	github.com/cloudevents/sdk-go/v2 v2.14.0
-	github.com/dapr/components-contrib v1.12.1-0.20231219201927-02c6b21ec621
+	github.com/dapr/components-contrib v1.12.1-0.20231221220723-9bce125c6ffc
 	github.com/dapr/kit v0.12.2-0.20231221220316-9165c5ae9599
 	github.com/evanphx/json-patch/v5 v5.7.0
 	github.com/go-chi/chi/v5 v5.0.10
@@ -466,8 +466,7 @@ replace github.com/microcosm-cc/bluemonday => github.com/microcosm-cc/bluemonday
 // Uncomment for local development for testing with changes in the components-contrib repository.
 // Don't commit with this uncommented!
 //
-replace github.com/dapr/components-contrib => ../components-contrib
-
+// replace github.com/dapr/components-contrib => ../components-contrib
 //
 // Then, run `make modtidy` in this repository.
 // This ensures that go.mod and go.sum are up-to-date.
