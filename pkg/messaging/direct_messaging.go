@@ -614,6 +614,7 @@ func (d *directMessaging) getRemoteApp(appID string) (res remoteApp, err error) 
 				if err != nil {
 					return res, err
 				}
+				res.address = addresses.Pick()
 
 				// Store the result in cache
 				// Note that we may have a race condition here if another goroutine was resolving the same address
