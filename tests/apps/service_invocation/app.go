@@ -608,6 +608,7 @@ func testLoadBalancing(w http.ResponseWriter, r *http.Request) {
 		onBadRequest(w, err)
 		return
 	}
+	defer res.Body.Close()
 
 	w.WriteHeader(res.StatusCode)
 
