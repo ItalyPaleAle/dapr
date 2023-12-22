@@ -17,7 +17,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -49,6 +51,7 @@ var (
 	daprClient runtimev1pb.DaprClient
 
 	httpMethods []string
+	pid         string
 )
 
 const (
@@ -169,6 +172,13 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(appResponse{Message: "OK"})
+}
+
+func pidHandler(w http.ResponseWriter, r *http.Request) {
+	log.Println("pidHandler is called")
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(appResponse{Message: pid})
 }
 
 func singlehopHandler(w http.ResponseWriter, r *http.Request) {
@@ -359,6 +369,7 @@ func appRouter() http.Handler {
 	router.Use(utils.LoggerMiddleware)
 
 	router.HandleFunc("/", indexHandler).Methods("GET")
+	router.HandleFunc("/pid", pidHandler).Methods("GET")
 	router.HandleFunc("/singlehop", singlehopHandler).Methods("POST")
 	router.HandleFunc("/multihop", multihopHandler).Methods("POST")
 
@@ -1429,7 +1440,13 @@ func main() {
 
 	httpMethods = []string{"POST", "GET", "PUT", "DELETE"}
 
+	// Generate a random "process ID" of 48 bits
+	pidBytes := make([]byte, 6)
+	io.ReadFull(rand.Reader, pidBytes)
+	pid = hex.EncodeToString(pidBytes)
+
 	log.Printf("Dapr service_invocation - listening on http://localhost:%d", appPort)
+	log.Printf("PID: %s", pid)
 	utils.StartServer(appPort, appRouter, true, false)
 }
 
