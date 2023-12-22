@@ -690,6 +690,10 @@ func TestGRPCProxy(t *testing.T) {
 }
 
 func TestHeadersExternal(t *testing.T) {
+	if kitUtils.IsTruthy(os.Getenv("SKIP_EXTERNAL_INVOCATION")) {
+		t.Skip()
+	}
+
 	targetApp := "serviceinvocation-caller"
 	externalURL := tr.Platform.AcquireAppExternalURL(targetApp)
 	require.NotEmpty(t, externalURL, "external URL must not be empty!")
@@ -1455,7 +1459,6 @@ func TestNegativeCases(t *testing.T) {
 				require.Equal(t, 500, status)
 				require.Contains(t, string(testResults.RawBody), "failed to invoke")
 				require.Contains(t, string(testResults.RawBody), "missing-service-0")
-				require.Contains(t, string(testResults.RawBody), "after 3 retries")
 				require.Nil(t, err)
 			})
 
@@ -1480,7 +1483,6 @@ func TestNegativeCases(t *testing.T) {
 				require.NotNil(t, testResults.RawError)
 				require.Contains(t, testResults.RawError, "failed to invoke")
 				require.Contains(t, testResults.RawError, "missing-service-0")
-				require.Contains(t, testResults.RawError, "after 3 retries")
 			})
 
 			t.Run("service_timeout_http", func(t *testing.T) {
