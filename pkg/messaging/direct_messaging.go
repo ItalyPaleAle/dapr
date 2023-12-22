@@ -150,21 +150,21 @@ func (d *directMessaging) Close() error {
 
 // Invoke takes a message requests and invokes an app, either local or remote.
 func (d *directMessaging) Invoke(ctx context.Context, targetAppID string, req *invokev1.InvokeMethodRequest) (*invokev1.InvokeMethodResponse, error) {
-	appID, appNamespace, err := d.requestAppIDAndNamespace(targetAppID)
+	app, err := d.getRemoteApp(targetAppID)
 	if err != nil {
 		return nil, err
 	}
 
 	// invoke external calls first if appID matches an httpEndpoint.Name or app.id == baseURL that is overwritten
-	if d.isHTTPEndpoint(appID) || strings.HasPrefix(appID, "http://") || strings.HasPrefix(appID, "https://") {
-		return d.invokeWithRetry(ctx, retry.DefaultLinearRetryCount, retry.DefaultLinearBackoffInterval, appID, appNamespace, d.invokeHTTPEndpoint, req)
+	if d.isHTTPEndpoint(app.id) || strings.HasPrefix(app.id, "http://") || strings.HasPrefix(app.id, "https://") {
+		return d.invokeWithRetry(ctx, retry.DefaultLinearRetryCount, retry.DefaultLinearBackoffInterval, app, d.invokeHTTPEndpoint, req)
 	}
 
-	if appID == d.appID && appNamespace == d.namespace {
+	if app.id == d.appID && app.namespace == d.namespace {
 		return d.invokeLocal(ctx, req)
 	}
 
-	return d.invokeWithRetry(ctx, retry.DefaultLinearRetryCount, retry.DefaultLinearBackoffInterval, appID, appNamespace, d.invokeRemote, req)
+	return d.invokeWithRetry(ctx, retry.DefaultLinearRetryCount, retry.DefaultLinearBackoffInterval, app, d.invokeRemote, req)
 }
 
 // requestAppIDAndNamespace takes an app id and returns the app id, namespace and error.
@@ -206,12 +206,11 @@ func (d *directMessaging) invokeWithRetry(
 	ctx context.Context,
 	numRetries int,
 	backoffInterval time.Duration,
-	appID string,
-	appNamespace string,
+	app remoteApp,
 	fn func(ctx context.Context, appID, namespace, appAddress string, req *invokev1.InvokeMethodRequest) (*invokev1.InvokeMethodResponse, func(destroy bool), error),
 	req *invokev1.InvokeMethodRequest,
 ) (*invokev1.InvokeMethodResponse, error) {
-	if !d.resiliency.PolicyDefined(appID, resiliency.EndpointPolicy{}) {
+	if !d.resiliency.PolicyDefined(app.id, resiliency.EndpointPolicy{}) {
 		// This policy has built-in retries so enable replay in the request
 		req.WithReplay(true)
 
@@ -223,12 +222,6 @@ func (d *directMessaging) invokeWithRetry(
 		)
 		return policyRunner(func(ctx context.Context) (*invokev1.InvokeMethodResponse, error) {
 			attempt := resiliency.GetAttempt(ctx)
-
-			app, rErr := d.getRemoteAppWithAppIDNamespace(appID, appNamespace)
-			if rErr != nil {
-				return nil, fmt.Errorf("failed to invoke target %s after %d retries. Error: %w", app.id, attempt-1, rErr)
-			}
-
 			rResp, teardown, rErr := fn(ctx, app.id, app.namespace, app.address, req)
 			if rErr == nil {
 				teardown(false)
@@ -248,11 +241,6 @@ func (d *directMessaging) invokeWithRetry(
 			teardown(false)
 			return rResp, backoff.Permanent(rErr)
 		})
-	}
-
-	app, err := d.getRemoteAppWithAppIDNamespace(appID, appNamespace)
-	if err != nil {
-		return nil, err
 	}
 
 	resp, teardown, err := fn(ctx, app.id, app.namespace, app.address, req)
@@ -587,22 +575,15 @@ func (d *directMessaging) addForwardedHeadersToMetadata(req *invokev1.InvokeMeth
 	addOrCreate(fasthttp.HeaderForwarded, forwardedHeaderValue)
 }
 
-func (d *directMessaging) getRemoteApp(targetAppID string) (res remoteApp, err error) {
-	appID, namespace, err := d.requestAppIDAndNamespace(targetAppID)
+func (d *directMessaging) getRemoteApp(appID string) (res remoteApp, err error) {
+	res.id, res.namespace, err = d.requestAppIDAndNamespace(appID)
 	if err != nil {
 		return res, err
 	}
 
-	return d.getRemoteAppWithAppIDNamespace(appID, namespace)
-}
-
-func (d *directMessaging) getRemoteAppWithAppIDNamespace(appID, namespace string) (res remoteApp, err error) {
 	if d.resolver == nil {
 		return res, errors.New("name resolver not initialized")
 	}
-
-	res.id = appID
-	res.namespace = namespace
 
 	// Note: check for case where URL is overwritten for external service invocation,
 	// or if current app id is associated with an http endpoint CRD.
