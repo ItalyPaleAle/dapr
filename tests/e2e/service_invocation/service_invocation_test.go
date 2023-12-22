@@ -1386,6 +1386,40 @@ func TestUppercaseMiddlewareServiceInvocation(t *testing.T) {
 	t.Run("serviceinvocation-caller", testFn("serviceinvocation-caller"))
 }
 
+func TestLoadBalancing(t *testing.T) {
+	externalURL := tr.Platform.AcquireAppExternalURL("serviceinvocation-caller")
+	require.NotEmpty(t, externalURL, "external URL must not be empty!")
+
+	// This initial probe makes the test wait a little bit longer when needed,
+	// making this test less flaky due to delays in the deployment.
+	_, err := utils.HTTPGetNTimes(externalURL, numHealthChecks)
+	require.NoError(t, err)
+
+	// Make 50 invocations and make sure that we get responses from both apps
+	foundPIDs := map[string]int{}
+	var total int
+	for i := 0; i < 50; i++ {
+		resp, err := utils.HTTPPost(fmt.Sprintf("%s/tests/loadbalancing", externalURL), nil)
+		require.NoError(t, err)
+
+		var appResp appResponse
+		err = json.Unmarshal(resp, &appResp)
+		require.NoErrorf(t, err, "Failed to unmarshal response: %s", string(resp))
+		require.NotEmpty(t, appResp.Message)
+
+		foundPIDs[appResp.Message]++
+		total++
+	}
+
+	t.Logf("Found PIDs: %v", foundPIDs)
+	assert.Equal(t, 50, total)
+	assert.Len(t, foundPIDs, 2)
+	for pid, count := range foundPIDs {
+		// We won't have a perfect 50/50 distribution, so ensure that at least 5 requests (10%) hit each one
+		assert.GreaterOrEqualf(t, count, 5, "Instance with PID %s did not get at least 5 requests", pid)
+	}
+}
+
 func TestNegativeCases(t *testing.T) {
 	testFn := func(targetApp string) func(t *testing.T) {
 		return func(t *testing.T) {

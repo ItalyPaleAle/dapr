@@ -308,7 +308,7 @@ func invokeServiceWithBody(remoteApp, method string, data []byte) (appResponse, 
 
 func invokeServiceWithBodyHeader(remoteApp, method string, data []byte, headers http.Header) (*http.Response, error) {
 	url := fmt.Sprintf("http://localhost:%s/v1.0/invoke/%s/method/%s", strconv.Itoa(daprHTTPPort), remoteApp, method)
-	fmt.Printf("invoke url is %s\n", url)
+	log.Printf("invoke url is %s", url)
 
 	var t io.Reader
 	if data != nil {
@@ -369,7 +369,7 @@ func appRouter() http.Handler {
 	router.Use(utils.LoggerMiddleware)
 
 	router.HandleFunc("/", indexHandler).Methods("GET")
-	router.HandleFunc("/pid", pidHandler).Methods("GET")
+	router.HandleFunc("/pid", pidHandler).Methods("POST")
 	router.HandleFunc("/singlehop", singlehopHandler).Methods("POST")
 	router.HandleFunc("/multihop", multihopHandler).Methods("POST")
 
@@ -416,6 +416,9 @@ func appRouter() http.Handler {
 	router.HandleFunc("/tests/v1_grpctogrpctest", testV1RequestGRPCToGRPC).Methods("POST")
 	router.HandleFunc("/tests/v1_grpctohttptest", testV1RequestGRPCToHTTP).Methods("POST")
 	router.HandleFunc("/retrieve_request_object", retrieveRequestObject).Methods("POST")
+
+	// Load balancing test
+	router.HandleFunc("/tests/loadbalancing", testLoadBalancing).Methods("POST")
 
 	// test path for Dapr method invocation decode
 	router.PathPrefix("/path/").HandlerFunc(testPathHTTPCall)
@@ -516,7 +519,7 @@ func requestHTTPToHTTP(w http.ResponseWriter, r *http.Request, send func(remoteA
 		return
 	}
 
-	log.Printf("response was %s\n", respBody)
+	log.Printf("response was %s", respBody)
 
 	logAndSetResponse(w, http.StatusOK, string(respBody))
 }
@@ -596,6 +599,20 @@ func requestHTTPToHTTPExternal(w http.ResponseWriter, r *http.Request, send func
 	log.Printf("response was %s\n", respBody)
 
 	logAndSetResponse(w, http.StatusOK, string(respBody))
+}
+
+func testLoadBalancing(w http.ResponseWriter, r *http.Request) {
+	log.Println("Enter load balancing test")
+	res, err := invokeServiceWithBodyHeader("serviceinvocation-callee-2", "pid", nil, nil)
+	if err != nil {
+		onBadRequest(w, err)
+		return
+	}
+
+	w.WriteHeader(res.StatusCode)
+
+	log.Print("Response: ")
+	io.Copy(io.MultiWriter(w, os.Stdout), res.Body)
 }
 
 // testDaprIDRequestHTTPToHTTP calls from http caller to http callee without requiring the caller to use Dapr style URL.
