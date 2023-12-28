@@ -31,13 +31,13 @@ import (
 	"google.golang.org/grpc/status"
 	kclock "k8s.io/utils/clock"
 
-	"github.com/dapr/dapr/pkg/actors/cache"
 	"github.com/dapr/dapr/pkg/actors/internal"
 	diag "github.com/dapr/dapr/pkg/diagnostics"
 	actorsv1pb "github.com/dapr/dapr/pkg/proto/actors/v1"
 	"github.com/dapr/dapr/pkg/resiliency"
 	"github.com/dapr/dapr/pkg/security"
 	"github.com/dapr/kit/logger"
+	"github.com/dapr/kit/ttlcache"
 )
 
 var log = logger.NewLogger("dapr.runtime.actors.client")
@@ -70,7 +70,7 @@ type ActorClient struct {
 	runningCtx         context.Context
 	runningCancel      context.CancelFunc
 	connectHostRunning atomic.Bool
-	cache              *cache.Cache[*actorsv1pb.LookupActorResponse]
+	cache              *ttlcache.Cache[*actorsv1pb.LookupActorResponse]
 	clock              kclock.Clock
 	wg                 sync.WaitGroup
 }
@@ -132,7 +132,7 @@ func (a *ActorClient) Start(ctx context.Context) error {
 
 	// Init the cache
 	// This has a max TTL of 5s
-	a.cache = cache.NewCache[*actorsv1pb.LookupActorResponse](cache.CacheOptions{
+	a.cache = ttlcache.NewCache[*actorsv1pb.LookupActorResponse](ttlcache.CacheOptions{
 		MaxTTL: 5,
 	})
 

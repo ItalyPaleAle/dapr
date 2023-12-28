@@ -27,11 +27,11 @@ import (
 	"google.golang.org/grpc"
 	kclock "k8s.io/utils/clock"
 
-	"github.com/dapr/dapr/pkg/actors/cache"
 	"github.com/dapr/dapr/pkg/actorssvc/components/actorstore"
 	actorsv1pb "github.com/dapr/dapr/pkg/proto/actors/v1"
 	"github.com/dapr/kit/events/queue"
 	"github.com/dapr/kit/logger"
+	"github.com/dapr/kit/ttlcache"
 )
 
 var log = logger.NewLogger("dapr.actorssvc.server")
@@ -44,7 +44,7 @@ type server struct {
 	shutdownCh chan struct{}
 	clock      kclock.WithTicker
 	processor  *queue.Processor[*actorstore.FetchedReminder]
-	cache      *cache.Cache[*actorsv1pb.LookupActorResponse]
+	cache      *ttlcache.Cache[*actorsv1pb.LookupActorResponse]
 
 	// "Process ID", which is generated randomly when the server is initialized.
 	pid string
@@ -116,7 +116,7 @@ func (s *server) Init(ctx context.Context, opts Options) (err error) {
 
 	// Init the cache for actors
 	// This has a max TTL of 20s
-	s.cache = cache.NewCache[*actorsv1pb.LookupActorResponse](cache.CacheOptions{
+	s.cache = ttlcache.NewCache[*actorsv1pb.LookupActorResponse](ttlcache.CacheOptions{
 		MaxTTL: 20,
 	})
 
