@@ -8,12 +8,12 @@ require (
 	contrib.go.opencensus.io/exporter/prometheus v0.4.2
 	github.com/PaesslerAG/jsonpath v0.1.1
 	github.com/PuerkitoBio/purell v1.2.1
-	github.com/alphadose/haxmap v1.3.0
+	github.com/alphadose/haxmap v1.3.1
 	github.com/argoproj/argo-rollouts v1.4.1
 	github.com/cenkalti/backoff/v4 v4.2.1
 	github.com/cloudevents/sdk-go/v2 v2.14.0
 	github.com/dapr/components-contrib v1.12.1-0.20231219201927-02c6b21ec621
-	github.com/dapr/kit v0.12.2-0.20231219171931-d7281f0c24d0
+	github.com/dapr/kit v0.12.2-0.20231227152556-77f7f031c92a
 	github.com/evanphx/json-patch/v5 v5.7.0
 	github.com/go-chi/chi/v5 v5.0.10
 	github.com/go-chi/cors v1.2.1
