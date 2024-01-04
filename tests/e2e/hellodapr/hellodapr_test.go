@@ -89,8 +89,8 @@ func TestMain(m *testing.M) {
 
 	// Append test apps for Dapr versions N-2 and N-1 if present
 	// These are used to detect regressions in the control plane
-	// These tests are skipped when using actors v2
-	if os.Getenv("DAPR_TEST_N_MINUS_2_IMAGE") != "" && os.Getenv("ACTORS_VERSION") != "v2" {
+	// These tests are skipped when using Project Emmy
+	if os.Getenv("DAPR_TEST_N_MINUS_2_IMAGE") != "" && os.Getenv("ACTORS_TYPE") != "emmy" {
 		testApps = append(testApps, kube.AppDescription{
 			AppName:           "hellon2dapr",
 			DaprEnabled:       true,
@@ -104,7 +104,7 @@ func TestMain(m *testing.M) {
 			AppMemoryRequest:  "100Mi",
 		})
 	}
-	if os.Getenv("DAPR_TEST_N_MINUS_1_IMAGE") != "" && os.Getenv("ACTORS_VERSION") != "v2" {
+	if os.Getenv("DAPR_TEST_N_MINUS_1_IMAGE") != "" && os.Getenv("ACTORS_TYPE") != "emmy" {
 		testApps = append(testApps, kube.AppDescription{
 			AppName:           "hellon1dapr",
 			DaprEnabled:       true,
@@ -150,14 +150,14 @@ func TestHelloDapr(t *testing.T) {
 			"hellon2dapr",
 			"blue",
 			"Hello blue dapr!",
-			os.Getenv("DAPR_TEST_N_MINUS_2_IMAGE") != "" && os.Getenv("ACTORS_VERSION") != "v2",
+			os.Getenv("DAPR_TEST_N_MINUS_2_IMAGE") != "" && os.Getenv("ACTORS_TYPE") != "emmy",
 		},
 		{
 			"n minus 1",
 			"hellon1dapr",
 			"blue",
 			"Hello blue dapr!",
-			os.Getenv("DAPR_TEST_N_MINUS_1_IMAGE") != "" && os.Getenv("ACTORS_VERSION") != "v2",
+			os.Getenv("DAPR_TEST_N_MINUS_1_IMAGE") != "" && os.Getenv("ACTORS_TYPE") != "emmy",
 		},
 		{
 			"envTest dapr",

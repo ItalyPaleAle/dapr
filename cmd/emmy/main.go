@@ -18,9 +18,9 @@ import (
 	"fmt"
 
 	// Register all stores
-	_ "github.com/dapr/dapr/cmd/actors/stores"
+	_ "github.com/dapr/dapr/cmd/emmy/stores"
 
-	"github.com/dapr/dapr/cmd/actors/options"
+	"github.com/dapr/dapr/cmd/emmy/options"
 	"github.com/dapr/dapr/pkg/actorssvc/monitoring"
 	"github.com/dapr/dapr/pkg/actorssvc/server"
 	loader "github.com/dapr/dapr/pkg/actorssvc/store"

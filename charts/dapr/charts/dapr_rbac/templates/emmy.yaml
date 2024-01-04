@@ -1,8 +1,8 @@
-{{- if and (eq .Values.global.actors.enabled true) (eq .Values.global.actors.serviceName emmy) }}
+{{- if and (eq .Values.global.actors.enabled true) (eq .Values.global.actors.serviceName "emmy") }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: dapr-actors
+  name: dapr-emmy
   namespace: {{ .Release.Namespace }}
   labels:
     {{- range $key, $value := .Values.global.k8sLabels }}
@@ -10,7 +10,7 @@ metadata:
     {{- end }}
 {{- end }}
 ---
-{{- if and (eq .Values.global.actors.enabled true) (eq .Values.global.actors.serviceName emmy) }}
+{{- if and (eq .Values.global.actors.enabled true) (eq .Values.global.actors.serviceName "emmy") }}
 {{- if eq .Values.global.rbac.namespaced true }}
 kind: Role
 {{- else }}
@@ -18,7 +18,7 @@ kind: ClusterRole
 {{- end }}
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: dapr-actors
+  name: dapr-emmy
   labels:
     {{- range $key, $value := .Values.global.k8sLabels }}
     {{ $key }}: {{ tpl $value $ }}
@@ -26,7 +26,7 @@ metadata:
 rules: []
 {{- end }}
 ---
-{{- if and (eq .Values.global.actors.enabled true) (eq .Values.global.actors.serviceName emmy) }}
+{{- if and (eq .Values.global.actors.enabled true) (eq .Values.global.actors.serviceName "emmy") }}
 {{- if eq .Values.global.rbac.namespaced true }}
 kind: RoleBinding
 {{- else }}
@@ -34,14 +34,14 @@ kind: ClusterRoleBinding
 {{- end }}
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: dapr-actors
+  name: dapr-emmy
   labels:
     {{- range $key, $value := .Values.global.k8sLabels }}
     {{ $key }}: {{ tpl $value $ }}
     {{- end }}
 subjects:
 - kind: ServiceAccount
-  name: dapr-actors
+  name: dapr-emmy
   namespace: {{ .Release.Namespace }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -50,5 +50,5 @@ roleRef:
 {{- else }}
   kind: ClusterRole
 {{- end }}
-  name: dapr-actors
+  name: dapr-emmy
 {{- end }}

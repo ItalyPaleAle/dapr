@@ -1,4 +1,4 @@
-{{- if and (eq .Values.global.actors.enabled true) (eq .Values.global.actors.serviceName emmy) }}
+{{- if and (eq .Values.global.actors.enabled true) (eq .Values.global.actors.serviceName "emmy") }}
 {{- if eq .Values.global.ha.enabled true }}
 {{- if .Capabilities.APIVersions.Has "policy/v1" }}
 apiVersion: policy/v1
@@ -7,10 +7,10 @@ apiVersion: policy/v1beta1
 {{- end }}
 kind: PodDisruptionBudget
 metadata:
-  name: dapr-actors-disruption-budget
+  name: dapr-emmy-disruption-budget
   namespace: {{ .Release.Namespace }}
   labels:
-    app: dapr-actors
+    app: dapr-emmy
     {{- range $key, $value := .Values.global.k8sLabels }}
     {{ $key }}: {{ tpl $value $ }}
     {{- end }}
@@ -23,7 +23,7 @@ spec:
 {{- end }}
   selector:
     matchLabels:
-      app: dapr-actors
+      app: dapr-emmy
       {{- range $key, $value := .Values.global.k8sLabels }}
       {{ $key }}: {{ tpl $value $ }}
       {{- end }}

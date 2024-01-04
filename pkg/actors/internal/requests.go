@@ -18,8 +18,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
-
-	actorsv1pb "github.com/dapr/dapr/pkg/proto/actors/v1"
 )
 
 // GetReminderRequest is the request object to get an existing reminder.
@@ -27,15 +25,6 @@ type GetReminderRequest struct {
 	Name      string
 	ActorType string
 	ActorID   string
-}
-
-// ToRefProto gets the actorsv1pb.ReminderRef object for this request.
-func (req GetReminderRequest) ToRefProto() *actorsv1pb.ReminderRef {
-	return &actorsv1pb.ReminderRef{
-		Name:      req.Name,
-		ActorType: req.ActorType,
-		ActorId:   req.ActorID,
-	}
 }
 
 // CreateReminderRequest is the request object to create a new reminder.
@@ -191,15 +180,6 @@ func (req DeleteReminderRequest) ActorKey() string {
 // Key returns the key for this unique reminder.
 func (req DeleteReminderRequest) Key() string {
 	return req.ActorType + daprSeparator + req.ActorID + daprSeparator + req.Name
-}
-
-// ToRefProto gets the actorsv1pb.ReminderRef object for this request.
-func (req DeleteReminderRequest) ToRefProto() *actorsv1pb.ReminderRef {
-	return &actorsv1pb.ReminderRef{
-		Name:      req.Name,
-		ActorType: req.ActorType,
-		ActorId:   req.ActorID,
-	}
 }
 
 // DeleteTimerRequest is a request object for deleting a timer.

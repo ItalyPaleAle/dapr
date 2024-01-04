@@ -30,7 +30,7 @@ DAPR_PLACEMENT_IMAGE_NAME?=placement
 DAPR_SENTRY_IMAGE_NAME?=sentry
 DAPR_OPERATOR_IMAGE_NAME?=operator
 DAPR_INJECTOR_IMAGE_NAME?=injector
-DAPR_ACTORS_IMAGE_NAME?=actors
+DAPR_EMMY_IMAGE_NAME?=emmy
 
 # build docker image for linux
 BIN_PATH=$(OUT_DIR)/$(TARGET_OS)_$(TARGET_ARCH)
@@ -90,7 +90,7 @@ DAPR_PLACEMENT_DOCKER_IMAGE=$(DAPR_REGISTRY)/$(DAPR_PLACEMENT_IMAGE_NAME)
 DAPR_SENTRY_DOCKER_IMAGE=$(DAPR_REGISTRY)/$(DAPR_SENTRY_IMAGE_NAME)
 DAPR_OPERATOR_DOCKER_IMAGE=$(DAPR_REGISTRY)/$(DAPR_OPERATOR_IMAGE_NAME)
 DAPR_INJECTOR_DOCKER_IMAGE=$(DAPR_REGISTRY)/$(DAPR_INJECTOR_IMAGE_NAME)
-DAPR_ACTORS_DOCKER_IMAGE=$(DAPR_REGISTRY)/$(DAPR_ACTORS_IMAGE_NAME)
+DAPR_EMMY_DOCKER_IMAGE=$(DAPR_REGISTRY)/$(DAPR_EMMY_IMAGE_NAME)
 BUILD_TAG=$(DAPR_TAG)-$(DOCKER_IMAGE_VARIANT)
 
 # To use buildx: https://github.com/docker/buildx#docker-ce
@@ -136,8 +136,8 @@ else
 	if [[ "$(BINARIES)" == *"injector"* ]]; then \
 		$(DOCKER) build --build-arg PKG_FILES=injector $(BUILD_ARGS) -f $(DOCKERFILE_DIR)/$(DOCKERFILE) $(BIN_PATH) -t $(DAPR_INJECTOR_DOCKER_IMAGE):$(BUILD_TAG); \
 	fi
-	if [[ "$(BINARIES)" == *"actors"* ]]; then \
-		$(DOCKER) build --build-arg PKG_FILES=actors $(BUILD_ARGS) -f $(DOCKERFILE_DIR)/$(DOCKERFILE) $(BIN_PATH) -t $(DAPR_ACTORS_DOCKER_IMAGE):$(BUILD_TAG); \
+	if [[ "$(BINARIES)" == *"emmy"* ]]; then \
+		$(DOCKER) build --build-arg PKG_FILES=emmy $(BUILD_ARGS) -f $(DOCKERFILE_DIR)/$(DOCKERFILE) $(BIN_PATH) -t $(DAPR_EMMY_DOCKER_IMAGE):$(BUILD_TAG); \
 	fi
 endif
 else
@@ -162,8 +162,8 @@ else
 	if [[ "$(BINARIES)" == *"injector"* ]]; then \
 		$(DOCKER) buildx build --build-arg PKG_FILES=injector $(BUILD_ARGS) --platform $(DOCKER_IMAGE_PLATFORM) -f $(DOCKERFILE_DIR)/$(DOCKERFILE) $(BIN_PATH) -t $(DAPR_INJECTOR_DOCKER_IMAGE):$(BUILD_TAG) --provenance=false; \
 	fi
-	if [[ "$(BINARIES)" == *"actors"* ]]; then \
-		$(DOCKER) buildx build --build-arg PKG_FILES=actors $(BUILD_ARGS) --platform $(DOCKER_IMAGE_PLATFORM) -f $(DOCKERFILE_DIR)/$(DOCKERFILE) $(BIN_PATH) -t $(DAPR_ACTORS_DOCKER_IMAGE):$(BUILD_TAG) --provenance=false; \
+	if [[ "$(BINARIES)" == *"emmy"* ]]; then \
+		$(DOCKER) buildx build --build-arg PKG_FILES=emmy $(BUILD_ARGS) --platform $(DOCKER_IMAGE_PLATFORM) -f $(DOCKERFILE_DIR)/$(DOCKERFILE) $(BIN_PATH) -t $(DAPR_EMMY_DOCKER_IMAGE):$(BUILD_TAG) --provenance=false; \
 	fi
 endif
 endif
@@ -192,8 +192,8 @@ else
 	if [[ "$(BINARIES)" == *"injector"* ]]; then \
 		$(DOCKER) push $(DAPR_INJECTOR_DOCKER_IMAGE):$(BUILD_TAG); \
 	fi
-	if [[ "$(BINARIES)" == *"actors"* ]]; then \
-		$(DOCKER) push $(DAPR_ACTORS_DOCKER_IMAGE):$(BUILD_TAG); \
+	if [[ "$(BINARIES)" == *"emmy"* ]]; then \
+		$(DOCKER) push $(DAPR_EMMY_DOCKER_IMAGE):$(BUILD_TAG); \
 	fi
 endif
 else
@@ -218,8 +218,8 @@ else
 	if [[ "$(BINARIES)" == *"injector"* ]]; then \
 		$(DOCKER) buildx build --build-arg PKG_FILES=injector --platform $(DOCKER_IMAGE_PLATFORM) -f $(DOCKERFILE_DIR)/$(DOCKERFILE) $(BIN_PATH) -t $(DAPR_INJECTOR_DOCKER_IMAGE):$(BUILD_TAG) --provenance=false --push; \
 	fi
-	if [[ "$(BINARIES)" == *"actors"* ]]; then \
-		$(DOCKER) buildx build --build-arg PKG_FILES=actors --platform $(DOCKER_IMAGE_PLATFORM) -f $(DOCKERFILE_DIR)/$(DOCKERFILE) $(BIN_PATH) -t $(DAPR_ACTORS_DOCKER_IMAGE):$(BUILD_TAG) --provenance=false --push; \
+	if [[ "$(BINARIES)" == *"emmy"* ]]; then \
+		$(DOCKER) buildx build --build-arg PKG_FILES=emmy --platform $(DOCKER_IMAGE_PLATFORM) -f $(DOCKERFILE_DIR)/$(DOCKERFILE) $(BIN_PATH) -t $(DAPR_EMMY_DOCKER_IMAGE):$(BUILD_TAG) --provenance=false --push; \
 	fi
 endif
 endif
@@ -247,8 +247,8 @@ else
 	if [[ "$(BINARIES)" == *"injector"* ]]; then \
 		kind load docker-image $(DAPR_INJECTOR_DOCKER_IMAGE):$(BUILD_TAG); \
 	fi
-	if [[ "$(BINARIES)" == *"actors"* ]]; then \
-		kind load docker-image $(DAPR_ACTORS_DOCKER_IMAGE):$(BUILD_TAG); \
+	if [[ "$(BINARIES)" == *"emmy"* ]]; then \
+		kind load docker-image $(DAPR_EMMY_DOCKER_IMAGE):$(BUILD_TAG); \
 	fi
 endif
 
@@ -274,8 +274,8 @@ else
 	if [[ "$(BINARIES)" == *"injector"* ]]; then \
 	$(DOCKER) manifest create $(DAPR_INJECTOR_DOCKER_IMAGE):$(DAPR_TAG) $(DOCKER_MULTI_ARCH:%=$(DAPR_INJECTOR_DOCKER_IMAGE):$(MANIFEST_TAG)-%); \
 	fi
-	if [[ "$(BINARIES)" == *"actors"* ]]; then \
-	$(DOCKER) manifest create $(DAPR_ACTORS_DOCKER_IMAGE):$(DAPR_TAG) $(DOCKER_MULTI_ARCH:%=$(DAPR_ACTORS_DOCKER_IMAGE):$(MANIFEST_TAG)-%); \
+	if [[ "$(BINARIES)" == *"emmy"* ]]; then \
+	$(DOCKER) manifest create $(DAPR_EMMY_DOCKER_IMAGE):$(DAPR_TAG) $(DOCKER_MULTI_ARCH:%=$(DAPR_EMMY_DOCKER_IMAGE):$(MANIFEST_TAG)-%); \
 	fi
 endif
 ifeq ($(LATEST_RELEASE),true)
@@ -298,8 +298,8 @@ else
 	if [[ "$(BINARIES)" == *"injector"* ]]; then \
 	$(DOCKER) manifest create $(DAPR_INJECTOR_DOCKER_IMAGE):$(LATEST_TAG) $(DOCKER_MULTI_ARCH:%=$(DAPR_INJECTOR_DOCKER_IMAGE):$(MANIFEST_LATEST_TAG)-%); \
 	fi
-	if [[ "$(BINARIES)" == *"actors"* ]]; then \
-	$(DOCKER) manifest create $(DAPR_ACTORS_DOCKER_IMAGE):$(LATEST_TAG) $(DOCKER_MULTI_ARCH:%=$(DAPR_ACTORS_DOCKER_IMAGE):$(MANIFEST_LATEST_TAG)-%); \
+	if [[ "$(BINARIES)" == *"emmy"* ]]; then \
+	$(DOCKER) manifest create $(DAPR_EMMY_DOCKER_IMAGE):$(LATEST_TAG) $(DOCKER_MULTI_ARCH:%=$(DAPR_EMMY_DOCKER_IMAGE):$(MANIFEST_LATEST_TAG)-%); \
 	fi
 endif
 endif
@@ -325,8 +325,8 @@ else
 	if [[ "$(BINARIES)" == *"injector"* ]]; then \
 	$(DOCKER) manifest push $(DAPR_INJECTOR_DOCKER_IMAGE):$(DAPR_TAG); \
 	fi
-	if [[ "$(BINARIES)" == *"actors"* ]]; then \
-	$(DOCKER) manifest push $(DAPR_ACTORS_DOCKER_IMAGE):$(DAPR_TAG); \
+	if [[ "$(BINARIES)" == *"emmy"* ]]; then \
+	$(DOCKER) manifest push $(DAPR_EMMY_DOCKER_IMAGE):$(DAPR_TAG); \
 	fi
 endif
 ifeq ($(LATEST_RELEASE),true)
@@ -349,8 +349,8 @@ else
 	if [[ "$(BINARIES)" == *"injector"* ]]; then \
 	$(DOCKER) manifest push $(DAPR_INJECTOR_DOCKER_IMAGE):$(LATEST_TAG); \
 	fi
-	if [[ "$(BINARIES)" == *"actors"* ]]; then \
-	$(DOCKER) manifest push $(DAPR_ACTORS_DOCKER_IMAGE):$(LATEST_TAG); \
+	if [[ "$(BINARIES)" == *"emmy"* ]]; then \
+	$(DOCKER) manifest push $(DAPR_EMMY_DOCKER_IMAGE):$(LATEST_TAG); \
 	fi
 endif
 endif

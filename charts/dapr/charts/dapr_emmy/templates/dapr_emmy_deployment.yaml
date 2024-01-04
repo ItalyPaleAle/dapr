@@ -1,11 +1,11 @@
-{{- if and (eq .Values.global.actors.enabled true) (eq .Values.global.actors.serviceName emmy) }}
+{{- if and (eq .Values.global.actors.enabled true) (eq .Values.global.actors.serviceName "emmy") }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: dapr-actors
+  name: dapr-emmy
   namespace: {{ .Release.Namespace }}
   labels:
-    app: dapr-actors
+    app: dapr-emmy
     {{- range $key, $value := .Values.global.k8sLabels }}
     {{ $key }}: {{ tpl $value $ }}
     {{- end }}
@@ -17,11 +17,11 @@ spec:
 {{- end }}
   selector:
     matchLabels:
-      app: dapr-actors
+      app: dapr-emmy
   template:
     metadata:
       labels:
-        app: dapr-actors
+        app: dapr-emmy
         {{- range $key, $value := .Values.global.k8sLabels }}
         {{ $key }}: {{ tpl $value $ }}
         {{- end }}
@@ -40,7 +40,7 @@ spec:
 {{- end }}
     spec:
       containers:
-      - name: dapr-actors
+      - name: dapr-emmy
         livenessProbe:
           httpGet:
             path: /healthz
@@ -124,7 +124,7 @@ spec:
         {{- end }}
         command:
           {{- if eq .Values.debug.enabled false }}
-          - "/actors"
+          - "/emmy"
           {{- else }}
           - "/dlv"
           {{- end }}
@@ -136,7 +136,7 @@ spec:
           - "--log"
           - "--api-version=2"
           - "exec"
-          - "/actors"
+          - "/emmy"
           - "--"
           {{- end }}
           # Store configuration
@@ -246,7 +246,7 @@ spec:
                     - key: app
                       operator: In
                       values:
-                        - dapr-actors
+                        - dapr-emmy
                 topologyKey: topology.kubernetes.io/zone
         {{- end }}
       {{- if .Values.global.imagePullSecrets }}
