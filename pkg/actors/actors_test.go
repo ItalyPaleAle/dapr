@@ -158,7 +158,7 @@ type runtimeBuilder struct {
 	clock          kclock.WithTicker
 }
 
-func (b *runtimeBuilder) buildActorRuntime() *actorsRuntime {
+func (b *runtimeBuilder) buildActorRuntime(t *testing.T) *actorsRuntime {
 	if b.appChannel == nil {
 		b.appChannel = new(mockAppChannel)
 	}
@@ -193,7 +193,7 @@ func (b *runtimeBuilder) buildActorRuntime() *actorsRuntime {
 
 	compStore := compstore.New()
 	compStore.AddStateStore(storeName, store)
-	a := newActorsWithClock(ActorsOpts{
+	a, err := newActorsWithClock(ActorsOpts{
 		CompStore:      compStore,
 		AppChannel:     b.appChannel,
 		Config:         *b.config,
@@ -201,11 +201,12 @@ func (b *runtimeBuilder) buildActorRuntime() *actorsRuntime {
 		Resiliency:     resiliency.FromConfigurations(log, testResiliency),
 		StateStoreName: storeName,
 	}, clock)
+	require.NoError(t, err)
 
 	return a.(*actorsRuntime)
 }
 
-func newTestActorsRuntimeWithMock(appChannel channel.AppChannel) *actorsRuntime {
+func newTestActorsRuntimeWithMock(t *testing.T, appChannel channel.AppChannel) *actorsRuntime {
 	conf := NewConfig(ConfigOpts{
 		AppID:         TestAppID,
 		ActorsService: "placement:placement:5050",
@@ -218,7 +219,7 @@ func newTestActorsRuntimeWithMock(appChannel channel.AppChannel) *actorsRuntime 
 
 	compStore := compstore.New()
 	compStore.AddStateStore("actorStore", fakeStore())
-	a := newActorsWithClock(ActorsOpts{
+	a, err := newActorsWithClock(ActorsOpts{
 		CompStore:      compStore,
 		AppChannel:     appChannel,
 		Config:         conf,
@@ -227,11 +228,12 @@ func newTestActorsRuntimeWithMock(appChannel channel.AppChannel) *actorsRuntime 
 		StateStoreName: "actorStore",
 		MockPlacement:  NewMockPlacement(TestAppID),
 	}, clock)
+	require.NoError(t, err)
 
 	return a.(*actorsRuntime)
 }
 
-func newTestActorsRuntimeWithMockWithoutPlacement(appChannel channel.AppChannel) *actorsRuntime {
+func newTestActorsRuntimeWithMockWithoutPlacement(t *testing.T, appChannel channel.AppChannel) *actorsRuntime {
 	conf := NewConfig(ConfigOpts{
 		AppID:         TestAppID,
 		ActorsService: "",
@@ -240,7 +242,7 @@ func newTestActorsRuntimeWithMockWithoutPlacement(appChannel channel.AppChannel)
 
 	clock := clocktesting.NewFakeClock(startOfTime)
 
-	a := newActorsWithClock(ActorsOpts{
+	a, err := newActorsWithClock(ActorsOpts{
 		CompStore:      compstore.New(),
 		AppChannel:     appChannel,
 		Config:         conf,
@@ -248,11 +250,12 @@ func newTestActorsRuntimeWithMockWithoutPlacement(appChannel channel.AppChannel)
 		Resiliency:     resiliency.New(log),
 		StateStoreName: "actorStore",
 	}, clock)
+	require.NoError(t, err)
 
 	return a.(*actorsRuntime)
 }
 
-func newTestActorsRuntimeWithMockAndNoStore(appChannel channel.AppChannel) *actorsRuntime {
+func newTestActorsRuntimeWithMockAndNoStore(t *testing.T, appChannel channel.AppChannel) *actorsRuntime {
 	conf := NewConfig(ConfigOpts{
 		AppID:         TestAppID,
 		ActorsService: "",
@@ -261,7 +264,7 @@ func newTestActorsRuntimeWithMockAndNoStore(appChannel channel.AppChannel) *acto
 
 	clock := clocktesting.NewFakeClock(startOfTime)
 
-	a := newActorsWithClock(ActorsOpts{
+	a, err := newActorsWithClock(ActorsOpts{
 		CompStore:      compstore.New(),
 		AppChannel:     appChannel,
 		Config:         conf,
@@ -269,26 +272,27 @@ func newTestActorsRuntimeWithMockAndNoStore(appChannel channel.AppChannel) *acto
 		Resiliency:     resiliency.New(log),
 		StateStoreName: "actorStore",
 	}, clock)
+	require.NoError(t, err)
 
 	return a.(*actorsRuntime)
 }
 
-func newTestActorsRuntimeWithoutStore() *actorsRuntime {
+func newTestActorsRuntimeWithoutStore(t *testing.T) *actorsRuntime {
 	appChannel := new(mockAppChannel)
 
-	return newTestActorsRuntimeWithMockAndNoStore(appChannel)
+	return newTestActorsRuntimeWithMockAndNoStore(t, appChannel)
 }
 
-func newTestActorsRuntime() *actorsRuntime {
+func newTestActorsRuntime(t *testing.T) *actorsRuntime {
 	appChannel := new(mockAppChannel)
 
-	return newTestActorsRuntimeWithMock(appChannel)
+	return newTestActorsRuntimeWithMock(t, appChannel)
 }
 
-func newTestActorsRuntimeWithoutPlacement() *actorsRuntime {
+func newTestActorsRuntimeWithoutPlacement(t *testing.T) *actorsRuntime {
 	appChannel := new(mockAppChannel)
 
-	return newTestActorsRuntimeWithMockWithoutPlacement(appChannel)
+	return newTestActorsRuntimeWithMockWithoutPlacement(t, appChannel)
 }
 
 func getTestActorTypeAndID() (string, string) {
@@ -340,7 +344,7 @@ func TestDeactivateIdleActors(t *testing.T) {
 	actorKey := constructCompositeKey(actorType, actorID)
 
 	t.Run("idle actor is deactivated", func(t *testing.T) {
-		testActorsRuntime := newTestActorsRuntime()
+		testActorsRuntime := newTestActorsRuntime(t)
 		testActorsRuntime.actorsConfig.ActorIdleTimeout = time.Second * 2
 		defer testActorsRuntime.Close()
 		clock := testActorsRuntime.clock.(*clocktesting.FakeClock)
@@ -365,7 +369,7 @@ func TestDeactivateIdleActors(t *testing.T) {
 	})
 
 	t.Run("non-idle actor is not deactivated", func(t *testing.T) {
-		testActorsRuntime := newTestActorsRuntime()
+		testActorsRuntime := newTestActorsRuntime(t)
 		testActorsRuntime.actorsConfig.ActorIdleTimeout = time.Second * 5
 		defer testActorsRuntime.Close()
 		clock := testActorsRuntime.clock.(*clocktesting.FakeClock)
@@ -390,7 +394,7 @@ func TestDeactivateIdleActors(t *testing.T) {
 	})
 
 	t.Run("per-actor timeout", func(t *testing.T) {
-		testActorsRuntime := newTestActorsRuntime()
+		testActorsRuntime := newTestActorsRuntime(t)
 		defer testActorsRuntime.Close()
 		clock := testActorsRuntime.clock.(*clocktesting.FakeClock)
 
@@ -458,7 +462,7 @@ func TestDeactivateIdleActors(t *testing.T) {
 	})
 
 	t.Run("actor is still busy", func(t *testing.T) {
-		testActorsRuntime := newTestActorsRuntime()
+		testActorsRuntime := newTestActorsRuntime(t)
 		testActorsRuntime.actorsConfig.ActorIdleTimeout = time.Second * 2
 		defer testActorsRuntime.Close()
 		clock := testActorsRuntime.clock.(*clocktesting.FakeClock)
@@ -512,7 +516,7 @@ func TestDeactivateIdleActors(t *testing.T) {
 }
 
 func TestTimerExecution(t *testing.T) {
-	testActorsRuntime := newTestActorsRuntime()
+	testActorsRuntime := newTestActorsRuntime(t)
 	defer testActorsRuntime.Close()
 
 	actorType, actorID := getTestActorTypeAndID()
@@ -533,7 +537,7 @@ func TestTimerExecution(t *testing.T) {
 }
 
 func TestReminderExecution(t *testing.T) {
-	testActorsRuntime := newTestActorsRuntime()
+	testActorsRuntime := newTestActorsRuntime(t)
 	defer testActorsRuntime.Close()
 
 	actorType, actorID := getTestActorTypeAndID()
@@ -553,7 +557,7 @@ func TestReminderExecution(t *testing.T) {
 
 func TestConstructActorStateKey(t *testing.T) {
 	delim := "||"
-	testActorsRuntime := newTestActorsRuntime()
+	testActorsRuntime := newTestActorsRuntime(t)
 	defer testActorsRuntime.Close()
 
 	actorType, actorID := getTestActorTypeAndID()
@@ -575,7 +579,7 @@ func TestConstructActorStateKey(t *testing.T) {
 }
 
 func TestGetState(t *testing.T) {
-	testActorsRuntime := newTestActorsRuntime()
+	testActorsRuntime := newTestActorsRuntime(t)
 	defer testActorsRuntime.Close()
 
 	actorType, actorID := getTestActorTypeAndID()
@@ -615,7 +619,7 @@ func TestGetState(t *testing.T) {
 }
 
 func TestGetBulkState(t *testing.T) {
-	testActorsRuntime := newTestActorsRuntime()
+	testActorsRuntime := newTestActorsRuntime(t)
 	defer testActorsRuntime.Close()
 
 	actorType, actorID := getTestActorTypeAndID()
@@ -664,7 +668,7 @@ func TestGetBulkState(t *testing.T) {
 }
 
 func TestDeleteState(t *testing.T) {
-	testActorsRuntime := newTestActorsRuntime()
+	testActorsRuntime := newTestActorsRuntime(t)
 	defer testActorsRuntime.Close()
 
 	actorType, actorID := getTestActorTypeAndID()
@@ -865,7 +869,7 @@ func TestCallLocalActor(t *testing.T) {
 	defer req.Close()
 
 	t.Run("invoke actor successfully", func(t *testing.T) {
-		testActorsRuntime := newTestActorsRuntime()
+		testActorsRuntime := newTestActorsRuntime(t)
 		defer testActorsRuntime.Close()
 
 		resp, err := testActorsRuntime.callLocalActor(context.Background(), req)
@@ -876,7 +880,7 @@ func TestCallLocalActor(t *testing.T) {
 
 	t.Run("actor is already disposed", func(t *testing.T) {
 		// arrange
-		testActorsRuntime := newTestActorsRuntime()
+		testActorsRuntime := newTestActorsRuntime(t)
 		defer testActorsRuntime.Close()
 
 		actorKey := constructCompositeKey(testActorType, testActorID)
@@ -907,7 +911,7 @@ func TestCallLocalActor(t *testing.T) {
 func TestTransactionalState(t *testing.T) {
 	ctx := context.Background()
 	t.Run("Single set request succeeds", func(t *testing.T) {
-		testActorsRuntime := newTestActorsRuntime()
+		testActorsRuntime := newTestActorsRuntime(t)
 		defer testActorsRuntime.Close()
 
 		actorType, actorID := getTestActorTypeAndID()
@@ -931,7 +935,7 @@ func TestTransactionalState(t *testing.T) {
 	})
 
 	t.Run("Multiple requests succeeds", func(t *testing.T) {
-		testActorsRuntime := newTestActorsRuntime()
+		testActorsRuntime := newTestActorsRuntime(t)
 		defer testActorsRuntime.Close()
 
 		actorType, actorID := getTestActorTypeAndID()
@@ -961,7 +965,7 @@ func TestTransactionalState(t *testing.T) {
 	})
 
 	t.Run("Too many requests fail", func(t *testing.T) {
-		testActorsRuntime := newTestActorsRuntime()
+		testActorsRuntime := newTestActorsRuntime(t)
 		defer testActorsRuntime.Close()
 
 		_, store, err := testActorsRuntime.stateStore()
@@ -994,7 +998,7 @@ func TestTransactionalState(t *testing.T) {
 	})
 
 	t.Run("Wrong request body - should fail", func(t *testing.T) {
-		testActorsRuntime := newTestActorsRuntime()
+		testActorsRuntime := newTestActorsRuntime(t)
 		defer testActorsRuntime.Close()
 
 		actorType, actorID := getTestActorTypeAndID()
@@ -1015,7 +1019,7 @@ func TestTransactionalState(t *testing.T) {
 	})
 
 	t.Run("Unsupported operation type - should fail", func(t *testing.T) {
-		testActorsRuntime := newTestActorsRuntime()
+		testActorsRuntime := newTestActorsRuntime(t)
 		actorType, actorID := getTestActorTypeAndID()
 
 		fakeCallAndActivateActor(testActorsRuntime, actorType, actorID, testActorsRuntime.clock)
@@ -1036,7 +1040,7 @@ func TestTransactionalState(t *testing.T) {
 
 func TestGetOrCreateActor(t *testing.T) {
 	const testActorType = "fakeActor"
-	testActorsRuntime := newTestActorsRuntime()
+	testActorsRuntime := newTestActorsRuntime(t)
 	defer testActorsRuntime.Close()
 
 	t.Run("create new key", func(t *testing.T) {
@@ -1066,7 +1070,7 @@ func TestActiveActorsCount(t *testing.T) {
 	t.Run("Actors Count", func(t *testing.T) {
 		expectedCounts := []*runtimev1pb.ActiveActorsCount{{Type: "cat", Count: 2}, {Type: "dog", Count: 1}}
 
-		testActorsRuntime := newTestActorsRuntime()
+		testActorsRuntime := newTestActorsRuntime(t)
 		testActorsRuntime.actorsConfig.Config.HostedActorTypes = internal.NewHostedActors([]string{"cat", "dog"})
 		defer testActorsRuntime.Close()
 
@@ -1081,7 +1085,7 @@ func TestActiveActorsCount(t *testing.T) {
 	t.Run("Actors Count empty", func(t *testing.T) {
 		expectedCounts := []*runtimev1pb.ActiveActorsCount{}
 
-		testActorsRuntime := newTestActorsRuntime()
+		testActorsRuntime := newTestActorsRuntime(t)
 		testActorsRuntime.actorsConfig.Config.HostedActorTypes = internal.NewHostedActors([]string{})
 		defer testActorsRuntime.Close()
 
@@ -1129,12 +1133,12 @@ func TestActorsAppHealthCheck(t *testing.T) {
 		}
 	}
 
-	t.Run("with state store", testFn(newTestActorsRuntime()))
+	t.Run("with state store", testFn(newTestActorsRuntime(t)))
 
-	t.Run("without state store", testFn(newTestActorsRuntimeWithoutStore()))
+	t.Run("without state store", testFn(newTestActorsRuntimeWithoutStore(t)))
 
 	t.Run("no hosted actors without state store", func(t *testing.T) {
-		testActorsRuntime := newTestActorsRuntimeWithoutStore()
+		testActorsRuntime := newTestActorsRuntimeWithoutStore(t)
 		defer testActorsRuntime.Close()
 		clock := testActorsRuntime.clock.(*clocktesting.FakeClock)
 
@@ -1170,7 +1174,7 @@ func TestActorsAppHealthCheck(t *testing.T) {
 }
 
 func TestShutdown(t *testing.T) {
-	testActorsRuntime := newTestActorsRuntime()
+	testActorsRuntime := newTestActorsRuntime(t)
 
 	t.Run("no panic when placement is nil", func(t *testing.T) {
 		testActorsRuntime.placement = nil
@@ -1236,7 +1240,7 @@ func TestBasicReentrantActorLocking(t *testing.T) {
 		appChannel: reentrantAppChannel,
 		config:     &reentrantConfig,
 	}
-	testActorsRuntime := builder.buildActorRuntime()
+	testActorsRuntime := builder.buildActorRuntime(t)
 	reentrantAppChannel.a = testActorsRuntime
 
 	resp, err := testActorsRuntime.callLocalActor(context.Background(), req)
@@ -1271,7 +1275,7 @@ func TestReentrantActorLockingOverMultipleActors(t *testing.T) {
 		appChannel: reentrantAppChannel,
 		config:     &reentrantConfig,
 	}
-	testActorsRuntime := builder.buildActorRuntime()
+	testActorsRuntime := builder.buildActorRuntime(t)
 	reentrantAppChannel.a = testActorsRuntime
 
 	resp, err := testActorsRuntime.callLocalActor(context.Background(), req)
@@ -1304,7 +1308,7 @@ func TestReentrancyStackLimit(t *testing.T) {
 		appChannel: reentrantAppChannel,
 		config:     &reentrantConfig,
 	}
-	testActorsRuntime := builder.buildActorRuntime()
+	testActorsRuntime := builder.buildActorRuntime(t)
 	reentrantAppChannel.a = testActorsRuntime
 
 	resp, err := testActorsRuntime.callLocalActor(context.Background(), req)
@@ -1340,7 +1344,7 @@ func TestReentrancyPerActor(t *testing.T) {
 		appChannel: reentrantAppChannel,
 		config:     &reentrantConfig,
 	}
-	testActorsRuntime := builder.buildActorRuntime()
+	testActorsRuntime := builder.buildActorRuntime(t)
 	reentrantAppChannel.a = testActorsRuntime
 
 	resp, err := testActorsRuntime.callLocalActor(context.Background(), req)
@@ -1381,7 +1385,7 @@ func TestReentrancyStackLimitPerActor(t *testing.T) {
 		appChannel: reentrantAppChannel,
 		config:     &reentrantConfig,
 	}
-	testActorsRuntime := builder.buildActorRuntime()
+	testActorsRuntime := builder.buildActorRuntime(t)
 	reentrantAppChannel.a = testActorsRuntime
 
 	resp, err := testActorsRuntime.callLocalActor(context.Background(), req)
@@ -1427,7 +1431,7 @@ func TestActorsRuntimeResiliency(t *testing.T) {
 		// This test is using a real wall clock
 		clock: &kclock.RealClock{},
 	}
-	runtime := builder.buildActorRuntime()
+	runtime := builder.buildActorRuntime(t)
 
 	t.Run("callLocalActor times out with resiliency", func(t *testing.T) {
 		req := invokev1.NewInvokeMethodRequest("actorMethod").
@@ -1544,7 +1548,7 @@ func TestActorsRuntimeResiliency(t *testing.T) {
 }
 
 func TestPlacementSwitchIsNotTurnedOn(t *testing.T) {
-	testActorsRuntime := newTestActorsRuntimeWithoutPlacement()
+	testActorsRuntime := newTestActorsRuntimeWithoutPlacement(t)
 	defer testActorsRuntime.Close()
 
 	t.Run("placement is not enabled", func(t *testing.T) {

@@ -33,11 +33,8 @@ import (
 	"k8s.io/utils/clock"
 
 	"github.com/dapr/components-contrib/state"
-	"github.com/dapr/dapr/pkg/actors/client"
 	actorerrors "github.com/dapr/dapr/pkg/actors/errors"
 	"github.com/dapr/dapr/pkg/actors/internal"
-	"github.com/dapr/dapr/pkg/actors/placement"
-	"github.com/dapr/dapr/pkg/actors/reminders"
 	"github.com/dapr/dapr/pkg/actors/timers"
 	"github.com/dapr/dapr/pkg/channel"
 	configuration "github.com/dapr/dapr/pkg/config"
@@ -119,7 +116,6 @@ type actorsRuntime struct {
 	placementEnabled     bool
 	grpcConnectionFn     GRPCConnectionFn
 	actorsConfig         Config
-	actorSvcClient       *client.ActorClient
 	timers               internal.TimersProvider
 	actorsReminders      internal.RemindersProvider
 	actorsTable          *sync.Map
@@ -160,11 +156,11 @@ type ActorsOpts struct {
 }
 
 // NewActors create a new actors runtime with given config.
-func NewActors(opts ActorsOpts) ActorRuntime {
+func NewActors(opts ActorsOpts) (ActorRuntime, error) {
 	return newActorsWithClock(opts, &clock.RealClock{})
 }
 
-func newActorsWithClock(opts ActorsOpts, clock clock.WithTicker) ActorRuntime {
+func newActorsWithClock(opts ActorsOpts, clock clock.WithTicker) (ActorRuntime, error) {
 	a := &actorsRuntime{
 		appChannel:           opts.AppChannel,
 		grpcConnectionFn:     opts.GRPCConnectionFn,
@@ -196,25 +192,20 @@ func newActorsWithClock(opts ActorsOpts, clock clock.WithTicker) ActorRuntime {
 		Resiliency:  a.resiliency,
 	}
 
-	switch a.actorsConfig.GetActorsVersion() {
-	case internal.ActorsV1:
-		a.actorsReminders = reminders.NewRemindersProvider(providerOpts)
-		if a.placement == nil {
-			// Initialize the placement client if we don't have a mocked one already
-			a.placement = placement.NewActorPlacement(providerOpts)
+	// Initialize the placement client if we don't have a mocked one already
+	if a.placement == nil {
+		factory, fErr := opts.Config.GetPlacementProvider()
+		if fErr != nil {
+			return nil, fmt.Errorf("failed to initialize placement provider: %w", fErr)
 		}
-	case internal.ActorsV2:
-		// For actors v2, the client is a provider for reminders and placement too
-		a.actorSvcClient = client.NewActorClient(providerOpts)
-		a.actorsReminders = a.actorSvcClient
-		if a.placement == nil {
-			// Initialize the placement client if we don't have a mocked one already
-			a.placement = a.actorSvcClient
-		}
-	default:
-		// Should only happen due to a development-time issue
-		log.Fatalf("Invalid actors version: %v", a.actorsConfig.GetActorsVersion())
+		a.placement = factory(providerOpts)
 	}
+
+	factory, err := opts.Config.GetRemindersProvider(a.placement)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize reminders provider: %w", err)
+	}
+	a.actorsReminders = factory(providerOpts)
 
 	a.actorsReminders.SetExecuteReminderFn(a.executeReminder)
 	a.actorsReminders.SetStateStoreProviderFn(a.stateStore)
@@ -230,7 +221,7 @@ func newActorsWithClock(opts ActorsOpts, clock clock.WithTicker) ActorRuntime {
 
 	a.idleActorProcessor = eventqueue.NewProcessor[*actor](a.idleProcessorExecuteFn).WithClock(clock)
 
-	return a
+	return a, nil
 }
 
 func (a *actorsRuntime) idleProcessorExecuteFn(act *actor) {

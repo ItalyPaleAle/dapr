@@ -12,7 +12,7 @@ limitations under the License.
 */
 
 //nolint:protogetter
-package client
+package emmy
 
 import (
 	"context"
@@ -50,7 +50,7 @@ var (
 	_ internal.RemindersProvider = (*ActorClient)(nil)
 )
 
-// ActorClient is a client for the Actors service.
+// ActorClient is a client for the Project Emmy service.
 // It manages the placement of actors in the cluster as well as offers reminders services.
 type ActorClient struct {
 	actorsClient       actorsv1pb.ActorsClient
@@ -174,7 +174,7 @@ func (a *ActorClient) establishGrpcConnection(ctx context.Context) error {
 	}
 
 	// Dial the gRPC connection
-	addr := strings.TrimPrefix(a.config.ActorsService, "actors:")
+	addr := strings.TrimPrefix(a.config.ActorsService, "emmy:")
 	log.Debugf("Establishing connection with Actors service at address %s…", addr)
 	ctx, cancel := context.WithTimeout(ctx, dialTimeout)
 	defer cancel()
@@ -358,8 +358,6 @@ func (a *ActorClient) establishConnectHost(actorTypes []*actorsv1pb.ActorHostTyp
 
 			default:
 				// Assume all other messages are a "pong" (response to ping)
-				// TODO: Remove this debug log
-				log.Debugf("Received pong from actors service")
 				msgCh <- nil
 			}
 		}
