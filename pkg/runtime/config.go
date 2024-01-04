@@ -91,8 +91,8 @@ type Config struct {
 	ApplicationPort              string
 	DaprGracefulShutdownSeconds  int
 	DaprBlockShutdownDuration    *time.Duration
-	PlacementServiceHostAddr     string
-	ActorsServiceAddress         string
+	ActorsService                string
+	RemindersService             string
 	DaprAPIListenAddresses       string
 	AppHealthProbeInterval       int
 	AppHealthProbeTimeout        int
@@ -121,8 +121,8 @@ type internalConfig struct {
 	apiListenAddresses           []string
 	appConnectionConfig          config.AppConnectionConfig
 	mode                         modes.DaprMode
-	placementAddresses           []string
-	actorsServiceAddress         string
+	actorsService                string
+	remindersService             string
 	allowedOrigins               string
 	standalone                   configmodes.StandaloneConfig
 	kubernetes                   configmodes.KubernetesConfig
@@ -141,7 +141,7 @@ type internalConfig struct {
 }
 
 func (i internalConfig) ActorsEnabled() bool {
-	return len(i.placementAddresses) > 0 || i.actorsServiceAddress != ""
+	return i.actorsService != ""
 }
 
 // FromConfig creates a new Dapr Runtime from a configuration.
@@ -276,7 +276,6 @@ func (c *Config) toInternal() (*internalConfig, error) {
 		standalone: configmodes.StandaloneConfig{
 			ResourcesPath: c.ResourcesPath,
 		},
-		actorsServiceAddress:         c.ActorsServiceAddress,
 		enableProfiling:              c.EnableProfiling,
 		mTLSEnabled:                  c.EnableMTLS,
 		disableBuiltinK8sSecretStore: c.DisableBuiltinK8sSecretStore,
@@ -292,6 +291,8 @@ func (c *Config) toInternal() (*internalConfig, error) {
 		registry:              registry.New(c.Registry),
 		metricsExporter:       metrics.NewExporterWithOptions(log, metrics.DefaultMetricNamespace, c.Metrics),
 		blockShutdownDuration: c.DaprBlockShutdownDuration,
+		actorsService:         c.ActorsService,
+		remindersService:      c.RemindersService,
 	}
 
 	if len(intc.standalone.ResourcesPath) == 0 && c.ComponentsPath != "" {
@@ -374,10 +375,6 @@ func (c *Config) toInternal() (*internalConfig, error) {
 		intc.gracefulShutdownDuration = time.Duration(c.DaprGracefulShutdownSeconds) * time.Second
 	}
 
-	if c.PlacementServiceHostAddr != "" {
-		intc.placementAddresses = parsePlacementAddr(c.PlacementServiceHostAddr)
-	}
-
 	if intc.appConnectionConfig.MaxConcurrency == -1 {
 		intc.appConnectionConfig.MaxConcurrency = 0
 	}
@@ -448,12 +445,4 @@ func (c *Config) toInternal() (*internalConfig, error) {
 	}
 
 	return intc, nil
-}
-
-func parsePlacementAddr(val string) []string {
-	p := strings.Split(val, ",")
-	for i, v := range p {
-		p[i] = strings.TrimSpace(v)
-	}
-	return p
 }

@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -173,10 +174,11 @@ func (a *ActorClient) establishGrpcConnection(ctx context.Context) error {
 	}
 
 	// Dial the gRPC connection
-	log.Debugf("Establishing connection with Actors service at address %s…", a.config.ActorsServiceAddress)
+	addr := strings.TrimPrefix(a.config.ActorsService, "actors:")
+	log.Debugf("Establishing connection with Actors service at address %s…", addr)
 	ctx, cancel := context.WithTimeout(ctx, dialTimeout)
 	defer cancel()
-	a.conn, err = grpc.DialContext(ctx, a.config.ActorsServiceAddress,
+	a.conn, err = grpc.DialContext(ctx, addr,
 		grpc.WithUnaryInterceptor(unaryClientInterceptor),
 		a.security.GRPCDialOptionMTLS(actorsID),
 		grpc.WithReturnConnectionError(),

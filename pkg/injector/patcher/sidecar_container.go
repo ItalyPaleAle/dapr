@@ -107,9 +107,15 @@ func (c *SidecarConfig) getSidecarContainer(opts getSidecarContainerOpts) (*core
 		args = append(args, "--app-channel-address", c.AppChannelAddress)
 	}
 
-	// Placement or Actors addresses could be empty if actors service is disabled
+	// Actor/placement/reminders services
+	// Note that PlacementAddress takes priority over ActorsAddress
 	if c.PlacementAddress != "" {
 		args = append(args, "--placement-host-address", c.PlacementAddress)
+	} else if c.ActorsService != "" {
+		args = append(args, "--actors-service", c.ActorsService)
+	}
+	if c.RemindersService != "" {
+		args = append(args, "--reminders-service", c.RemindersService)
 	}
 	if c.ActorsAddress != "" {
 		args = append(args, "--actors-service-address", c.ActorsAddress)

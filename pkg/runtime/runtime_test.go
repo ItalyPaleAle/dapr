@@ -801,8 +801,8 @@ func NewTestDaprRuntimeWithProtocol(t *testing.T, mode modes.DaprMode, protocol 
 
 func NewTestDaprRuntimeConfig(t *testing.T, mode modes.DaprMode, appProtocol string, appPort int) *internalConfig {
 	return &internalConfig{
-		id:                 daprt.TestRuntimeConfigID,
-		placementAddresses: []string{"10.10.10.12"},
+		id:            daprt.TestRuntimeConfigID,
+		actorsService: "placement:10.10.10.12",
 		kubernetes: modeconfig.KubernetesConfig{
 			ControlPlaneAddress: "10.10.10.11",
 		},
@@ -1960,7 +1960,7 @@ func TestGracefulShutdownPubSub(t *testing.T) {
 	rt.processor = processor.New(processor.Options{
 		ID:             rt.runtimeConfig.id,
 		IsHTTP:         rt.runtimeConfig.appConnectionConfig.Protocol.IsHTTP(),
-		ActorsEnabled:  len(rt.runtimeConfig.placementAddresses) > 0 || rt.runtimeConfig.actorsServiceAddress != "",
+		ActorsEnabled:  len(rt.runtimeConfig.actorsService) > 0,
 		Registry:       rt.runtimeConfig.registry,
 		ComponentStore: rt.compStore,
 		Meta:           rt.meta,

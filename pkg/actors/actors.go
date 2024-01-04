@@ -289,7 +289,7 @@ func (a *actorsRuntime) Init(ctx context.Context) (err error) {
 		return errors.New("actors runtime has already been closed")
 	}
 
-	if len(a.actorsConfig.PlacementAddresses) == 0 && a.actorsConfig.ActorsServiceAddress == "" {
+	if len(a.actorsConfig.ActorsService) == 0 {
 		return errors.New("actors: couldn't connect to actors service: address is empty")
 	}
 
