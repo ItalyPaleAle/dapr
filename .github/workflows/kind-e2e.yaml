@@ -193,7 +193,7 @@ jobs:
           echo -n "connectionString=host=dapr-postgres-postgresql.${DAPR_NAMESPACE}.svc.cluster.local user=postgres password=example port=5432 connect_timeout=10 database=dapr_test" > postgres
           kubectl create secret generic postgres-actors -n ${DAPR_NAMESPACE} --from-file=postgres
   
-          export ADDITIONAL_HELM_SET="global.actors.serviceName=emmy,global.reminders.serviceName=emmy,dapr_emmy.logLevel=info,dapr_emmy.store.name=postgresql,dapr_emmy.store.optionsFile.secretName=postgres-actors,dapr_emmy.store.optionsFile.secretKey=postgres"
+          export ADDITIONAL_HELM_SET="global.actors.serviceName=emmy,global.reminders.serviceName=emmy,dapr_emmy.logLevel=debug,dapr_emmy.store.name=postgresql,dapr_emmy.store.optionsFile.secretName=postgres-actors,dapr_emmy.store.optionsFile.secretKey=postgres"
         fi
         make docker-deploy-k8s
 
@@ -205,6 +205,13 @@ jobs:
       run: |
         docker image prune -a -f
 
+    - name: Stream dapr-emmy logs
+      if: matrix.actors == 'emmy'
+      run: |
+        # Run process in background until the end
+        kubectl logs -l 'app=dapr-emmy' -f --tail=-1 -n ${DAPR_NAMESPACE} > ${DAPR_CONTAINER_LOG_PATH}/emmy.log &
+        sleep 2
+
     - name: Run tests
       run: |
         make test-e2e-all
@@ -213,6 +220,13 @@ jobs:
       if: always()
       run: |
         make save-dapr-control-plane-k8s-logs
+
+    - name: Stop streaming dapr-emmy logs
+      if: matrix.actors == 'emmy'
+      run: |
+        sleep 1
+        sudo kill -2 $(pgrep kubectl)
+        sleep 1
 
     # Container log files can be bigger than the maximum file size allowed by GitHub
     - name: Compress logs

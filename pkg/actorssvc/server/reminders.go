@@ -204,7 +204,7 @@ func (s *server) executeReminder(fr *actorstore.FetchedReminder) {
 	case connHostInfo.serverMsgCh <- serverMsg:
 		// All good - nop
 	case <-sendCtx.Done():
-		log.Errorf("Failed to send reminder '%s' to actor host: %v", fr.Key(), ctx.Err())
+		log.Errorf("Failed to send reminder '%s' to actor host: %v", fr.Key(), sendCtx.Err())
 
 		// Remove from the map
 		// Note it can take a few moments for this to appear if the map was being resized when the item was set
