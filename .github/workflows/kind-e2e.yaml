@@ -193,7 +193,7 @@ jobs:
           echo -n "connectionString=host=dapr-postgres-postgresql.${DAPR_NAMESPACE}.svc.cluster.local user=postgres password=example port=5432 connect_timeout=10 database=dapr_test" > postgres
           kubectl create secret generic postgres-actors -n ${DAPR_NAMESPACE} --from-file=postgres
   
-          export ADDITIONAL_HELM_SET="global.actors.serviceName=emmy,global.reminders.serviceName=emmy,dapr_emmy.logLevel=debug,dapr_emmy.store.name=postgresql,dapr_emmy.store.optionsFile.secretName=postgres-actors,dapr_emmy.store.optionsFile.secretKey=postgres"
+          export ADDITIONAL_HELM_SET="global.actors.serviceName=emmy,global.reminders.serviceName=emmy,dapr_emmy.logLevel=info,dapr_emmy.store.name=postgresql,dapr_emmy.store.optionsFile.secretName=postgres-actors,dapr_emmy.store.optionsFile.secretKey=postgres"
         fi
         make docker-deploy-k8s
 
