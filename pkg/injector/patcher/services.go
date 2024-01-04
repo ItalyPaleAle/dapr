@@ -31,7 +31,7 @@ var (
 	ServiceAPI = Service{"dapr-api", 443}
 	// Dapr placement service.
 	ServicePlacement = Service{"dapr-placement-server", 50005}
-	// Dapr sentry service.
+	// Dapr Sentry service.
 	ServiceSentry = Service{"dapr-sentry", 443}
 )
 

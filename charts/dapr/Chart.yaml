@@ -19,6 +19,6 @@ dependencies:
   - name: dapr_sentry
     version: '0.0.0'
     repository: "file://dapr_sentry"
-  - name: dapr_actors
+  - name: dapr_emmy
     version: '0.0.0'
-    repository: "file://dapr_actors"
+    repository: "file://dapr_emmy"

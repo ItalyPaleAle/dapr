@@ -117,9 +117,6 @@ func (c *SidecarConfig) getSidecarContainer(opts getSidecarContainerOpts) (*core
 	if c.RemindersService != "" {
 		args = append(args, "--reminders-service", c.RemindersService)
 	}
-	if c.ActorsAddress != "" {
-		args = append(args, "--actors-service-address", c.ActorsAddress)
-	}
 
 	// --enable-api-logging is set if and only if there's an explicit value (true or false) for that
 	// This is set explicitly even if "false"

@@ -304,6 +304,7 @@ func isControlPlaneService(id string) bool {
 		"placement",
 		"injector",
 		"sentry",
+		"emmy",
 		"actors":
 		return true
 	default:

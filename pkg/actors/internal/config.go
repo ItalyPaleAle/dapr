@@ -25,13 +25,6 @@ import (
 	daprAppConfig "github.com/dapr/dapr/pkg/config"
 )
 
-type ActorsVersion uint8
-
-const (
-	ActorsV1 ActorsVersion = 1
-	ActorsV2 ActorsVersion = 2
-)
-
 // Config is the actor runtime configuration.
 type Config struct {
 	HostAddress                   string

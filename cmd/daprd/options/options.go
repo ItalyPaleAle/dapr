@@ -57,7 +57,6 @@ type Options struct {
 	DaprPublicPort               string
 	AppPort                      string
 	DaprGracefulShutdownSeconds  int
-	ActorsServiceAddress         string
 	DaprBlockShutdownDuration    *time.Duration
 	ActorsService                string
 	RemindersService             string
