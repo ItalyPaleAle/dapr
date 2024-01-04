@@ -70,15 +70,15 @@ Next, run the Actors service:
 PG_CONNSTRING="postgres://postgres:example@localhost:5432/dapr_test"
 
 # In the dapr folder
-go run ./cmd/actors \
+go run ./cmd/emmy \
   --store-name "pg" \
   --store-opt "connectionString=$PG_CONNSTRING" \
   --log-level debug
 ```
 
-The Actors service listens on port 51101 by default
+The Emmy service listens on port 51101 by default
 
-Now you can start daprd processes as usual, but instead of passing `--placement-host-address`, pass the address of the actors serviece using `--actors-service-address`. For example:
+Now you can start daprd processes as usual, but instead of passing `--placement-host-address`, pass the address of the emmy serviece using `--actors-service emmy:<address>` and `--reminders-service emmy:<address>`. For example:
 
 ```
 go run \
@@ -90,7 +90,8 @@ go run \
   --dapr-grpc-port 60003 \
   --resources-path ./resources \
   --log-level debug \
-  --actors-service-address localhost:51101 
+  --actors-service emmy:localhost:51101 \
+  --reminders-service emmy:localhost:51101 
 ```
 
 > Note: using the Dapr CLI is not supported yet.

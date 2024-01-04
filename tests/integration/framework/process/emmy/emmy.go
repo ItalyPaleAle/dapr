@@ -11,7 +11,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package actorsvc
+package emmy
 
 import (
 	"context"
@@ -29,7 +29,7 @@ import (
 	"github.com/dapr/dapr/tests/integration/framework/util"
 )
 
-type ActorSvc struct {
+type Emmy struct {
 	exec     process.Interface
 	freeport *util.FreePort
 
@@ -38,7 +38,7 @@ type ActorSvc struct {
 	healthzPort int
 }
 
-func New(t *testing.T, fopts ...Option) *ActorSvc {
+func New(t *testing.T, fopts ...Option) *Emmy {
 	t.Helper()
 
 	fp := util.ReservePorts(t, 3)
@@ -88,9 +88,9 @@ func New(t *testing.T, fopts ...Option) *ActorSvc {
 		args = append(args, "--sentry-address="+opts.sentryAddress)
 	}
 
-	return &ActorSvc{
+	return &Emmy{
 		exec: exec.New(t,
-			binary.EnvValue("actors"), args,
+			binary.EnvValue("emmy"), args,
 			opts.execOpts...,
 		),
 		freeport:    fp,
@@ -100,16 +100,16 @@ func New(t *testing.T, fopts ...Option) *ActorSvc {
 	}
 }
 
-func (o *ActorSvc) Run(t *testing.T, ctx context.Context) {
+func (o *Emmy) Run(t *testing.T, ctx context.Context) {
 	o.freeport.Free(t)
 	o.exec.Run(t, ctx)
 }
 
-func (o *ActorSvc) Cleanup(t *testing.T) {
+func (o *Emmy) Cleanup(t *testing.T) {
 	o.exec.Cleanup(t)
 }
 
-func (o *ActorSvc) WaitUntilRunning(t *testing.T, ctx context.Context) {
+func (o *Emmy) WaitUntilRunning(t *testing.T, ctx context.Context) {
 	client := util.HTTPClient(t)
 	assert.Eventually(t, func() bool {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://localhost:%d/healthz", o.healthzPort), nil)
@@ -125,18 +125,18 @@ func (o *ActorSvc) WaitUntilRunning(t *testing.T, ctx context.Context) {
 	}, time.Second*5, 100*time.Millisecond)
 }
 
-func (o *ActorSvc) Port() int {
+func (o *Emmy) Port() int {
 	return o.port
 }
 
-func (o *ActorSvc) Address() string {
+func (o *Emmy) Address() string {
 	return "localhost:" + strconv.Itoa(o.port)
 }
 
-func (o *ActorSvc) MetricsPort() int {
+func (o *Emmy) MetricsPort() int {
 	return o.metricsPort
 }
 
-func (o *ActorSvc) HealthzPort() int {
+func (o *Emmy) HealthzPort() int {
 	return o.healthzPort
 }
