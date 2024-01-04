@@ -195,6 +195,7 @@ func newActorsWithClock(opts ActorsOpts, clock clock.WithTicker) ActorRuntime {
 		APILevel:    &a.apiLevel,
 		Resiliency:  a.resiliency,
 	}
+
 	switch a.actorsConfig.GetActorsVersion() {
 	case internal.ActorsV1:
 		a.actorsReminders = reminders.NewRemindersProvider(providerOpts)
