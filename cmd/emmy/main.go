@@ -69,7 +69,7 @@ func main() {
 		ControlPlaneTrustDomain: opts.TrustDomain,
 		ControlPlaneNamespace:   security.CurrentNamespace(),
 		TrustAnchorsFile:        opts.TrustAnchorsFile,
-		AppID:                   "dapr-actors",
+		AppID:                   "dapr-emmy",
 		MTLSEnabled:             opts.MTLSEnabled,
 		Mode:                    modes.DaprMode(opts.Mode),
 	})

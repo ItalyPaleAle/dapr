@@ -168,7 +168,7 @@ func (a *ActorClient) establishGrpcConnection(ctx context.Context) error {
 		unaryClientInterceptor = grpcRetry.UnaryClientInterceptor()
 	}
 
-	actorsID, err := spiffeid.FromSegments(a.security.ControlPlaneTrustDomain(), "ns", a.security.ControlPlaneNamespace(), "dapr-actors")
+	actorsID, err := spiffeid.FromSegments(a.security.ControlPlaneTrustDomain(), "ns", a.security.ControlPlaneNamespace(), "dapr-emmy")
 	if err != nil {
 		return err
 	}
