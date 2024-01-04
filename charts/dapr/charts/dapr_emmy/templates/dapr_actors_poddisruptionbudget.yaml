@@ -1,4 +1,4 @@
-{{- if and (eq .Values.global.actors.enabled true) (eq .Values.global.actors.v2 true) }}
+{{- if and (eq .Values.global.actors.enabled true) (eq .Values.global.actors.serviceName emmy) }}
 {{- if eq .Values.global.ha.enabled true }}
 {{- if .Capabilities.APIVersions.Has "policy/v1" }}
 apiVersion: policy/v1

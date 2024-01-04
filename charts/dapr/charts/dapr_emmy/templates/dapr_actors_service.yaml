@@ -1,4 +1,4 @@
-{{- if and (eq .Values.global.actors.enabled true) (eq .Values.global.actors.v2 true) }}
+{{- if and (eq .Values.global.actors.enabled true) (eq .Values.global.actors.serviceName emmy) }}
 kind: Service
 apiVersion: v1
 metadata:

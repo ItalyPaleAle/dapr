@@ -16,7 +16,7 @@ echo -n "connectionString=host=dapr-postgres-postgresql.dapr-tests.svc.cluster.l
 kubectl create secret generic postgres-actors -n dapr-tests --from-file=postgres
 ```
 
-You can then install Project Emmy using Helm. Make sure to set `globals.actors.v2=true`:
+You can then install Project Emmy using Helm. Make sure to set `globals.actors.serviceName=emmy` and `globals.reminders.serviceName=emmy`:
 
 ```sh
 # Set version 0.0.0 to use the "edge" builds
@@ -31,12 +31,13 @@ helm upgrade \
   --set global.ha.enabled=false \
   --set global.logAsJson=true \
   --set global.mtls.enabled=true \
-  --set global.actors.v2=true \
-  --set dapr_actors.logLevel=debug \
-  --set dapr_actors.store.name=postgresql \
-  --set dapr_actors.store.optionsFile.secretName=postgres-actors \
-  --set dapr_actors.store.optionsFile.secretKey=postgres \
-  --set dapr_actors.replicaCount=2 \
+  --set global.actors.serviceName=emmy \
+  --set global.reminders.serviceName=emmy \
+  --set dapr_emmy.logLevel=debug \
+  --set dapr_emmy.store.name=postgresql \
+  --set dapr_emmy.store.optionsFile.secretName=postgres-actors \
+  --set dapr_emmy.store.optionsFile.secretKey=postgres \
+  --set dapr_emmy.replicaCount=2 \
   oci://ghcr.io/microsoft/project-emmy/chart/dapr \
   --version $VERSION
 ```
@@ -106,9 +107,9 @@ echo -n "connectionString=host=dapr-postgres-postgresql.dapr-tests.svc.cluster.l
 kubectl create secret generic postgres-actors -n dapr-tests --from-file=postgres
 ```
 
-When running Helm, make sure to add these options to enable Actors v2:
+When running Helm, make sure to add these options to enable Project Emmy:
 
 ```sh
-ADDITIONAL_HELM_SET="global.actors.v2=true,dapr_actors.logLevel=debug,dapr_actors.store.name=postgresql,dapr_actors.store.optionsFile.secretName=postgres-actors,dapr_actors.store.optionsFile.secretKey=postgres" \
+ADDITIONAL_HELM_SET="globals.actors.serviceName=emmy,globals.reminders.serviceName=emmy,dapr_emmy.logLevel=debug,dapr_emmy.store.name=postgresql,dapr_emmy.store.optionsFile.secretName=postgres-actors,dapr_emmy.store.optionsFile.secretKey=postgres" \
   make docker-deploy-k8s
 ```
