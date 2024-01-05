@@ -208,6 +208,7 @@ jobs:
     - name: Stream dapr-emmy logs
       if: matrix.actors == 'emmy'
       run: |
+        mkdir -p ${DAPR_CONTAINER_LOG_PATH}
         # Run process in background until the end
         kubectl logs -l 'app=dapr-emmy' -f --tail=-1 -n ${DAPR_NAMESPACE} > ${DAPR_CONTAINER_LOG_PATH}/emmy.log &
         sleep 2
